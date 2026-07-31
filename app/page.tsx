@@ -1,8 +1,10 @@
 import Image from "next/image";
 import Link from "next/link";
 import type { Metadata } from "next";
+import { NewsCard } from "./_components/NewsCard";
 import { createPageMetadata } from "./_components/page-metadata";
 import { programmes, school, values } from "./_components/site-data";
+import { getPublicNewsItems } from "../data/news";
 
 export const metadata: Metadata = createPageMetadata({
   title: "Home",
@@ -14,6 +16,8 @@ export const metadata: Metadata = createPageMetadata({
 });
 
 export default function Home() {
+  const latestNews = getPublicNewsItems().slice(0, 3);
+
   return (
     <main id="main-content">
       <section className="hero">
@@ -53,6 +57,22 @@ export default function Home() {
         <div className="sectionHeading left"><p className="eyebrow">LIFE AT WTS</p><h2>Real people. Real learning. Real milestones.</h2></div>
         <div className="lifeGrid"><article className="lifePhotoCard"><Image src="/images/students.webp" alt="Way to Success Standard Schools students together in their school uniforms" fill sizes="(max-width: 1050px) 90vw, 40vw" /><div><span>01</span><h3>Learning together</h3><p>A close school community where learners are known, guided and encouraged.</p></div></article><article><span>02</span><h3>Growing with purpose</h3><p>Classroom work, discipline, creativity and leadership form one complete experience.</p></article><article><span>03</span><h3>Celebrating milestones</h3><p>From first lessons to graduation, every important stage is recognised.</p></article></div>
         <Link className="textLink lifeLink" href="/school-life">See student life at WTS →</Link>
+      </section>
+
+      <section className="section newsHome" aria-labelledby="latest-news-heading">
+        <div className="newsHomeHead">
+          <div><p className="eyebrow">NEWS &amp; EVENTS</p><h2 id="latest-news-heading">Latest news and announcements.</h2></div>
+          <p>Official public updates will appear here once they have been verified and approved by the school.</p>
+        </div>
+        {latestNews.length > 0 ? (
+          <>
+            <p className="newsHomeNotice">No verified school news has been added yet. The clearly labelled entries below are sample layouts, not school updates.</p>
+            <div className="newsGrid newsHomeGrid">{latestNews.map((item) => <NewsCard item={item} key={item.id} />)}</div>
+          </>
+        ) : (
+          <div className="newsHomeEmpty"><strong>No news has been published yet.</strong><p>Approved public announcements and school events will appear here.</p></div>
+        )}
+        <Link className="textLink" href="/news">View all news →</Link>
       </section>
 
       <section className="admission section">

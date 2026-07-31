@@ -10,6 +10,7 @@ const links = [
   ["Academics", "/academics"],
   ["School Life", "/school-life"],
   ["Gallery", "/gallery"],
+  ["News & Events", "/news"],
   ["Staff", "/staff"],
   ["Admissions", "/admissions"],
   ["Contact", "/contact"],
@@ -18,6 +19,7 @@ const links = [
 export function SiteHeader() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const isActive = (href: string) => pathname === href || (href === "/news" && pathname.startsWith("/news/"));
 
   useEffect(() => setOpen(false), [pathname]);
 
@@ -37,7 +39,7 @@ export function SiteHeader() {
         <span><strong>Way to Success</strong><small>Standard Schools · Ejigbo</small></span>
       </Link>
       <nav className="desktopNav" aria-label="Main navigation">
-        {links.map(([label, href]) => <Link key={href} href={href} className={pathname === href ? "active" : undefined} aria-current={pathname === href ? "page" : undefined}>{label}</Link>)}
+        {links.map(([label, href]) => <Link key={href} href={href} className={isActive(href) ? "active" : undefined} aria-current={isActive(href) ? "page" : undefined}>{label}</Link>)}
       </nav>
       <div className="headerActions">
         <Link className="headerButton" href="/#portal-gateway">Portal <span>Coming soon</span></Link>
@@ -47,7 +49,7 @@ export function SiteHeader() {
       </div>
       <div id="mobile-navigation" className={`mobileNav ${open ? "isOpen" : ""}`} aria-hidden={!open}>
         <nav aria-label="Mobile navigation">
-          {links.map(([label, href], index) => <Link key={href} href={href} tabIndex={open ? 0 : -1} className={pathname === href ? "active" : undefined} aria-current={pathname === href ? "page" : undefined} onClick={() => setOpen(false)}><span>0{index + 1}</span>{label}</Link>)}
+          {links.map(([label, href], index) => <Link key={href} href={href} tabIndex={open ? 0 : -1} className={isActive(href) ? "active" : undefined} aria-current={isActive(href) ? "page" : undefined} onClick={() => setOpen(false)}><span>0{index + 1}</span>{label}</Link>)}
           <Link href="/#portal-gateway" tabIndex={open ? 0 : -1} onClick={() => setOpen(false)}>Portal gateway <em>Coming soon</em></Link>
         </nav>
       </div>

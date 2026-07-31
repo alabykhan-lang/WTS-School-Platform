@@ -1,13 +1,23 @@
 import type { MetadataRoute } from "next";
 import { school } from "./_components/site-data";
+import { getIndexablePublicNewsItems } from "../data/news";
 
-const pages = ["", "/about", "/academics", "/school-life", "/gallery", "/staff", "/admissions", "/contact"];
+const pages = ["", "/about", "/academics", "/school-life", "/gallery", "/news", "/staff", "/admissions", "/contact"];
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  return pages.map((path) => ({
+  const publicPages: MetadataRoute.Sitemap = pages.map((path) => ({
     url: `${school.url}${path}`,
     lastModified: new Date(),
     changeFrequency: path === "" ? "weekly" : "monthly",
-    priority: path === "" ? 1 : path === "/admissions" || path === "/contact" ? 0.9 : 0.8,
+    priority: path === "" ? 1 : path === "/admissions" || path === "/contact" || path === "/news" ? 0.9 : 0.8,
   }));
+
+  const newsPages: MetadataRoute.Sitemap = getIndexablePublicNewsItems().map((item) => ({
+    url: `${school.url}/news/${item.slug}`,
+    lastModified: new Date(item.publishedAt),
+    changeFrequency: "monthly" as const,
+    priority: item.pinned ? 0.8 : 0.7,
+  }));
+
+  return [...publicPages, ...newsPages];
 }
