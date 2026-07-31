@@ -24,6 +24,43 @@ export default function AboutPage() {
         <div className="bodyCopy"><p>Way to Success Standard Schools began with a simple, enduring purpose: to give children in and around Ejigbo an education that develops both knowledge and character. From its home in Ifedapo Community, the school has steadily grown its learning community from the earliest years through Senior Secondary School.</p><p>Each new class, academic session and school milestone has been shaped by the same commitment—to make every learner feel seen, challenged and well prepared for the next stage.</p><Link className="textLink" href="/gallery">See our school community →</Link></div>
       </section>
 
+      <section className="historyFeature" aria-labelledby="brief-history-heading">
+        <div className="historyVisualColumn">
+          <figure className="historyPhoto">
+            <div className="historyPhotoFrame">
+              <Image src="/images/history-early-years.webp" alt="Early group photograph of pupils and staff of Way to Success Standard Schools in 2017" fill sizes="(max-width: 650px) 90vw, (max-width: 1050px) 42vw, 34vw" />
+            </div>
+            <figcaption>Early Years of Way to Success Standard Schools (2017)</figcaption>
+          </figure>
+
+          <ol className="historyTimeline" aria-label="Historical highlights">
+            <li><span>2017</span><strong>School Founded</strong></li>
+            <li><span>Pioneer Teachers</span><strong>Foundation Team Established</strong></li>
+            <li><span>2020</span><strong>Permanent Site Relocation</strong></li>
+            <li><span>Today</span><strong>Modern Educational Institution</strong></li>
+          </ol>
+        </div>
+
+        <div className="historyNarrative">
+          <p className="eyebrow">OUR STORY</p>
+          <h2 id="brief-history-heading">Brief History of the School</h2>
+          <div className="historyCopyGrid">
+            <article>
+              <h3>HUMBLE BEGINNINGS</h3>
+              <p>Way to Success Standard Schools was established on 11th September, 2017, at Ọpẹ Olórí Méjì, Ejigbo, Osun State. The school was founded with the vision of providing quality education and addressing the academic needs and challenges of children within the community.</p>
+              <p>The foundation of the school was built through the dedication and sacrifices of a team of committed pioneer teachers whose contributions remain invaluable to the institution&apos;s growth. These early staff members included Ibiyemi Faruq, Olasunkanmi Ubaidat Adéọlá, Busari Mariam, Adeoti Mufidat, Ayoola Nabilat, Busari Mujibat, and Adeteju Muizat.</p>
+            </article>
+            <article>
+              <h3>GROWTH AND LEGACY</h3>
+              <p>At its inception, the school commenced operations with 57 pupils and a handful of dedicated teachers. Through the commitment of its staff, support from parents, and the grace of Almighty Allah, the institution has experienced remarkable growth.</p>
+              <p>Today, the school operates on a permanent site covering over an acre of land and boasts modern facilities, including ten classrooms, a multipurpose hall, three well-equipped laboratories, an ICT centre, and a library. The school currently employs about 35 teaching and non-teaching staff members.</p>
+              <p>Over the years, Way to Success Standard Schools has participated in academic, sporting, and extracurricular competitions at both local and state levels, recording impressive achievements. Guided by excellence, discipline, moral values, and innovation, the school continues to nurture intellectual growth, character development, and practical skills for meaningful contribution to society.</p>
+            </article>
+          </div>
+          <blockquote className="historyStatement">From 57 pupils in 2017 to a thriving institution on its permanent site, our story remains a testament to vision, sacrifice, resilience, and the pursuit of excellence.</blockquote>
+        </div>
+      </section>
+
       <section className="mottoBand"><p className="eyebrow light">OUR MOTTO</p><blockquote>{school.motto}</blockquote><p>It is the standard that guides our learning, relationships and everyday school life.</p></section>
 
       <section className="section missionGrid">
