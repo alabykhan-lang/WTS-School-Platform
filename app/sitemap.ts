@@ -1,7 +1,7 @@
 import type { MetadataRoute } from "next";
 import { school } from "./_components/site-data";
 
-const pages = ["", "/about", "/academics", "/school-life", "/gallery", "/admissions", "/contact"];
+const pages = ["", "/about", "/academics", "/school-life", "/gallery", "/staff", "/admissions", "/contact"];
 
 export default function sitemap(): MetadataRoute.Sitemap {
   return pages.map((path) => ({

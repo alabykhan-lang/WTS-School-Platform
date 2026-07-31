@@ -30,7 +30,7 @@ export default function Home() {
 
       <section className="intro section">
         <div className="introLead"><p className="eyebrow">WELCOME TO WTS</p><h2>A growing school with a clear purpose.</h2><figure className="aboutPhoto"><Image src="/images/campus1.webp" alt="Way to Success Standard Schools campus in Ifedapo Community, Ejigbo" fill sizes="(max-width: 700px) 90vw, 40vw" /><figcaption>Our school community in Ejigbo</figcaption></figure></div>
-        <div className="introCopy"><p>Way to Success Standard Schools is located in Ifedapo Community, off Oko-Ijado Road, Ejigbo. We serve learners from Creche through Senior Secondary School, creating a steady educational path built on knowledge, discipline, confidence and responsibility.</p><div className="signature"><span>Our guiding standard</span><strong>{school.motto}</strong></div><Link className="textLink" href="/about">Learn about our journey →</Link></div>
+        <div className="introCopy"><p>Way to Success Standard Schools is located in Ifedapo Community, off Oko-Ijado Road, Ejigbo. We serve learners from Creche through Senior Secondary School, creating a steady educational path built on knowledge, discipline, confidence and responsibility.</p><div className="signature"><span>Our guiding standard</span><strong>{school.motto}</strong></div><Link className="textLink" href="/about">Learn about our journey →</Link><Link className="textLink staffHomeLink" href="/staff">Meet our staff →</Link></div>
       </section>
 
       <section className="storyBand">
