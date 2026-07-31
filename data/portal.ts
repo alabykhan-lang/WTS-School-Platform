@@ -1,10 +1,12 @@
-export type PortalServiceStatus = "available" | "in-development" | "coming-soon";
+export type PortalServiceStatus = "available" | "in-development" | "planned" | "preview" | "first-integration-target";
 
 export type PortalService = {
   title: string;
   description: string;
   status: PortalServiceStatus;
-  href?: string;
+  href: string;
+  actionLabel: string;
+  external?: boolean;
 };
 
 export type PortalGroup = {
@@ -17,41 +19,84 @@ export type PortalGroup = {
 
 export const portalGroups: PortalGroup[] = [
   {
-    id: "parents-students",
-    label: "01 · Parents and Students",
-    title: "Parents and Students",
-    description: "Future family services will make verified school information easier to find without exposing private student records on the public website.",
+    id: "staff-workspace",
+    label: "01 · Staff Workspace",
+    title: "Staff Workspace",
+    description: "For teachers and authorised school employees. The preview shows the intended role-aware workspace without requesting credentials or displaying live school records.",
     services: [
-      { title: "Results and report cards", description: "A secure results and report-card access pathway is being prepared for verified families.", status: "in-development" },
-      { title: "Attendance information", description: "Read-only attendance information for approved parents and guardians is in preparation.", status: "in-development" },
-      { title: "School notifications", description: "Official notices will be delivered through approved contact and consent arrangements.", status: "coming-soon" },
-      { title: "Student profile and records", description: "Private student details and academic records will remain protected until an authorised family service is ready.", status: "coming-soon" },
+      {
+        title: "Staff Workspace preview",
+        description: "Explore the planned first-login experience for classes, subjects, score-entry access, responsibilities and school communication.",
+        status: "preview",
+        href: "/workspace/staff",
+        actionLabel: "View staff preview",
+      },
+      {
+        title: "Attendance module",
+        description: "Staff attendance tasks will be introduced after authorised access and the attendance-system integration are ready.",
+        status: "in-development",
+        href: "/workspace/staff#attendance",
+        actionLabel: "View planned module",
+      },
+      {
+        title: "Notifications module",
+        description: "School notices and communication tasks will appear only after the communications integration is approved.",
+        status: "in-development",
+        href: "/workspace/staff#notifications",
+        actionLabel: "View planned module",
+      },
     ],
   },
   {
-    id: "teachers-staff",
-    label: "02 · Teachers and Staff",
-    title: "Teachers and Staff",
-    description: "Staff services will be opened only through school-approved access. Availability does not grant access automatically.",
+    id: "management-workspace",
+    label: "02 · Management Workspace",
+    title: "Management Workspace",
+    description: "For the proprietor, principal, vice principal and authorised administrators. This preview prepares the intended management modules and least-privilege role structure.",
     services: [
-      { title: "Attendance management", description: "The existing attendance workspace supports authorised staff and management attendance work.", status: "available", href: "https://wts-attendance-system.vercel.app" },
-      { title: "My staff profile", description: "Authorised staff can use the existing self-service profile workspace assigned through the Central Registry.", status: "available", href: "https://wts-central-registry.vercel.app/staff" },
-      { title: "Class and subject access", description: "A dedicated teaching workspace is being planned for assigned classes and subjects.", status: "in-development" },
-      { title: "Score entry, student records and communication", description: "Secure score-entry, student-record and communication access will follow verified role and subject assignments.", status: "coming-soon" },
+      {
+        title: "Management Workspace preview",
+        description: "Review the planned command centre for registry, results, attendance, notifications, reports and school-platform settings.",
+        status: "preview",
+        href: "/workspace/management",
+        actionLabel: "View management preview",
+      },
+      {
+        title: "Results Administration",
+        description: "The existing Result Portal is the first specialist system to inspect and connect through a protected route.",
+        status: "first-integration-target",
+        href: "/workspace/management#results-administration",
+        actionLabel: "View integration target",
+      },
+      {
+        title: "Central Registry, Attendance and Notifications",
+        description: "These specialist systems remain in development for routine school use and are not presented as daily operational pathways here.",
+        status: "in-development",
+        href: "/workspace/management#planned-modules",
+        actionLabel: "View planned modules",
+      },
     ],
   },
   {
-    id: "school-management",
-    label: "03 · School Management",
-    title: "School Management",
-    description: "Management services are protected specialist systems. They open separately and require school-approved access.",
+    id: "result-management",
+    label: "03 · Result Management",
+    title: "Result Management",
+    description: "The existing Result Portal is the only specialist system currently proven in normal school operations. It remains a separately protected system while unified access is prepared.",
     services: [
-      { title: "Central Registry", description: "Manage student, guardian, admissions and staff identity records in the existing registry.", status: "available", href: "https://wts-central-registry.vercel.app" },
-      { title: "Admissions and student records", description: "The Central Registry currently provides the protected management workspace for these records.", status: "available", href: "https://wts-central-registry.vercel.app" },
-      { title: "Staff management", description: "The Central Registry currently provides the protected management workspace for staff identity and access records.", status: "available", href: "https://wts-central-registry.vercel.app" },
-      { title: "Attendance monitoring", description: "Monitor student and staff attendance, credentials, devices and reports in the existing attendance system.", status: "available", href: "https://wts-attendance-system.vercel.app" },
-      { title: "Notification management", description: "Manage verified contacts, templates, drafts and delivery status in the existing notification system.", status: "available", href: "https://wts-notification-system.vercel.app" },
-      { title: "Results administration and system reports", description: "The future unified management pathway will be added only after its access and data boundaries are confirmed.", status: "in-development" },
+      {
+        title: "Existing Result Portal",
+        description: "Available to authorised users through its current protected entry route. Its exact future unified entry route is being confirmed before wider workspace integration.",
+        status: "available",
+        href: "https://wts-result-system.vercel.app/",
+        actionLabel: "Open Result Portal",
+        external: true,
+      },
+      {
+        title: "Unified results access",
+        description: "A one-login route will follow only after role mapping, privacy controls and a secure integration contract are approved.",
+        status: "planned",
+        href: "/workspace/management#results-administration",
+        actionLabel: "View planned approach",
+      },
     ],
   },
 ];
@@ -59,5 +104,7 @@ export const portalGroups: PortalGroup[] = [
 export const portalStatusLabels: Record<PortalServiceStatus, string> = {
   available: "Available",
   "in-development": "In development",
-  "coming-soon": "Coming soon",
+  planned: "Planned",
+  preview: "Preview only",
+  "first-integration-target": "First integration target",
 };

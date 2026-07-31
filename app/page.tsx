@@ -81,8 +81,8 @@ export default function Home() {
       </section>
 
       <section className="portal section" id="portal-gateway">
-        <div><p className="eyebrow">THE WTS DIGITAL PLATFORM</p><h2>School services, brought together.</h2><p>Our unified portal is being developed to connect results, attendance, records and school communication through one secure doorway.</p></div>
-        <div className="portalPreview"><span>Portal gateway</span><div><b>Parents &amp; Students</b><b>Teachers &amp; Staff</b><b>School Management</b></div><Link className="portalCta" href="/portal">Explore the portal gateway <span aria-hidden="true">→</span></Link></div>
+        <div><p className="eyebrow">THE WTS DIGITAL PLATFORM</p><h2>School services, brought together.</h2><p>Our first portal rollout is being prepared for staff and management, beginning with protected Result Management. Public information remains separate from school workspaces.</p></div>
+        <div className="portalPreview"><span>Portal gateway</span><div><b>Staff Workspace</b><b>Management Workspace</b><b>Result Management</b></div><Link className="portalCta" href="/portal">Explore the portal gateway <span aria-hidden="true">→</span></Link></div>
       </section>
     </main>
   );
