@@ -32,7 +32,7 @@ export type NewsItem = {
     src: string;
     alt: string;
   };
-  publishedAt: string;
+  publishedAt?: string;
   eventDate?: string;
   author: string;
   status: NewsStatus;
@@ -54,7 +54,6 @@ const localNews: readonly NewsItem[] = [
       "Once an authorised publishing service is connected, approved notices can be published here with the correct title, summary, publication date, expiry date and supporting image where one is available.",
     ],
     category: "announcements",
-    publishedAt: "2026-07-31T00:00:00.000Z",
     author: "WTS Website Preview",
     status: "published",
     pinned: true,
@@ -71,7 +70,6 @@ const localNews: readonly NewsItem[] = [
       "Future event entries can include a confirmed date, venue details, approved photograph and any time-sensitive notice after review by an authorised school publisher.",
     ],
     category: "school-events",
-    publishedAt: "2026-07-30T00:00:00.000Z",
     author: "WTS Website Preview",
     status: "published",
     pinned: false,
@@ -88,7 +86,6 @@ const localNews: readonly NewsItem[] = [
       "When real academic news is approved, it can be added through the future publishing service without changing the design or public route structure.",
     ],
     category: "academic-news",
-    publishedAt: "2026-07-29T00:00:00.000Z",
     author: "WTS Website Preview",
     status: "published",
     pinned: false,
@@ -103,7 +100,12 @@ export function getNewsCategory(categoryId: NewsCategoryId) {
 
 export function isPublicNewsItem(item: NewsItem, asOf = new Date()) {
   if (item.status !== "published" || !item.showPublicly) return false;
+  if (!item.isSample && !item.publishedAt) return false;
   return !item.expiresAt || new Date(item.expiresAt).getTime() >= asOf.getTime();
+}
+
+function newsTimestamp(item: NewsItem) {
+  return item.publishedAt ? new Date(item.publishedAt).getTime() : 0;
 }
 
 export function getPublicNewsItems(asOf = new Date()) {
@@ -111,7 +113,7 @@ export function getPublicNewsItems(asOf = new Date()) {
     .filter((item) => isPublicNewsItem(item, asOf))
     .sort((first, second) => {
       if (first.pinned !== second.pinned) return Number(second.pinned) - Number(first.pinned);
-      return new Date(second.publishedAt).getTime() - new Date(first.publishedAt).getTime();
+      return newsTimestamp(second) - newsTimestamp(first);
     });
 }
 
@@ -126,12 +128,14 @@ export function getRelatedPublicNewsItems(item: NewsItem, limit = 3) {
 }
 
 /** Do not send test-only pages to search engines. Real public stories will join this automatically. */
-export function getIndexablePublicNewsItems() {
-  return getPublicNewsItems().filter((item) => !item.isSample);
+export function getIndexablePublicNewsItems(): Array<NewsItem & { publishedAt: string }> {
+  return getPublicNewsItems().filter((item): item is NewsItem & { publishedAt: string } => !item.isSample && Boolean(item.publishedAt));
 }
 
 export function formatNewsPublicationDate(item: NewsItem) {
   if (item.isSample) return "Sample publication date";
+
+  if (!item.publishedAt) return "Publication date to be confirmed";
 
   return new Intl.DateTimeFormat("en-NG", {
     day: "numeric",

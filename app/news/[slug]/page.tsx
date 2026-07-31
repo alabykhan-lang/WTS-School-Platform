@@ -36,7 +36,7 @@ export async function generateMetadata({ params }: NewsArticlePageProps): Promis
     openGraph: {
       ...pageMetadata.openGraph,
       type: "article",
-      publishedTime: item.publishedAt,
+      ...(item.publishedAt ? { publishedTime: item.publishedAt } : {}),
       authors: [item.author],
     },
     robots: item.isSample ? { index: false, follow: true } : undefined,
