@@ -1,66 +1,82 @@
 const programmes = [
-  { title: "Early Years", text: "A caring, activity-based foundation that develops confidence, language, numeracy and good character." },
-  { title: "Primary School", text: "Strong literacy, numeracy, science, creativity and citizenship skills for independent young learners." },
-  { title: "Secondary School", text: "Purposeful academic preparation, practical skills, leadership and examination readiness." },
+  { range: "Creche — Nursery 2", title: "Early Years", text: "A warm beginning built around language, play, confidence, good habits and curiosity." },
+  { range: "Primary 1 — Primary 5", title: "Primary School", text: "Strong foundations in literacy, numeracy, science, creativity and responsible citizenship." },
+  { range: "JSS 1 — SS 3", title: "Secondary School", text: "Focused academic preparation, practical learning, leadership and examination readiness." },
 ];
 
-const portalCards = [
-  ["Students & Parents", "Results, attendance, notices and student records."],
-  ["Teachers & Staff", "Classes, attendance, score entry and internal resources."],
-  ["School Management", "Registry, reports, approvals and administration."],
+const strengths = [
+  ["01", "Purposeful teaching", "Clear lessons, regular assessment and close attention to every learner’s progress."],
+  ["02", "Discipline with care", "Respect, responsibility and good conduct are developed as part of everyday school life."],
+  ["03", "One complete journey", "A trusted school community from Creche through Senior Secondary School."],
+  ["04", "Growing opportunity", "Learning, creativity, leadership and memorable experiences beyond the classroom."],
 ];
 
 export default function Home() {
   return (
     <main>
       <header className="siteHeader">
-        <a className="brand" href="#home" aria-label="Way to Success home">
-          <span className="brandMark">WTS</span>
-          <span><strong>Way to Success</strong><small>Standard Schools</small></span>
+        <a className="brand" href="#home" aria-label="Way to Success Standard Schools home">
+          <img src="/images/logo.webp" alt="Way to Success Standard Schools logo" />
+          <span><strong>Way to Success</strong><small>Standard Schools · Ejigbo</small></span>
         </a>
-        <nav aria-label="Main navigation">
-          <a href="#about">About</a><a href="#academics">Academics</a><a href="#admissions">Admissions</a>
-          <a href="#news">News</a><a href="#contact">Contact</a>
-        </nav>
-        <a className="headerButton" href="#portal">Portal Login</a>
+        <nav aria-label="Main navigation"><a href="#about">Our School</a><a href="#academics">Academics</a><a href="#life">School Life</a><a href="#admissions">Admissions</a><a href="#contact">Contact</a></nav>
+        <a className="headerButton" href="#portal">Portal</a>
       </header>
 
       <section className="hero" id="home">
+        <img className="heroImage" src="/images/graduation.webp" alt="Graduating students of Way to Success Standard Schools" />
+        <div className="heroShade" />
         <div className="heroContent">
-          <p className="eyebrow">WAY TO SUCCESS STANDARD SCHOOLS · EJIGBO</p>
-          <h1>Raising knowledgeable, disciplined and confident future leaders.</h1>
-          <p className="heroText">We provide purposeful education in a safe and supportive environment where every learner is encouraged to grow in knowledge, character and responsibility.</p>
-          <div className="heroActions"><a className="primaryButton" href="#admissions">Begin Admission</a><a className="secondaryButton" href="#about">Discover Our School</a></div>
-          <div className="heroTrust"><span>✓ Quality teaching</span><span>✓ Strong discipline</span><span>✓ Complete child development</span></div>
+          <p className="eyebrow light">ESTABLISHED 2017 · IFEDAPO COMMUNITY, EJIGBO</p>
+          <h1>Building leaders today.<br/><em>Shaping tomorrow.</em></h1>
+          <p>From a child’s first classroom to senior secondary graduation, we combine sound education, discipline and personal development in one growing school community.</p>
+          <div className="heroActions"><a className="primaryButton" href="#admissions">Apply for Admission</a><a className="ghostButton" href="#about">Explore Our School</a></div>
         </div>
-        <div className="heroVisual" aria-label="School highlights">
-          <div className="visualCard mainCard"><span className="miniLabel">Our Motto</span><strong>Quality Education<br/>with Discipline</strong><p>Learning today. Leading tomorrow.</p></div>
-          <div className="visualCard floatingCard"><b>Admissions</b><span>Enquiries are welcome</span></div>
-        </div>
+        <aside className="heroNote"><span>Admissions are open</span><strong>All classes</strong><a href="tel:+2347036521734">Call 0703 652 1734 →</a></aside>
       </section>
 
       <section className="intro section" id="about">
-        <div><p className="eyebrow">WELCOME TO WTS</p><h2>A school community built around learning, character and opportunity.</h2></div>
-        <div><p>Way to Success Standard Schools serves children through the formative stages of their education. Our approach combines sound academics with discipline, creativity, responsibility and personal attention.</p><a className="textLink" href="#contact">Learn more about us →</a></div>
+        <div><p className="eyebrow">WELCOME TO WTS</p><h2>A growing school with a clear purpose.</h2></div>
+        <div className="introCopy"><p>Way to Success Standard Schools is located in Ifedapo Community, off Oko-Ijado Road, Ejigbo. We serve learners from Creche through Senior Secondary School, creating a steady educational path built on knowledge, discipline, confidence and responsibility.</p><div className="signature"><span>Our guiding standard</span><strong>Quality Education with Discipline</strong></div></div>
       </section>
 
-      <section className="programmes section" id="academics">
-        <div className="sectionHeading"><p className="eyebrow">OUR ACADEMIC JOURNEY</p><h2>Learning designed for every important stage.</h2><p>Clear progression from early learning to confident secondary-school achievement.</p></div>
-        <div className="cardGrid">{programmes.map((item, index) => <article className="programmeCard" key={item.title}><span>0{index + 1}</span><h3>{item.title}</h3><p>{item.text}</p><a href="#contact">Explore programme →</a></article>)}</div>
+      <section className="storyBand">
+        <div className="storyVisual"><span>Creche to SS 3</span><strong>A complete learning journey</strong></div>
+        <div className="storyText"><span className="year">2017</span><p className="eyebrow light">OUR JOURNEY</p><h2>From humble beginnings to a wider horizon.</h2><p>The school has grown with its learners, adding classes, strengthening its academic community and celebrating its first graduating set. That journey continues with every child entrusted to us.</p><a href="#life">Discover life at WTS →</a></div>
       </section>
 
-      <section className="why section">
-        <div className="whyPanel"><p className="eyebrow">WHY FAMILIES CHOOSE US</p><h2>More than classroom instruction.</h2><p>Our learners are supported to become responsible, curious and capable young people.</p></div>
-        <div className="featureGrid"><article><b>01</b><h3>Committed Teachers</h3><p>Teachers who guide, assess and support each learner’s progress.</p></article><article><b>02</b><h3>Character & Discipline</h3><p>Respect, responsibility and good conduct are part of daily school life.</p></article><article><b>03</b><h3>Practical Learning</h3><p>Activities that connect classroom knowledge with real-life understanding.</p></article><article><b>04</b><h3>Parent Partnership</h3><p>Clear communication and shared responsibility for every child’s development.</p></article></div>
+      <section className="section academics" id="academics">
+        <div className="sectionHeading"><p className="eyebrow">THE LEARNING JOURNEY</p><h2>Every stage matters.</h2><p>Our sections give learners the right support, challenge and preparation at each age.</p></div>
+        <div className="programmeGrid">{programmes.map((item, index) => <article className="programmeCard" key={item.title}><span className="cardIndex">0{index + 1}</span><p className="cardLabel">{item.range}</p><h3>{item.title}</h3><p>{item.text}</p><a href="#contact">Enquire about this section →</a></article>)}</div>
       </section>
 
-      <section className="admission section" id="admissions"><div><p className="eyebrow">ADMISSIONS</p><h2>Give your child a strong start and a clear path forward.</h2><p>Speak with the school about available classes, admission requirements and the next entrance process.</p></div><div className="admissionActions"><a className="lightButton" href="#contact">Make an Enquiry</a><span>Nursery · Primary · Secondary</span></div></section>
+      <section className="strengths section">
+        <div className="strengthLead"><p className="eyebrow light">WHY WTS</p><h2>Serious learning. Strong character. Real belonging.</h2><p>Parents should not have to choose between academic progress and good upbringing. We work intentionally towards both.</p></div>
+        <div className="strengthGrid">{strengths.map(([no,title,text]) => <article key={title}><span>{no}</span><h3>{title}</h3><p>{text}</p></article>)}</div>
+      </section>
 
-      <section className="portal section" id="portal"><div className="sectionHeading"><p className="eyebrow">WTS DIGITAL PORTAL</p><h2>One secure doorway to school services.</h2><p>The portal will gradually bring student records, results, attendance and communication together in one place.</p></div><div className="portalGrid">{portalCards.map(([title,text]) => <article key={title}><div className="portalIcon">→</div><h3>{title}</h3><p>{text}</p><button type="button" disabled>Coming soon</button></article>)}</div></section>
+      <section className="life section" id="life">
+        <div className="sectionHeading left"><p className="eyebrow">LIFE AT WTS</p><h2>Real people. Real learning. Real milestones.</h2></div>
+        <div className="lifeGrid"><article><span>01</span><h3>Learning together</h3><p>A close school community where learners are known, guided and encouraged.</p></article><article><span>02</span><h3>Growing with purpose</h3><p>Classroom work, discipline, creativity and leadership form one complete experience.</p></article><article><span>03</span><h3>Celebrating milestones</h3><p>From first lessons to graduation, every important stage is recognised.</p></article></div>
+      </section>
 
-      <section className="news section" id="news"><div className="sectionHeading left"><p className="eyebrow">LATEST FROM THE SCHOOL</p><h2>News, notices and memorable moments.</h2></div><div className="newsGrid"><article className="featuredNews"><div><span>School Update</span><h3>A new digital chapter for the WTS community</h3><p>Our unified website and school portal are being developed to improve access to information and services.</p></div></article><article className="notice"><span>Notice Board</span><h3>Important announcements will appear here.</h3><p>Parents and members of the school community will be able to find verified updates directly from the school.</p><a href="#contact">Contact the school →</a></article></div></section>
+      <section className="admission section" id="admissions">
+        <div><p className="eyebrow light">ADMISSIONS</p><h2>There is a place for your child at WTS.</h2><p>Admissions are currently open into all classes: Creche, KG 1–2, Nursery 1–2, Primary 1–5, JSS 1–3 and SS 1–3.</p><div className="classList"><span>Early Years</span><span>Primary</span><span>Junior Secondary</span><span>Senior Secondary</span></div></div>
+        <div className="admissionCard"><span>Start an enquiry</span><a href="tel:+2347036521734">0703 652 1734</a><a href="mailto:sambour12@gmail.com">sambour12@gmail.com</a><p>Visit the school at Ifedapo Community, off Oko-Ijado Road, Ejigbo.</p></div>
+      </section>
 
-      <footer id="contact"><div className="footerBrand"><span className="brandMark">WTS</span><div><strong>Way to Success Standard Schools</strong><p>Quality Education with Discipline</p></div></div><div><h4>Visit Us</h4><p>Ejigbo, Osun State, Nigeria</p></div><div><h4>Quick Links</h4><a href="#about">About</a><a href="#academics">Academics</a><a href="#admissions">Admissions</a></div><div><h4>Contact</h4><p>Official phone number and email will be added after confirmation.</p></div><div className="copyright">© {new Date().getFullYear()} Way to Success Standard Schools. All rights reserved.</div></footer>
+      <section className="portal section" id="portal">
+        <div><p className="eyebrow">THE WTS DIGITAL PLATFORM</p><h2>School services, brought together.</h2><p>Our unified portal is being developed to connect results, attendance, records and school communication through one secure doorway.</p></div>
+        <div className="portalPreview"><span>Coming in phases</span><div><b>Parents & Students</b><b>Teachers & Staff</b><b>School Management</b></div><button disabled>Portal access coming soon</button></div>
+      </section>
+
+      <footer id="contact">
+        <div className="footerMain"><img src="/images/logo.webp" alt="WTS logo" /><div><strong>Way to Success Standard Schools</strong><p>Quality Education with Discipline</p></div></div>
+        <div><h4>Visit</h4><p>Ifedapo Community,<br/>off Oko-Ijado Road,<br/>Ejigbo, Osun State, Nigeria.</p></div>
+        <div><h4>Contact</h4><a href="tel:+2347036521734">0703 652 1734</a><a href="mailto:sambour12@gmail.com">sambour12@gmail.com</a></div>
+        <div><h4>Explore</h4><a href="#about">Our School</a><a href="#academics">Academics</a><a href="#admissions">Admissions</a><a href="#portal">Portal</a></div>
+        <div className="copyright">© {new Date().getFullYear()} Way to Success Standard Schools. All rights reserved.</div>
+      </footer>
     </main>
   );
 }
