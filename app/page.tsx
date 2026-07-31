@@ -1,6 +1,17 @@
 import Image from "next/image";
 import Link from "next/link";
+import type { Metadata } from "next";
+import { createPageMetadata } from "./_components/page-metadata";
 import { programmes, school, values } from "./_components/site-data";
+
+export const metadata: Metadata = createPageMetadata({
+  title: "Home",
+  description: "Way to Success Standard Schools in Ejigbo, Osun State provides quality education with discipline from Creche through Senior Secondary School.",
+  path: "/",
+  image: "/images/graduation.webp",
+  imageAlt: "Way to Success Standard Schools graduating class at their valedictory celebration",
+  keywords: ["Way to Success Standard Schools Ejigbo", "school in Osun State", "Creche to SS 3 school"],
+});
 
 export default function Home() {
   return (

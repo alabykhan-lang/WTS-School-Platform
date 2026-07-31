@@ -1,9 +1,17 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import { PageBanner } from "../_components/PageBanner";
+import { createPageMetadata } from "../_components/page-metadata";
 import { school } from "../_components/site-data";
 
-export const metadata: Metadata = { title: "Contact Us" };
+export const metadata: Metadata = createPageMetadata({
+  title: "Contact Us",
+  description: "Contact Way to Success Standard Schools in Ejigbo, Osun State by phone, WhatsApp, email or a visit to the school.",
+  path: "/contact",
+  image: "/images/campus1.webp",
+  imageAlt: "Way to Success Standard Schools campus in Ifedapo Community, Ejigbo",
+  keywords: ["contact Way to Success Standard Schools", "school phone number Ejigbo", "school address Ejigbo"],
+});
 
 export default function ContactPage() {
   return (

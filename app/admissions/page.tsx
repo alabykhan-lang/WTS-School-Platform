@@ -1,9 +1,17 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { PageBanner } from "../_components/PageBanner";
+import { createPageMetadata } from "../_components/page-metadata";
 import { school } from "../_components/site-data";
 
-export const metadata: Metadata = { title: "Admissions Information" };
+export const metadata: Metadata = createPageMetadata({
+  title: "Admissions Information",
+  description: "Find admissions information for Way to Success Standard Schools in Ejigbo. Enquiries are handled directly by phone, WhatsApp, email or school visit.",
+  path: "/admissions",
+  image: "/images/campus2.webp",
+  imageAlt: "A view across the Way to Success Standard Schools campus",
+  keywords: ["school admissions Ejigbo", "admission information", "school enrolment Ejigbo"],
+});
 
 const stages = ["Creche", "KG 1–2", "Nursery 1–2", "Primary 1–5", "JSS 1–3", "SS 1–3"];
 

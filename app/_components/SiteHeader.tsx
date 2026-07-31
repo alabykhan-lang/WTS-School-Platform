@@ -20,6 +20,15 @@ export function SiteHeader() {
 
   useEffect(() => setOpen(false), [pathname]);
 
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, []);
+
   return (
     <header className="siteHeader">
       <Link className="brand" href="/" aria-label="Way to Success Standard Schools home">
@@ -32,7 +41,7 @@ export function SiteHeader() {
       <div className="headerActions">
         <Link className="headerButton" href="/#portal-gateway">Portal <span>Coming soon</span></Link>
         <button className="menuButton" type="button" aria-label={open ? "Close navigation menu" : "Open navigation menu"} aria-expanded={open} aria-controls="mobile-navigation" onClick={() => setOpen((current) => !current)}>
-          <i /><i /><i />
+          <i aria-hidden="true" /><i aria-hidden="true" /><i aria-hidden="true" />
         </button>
       </div>
       <div id="mobile-navigation" className={`mobileNav ${open ? "isOpen" : ""}`} aria-hidden={!open}>

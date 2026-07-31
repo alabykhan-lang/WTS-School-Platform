@@ -2,8 +2,16 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { PageBanner } from "../_components/PageBanner";
+import { createPageMetadata } from "../_components/page-metadata";
 
-export const metadata: Metadata = { title: "School Life" };
+export const metadata: Metadata = createPageMetadata({
+  title: "School Life",
+  description: "Discover student life, character development, shared experiences and milestones at Way to Success Standard Schools.",
+  path: "/school-life",
+  image: "/images/students.webp",
+  imageAlt: "Way to Success Standard Schools students together in their school uniforms",
+  keywords: ["student life Ejigbo", "school community", "character development school"],
+});
 
 const lifePoints = [
   ["A close community", "Learners are known, guided and encouraged as they find their place in school."],

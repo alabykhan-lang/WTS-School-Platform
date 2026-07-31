@@ -2,6 +2,7 @@ export const school = {
   name: "Way to Success Standard Schools",
   shortName: "Way to Success",
   motto: "Quality Education with Discipline",
+  url: "https://wts-school-platform.vercel.app",
   phone: "0703 652 1734",
   phoneHref: "tel:+2347036521734",
   whatsappHref: "https://wa.me/2347036521734?text=Hello%20Way%20to%20Success%20Standard%20Schools%2C%20I%20would%20like%20to%20make%20an%20enquiry.",
@@ -10,6 +11,17 @@ export const school = {
   emailHref: "mailto:sambour12@gmail.com",
   address: "Ifedapo Community, off Oko-Ijado Road, Ejigbo, Osun State, Nigeria.",
 };
+
+export const siteKeywords = [
+  "Way to Success Standard Schools",
+  "school in Ejigbo",
+  "schools in Ejigbo Osun State",
+  "private school in Ejigbo",
+  "primary school in Ejigbo",
+  "secondary school in Ejigbo",
+  "quality education with discipline",
+  "school admissions Ejigbo",
+];
 
 export const programmes = [
   {
@@ -44,6 +56,8 @@ export const galleryImages = [
     alt: "Way to Success Standard Schools graduating class at their valedictory celebration",
     title: "Celebrating a milestone",
     text: "A proud moment for the school community and its graduating learners.",
+    category: "graduation",
+    categoryLabel: "Graduation",
     className: "galleryFeature",
   },
   {
@@ -51,29 +65,58 @@ export const galleryImages = [
     alt: "Way to Success Standard Schools campus in Ifedapo Community, Ejigbo",
     title: "Our school community",
     text: "A welcoming place for learning and growth.",
+    category: "daily-school-life",
+    categoryLabel: "Daily School Life",
+    className: undefined,
   },
   {
     src: "/images/campus2.webp",
     alt: "A view across the Way to Success Standard Schools campus",
     title: "A growing journey",
     text: "From humble beginnings to a wider horizon.",
+    category: "daily-school-life",
+    categoryLabel: "Daily School Life",
+    className: undefined,
   },
   {
     src: "/images/classroom.webp",
     alt: "Pupils learning together in a Way to Success Standard Schools classroom",
     title: "Learning with purpose",
     text: "Guided, active and personal classroom learning.",
+    category: "academic-activities",
+    categoryLabel: "Academic Activities",
+    className: undefined,
   },
   {
     src: "/images/students.webp",
     alt: "Way to Success Standard Schools students together in their school uniforms",
     title: "Learning together",
     text: "A community where learners are known and encouraged.",
+    category: "daily-school-life",
+    categoryLabel: "Daily School Life",
+    className: undefined,
   },
   {
     src: "/images/early.webp",
     alt: "Early Years pupils and teachers at Way to Success Standard Schools",
     title: "A confident beginning",
     text: "Early learning with care, joy and curiosity.",
+    category: "academic-activities",
+    categoryLabel: "Academic Activities",
+    className: undefined,
   },
-];
+] as const;
+
+export const galleryCategories = [
+  { id: "all", label: "All" },
+  { id: "competitions", label: "Competitions" },
+  { id: "daily-school-life", label: "Daily School Life" },
+  { id: "academic-activities", label: "Academic Activities" },
+  { id: "events", label: "Events" },
+  { id: "excursions", label: "Excursions" },
+  { id: "sports", label: "Sports" },
+  { id: "awards-achievements", label: "Awards and Achievements" },
+  { id: "graduation", label: "Graduation" },
+] as const;
+
+export type GalleryCategoryId = (typeof galleryCategories)[number]["id"];

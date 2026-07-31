@@ -2,9 +2,17 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { PageBanner } from "../_components/PageBanner";
+import { createPageMetadata } from "../_components/page-metadata";
 import { school, values } from "../_components/site-data";
 
-export const metadata: Metadata = { title: "About Us" };
+export const metadata: Metadata = createPageMetadata({
+  title: "About Us",
+  description: "Learn about the history, vision, mission, values and motto of Way to Success Standard Schools in Ejigbo, Osun State.",
+  path: "/about",
+  image: "/images/campus1.webp",
+  imageAlt: "Way to Success Standard Schools campus in Ifedapo Community, Ejigbo",
+  keywords: ["about Way to Success Standard Schools", "school vision Ejigbo", "school values"],
+});
 
 export default function AboutPage() {
   return (

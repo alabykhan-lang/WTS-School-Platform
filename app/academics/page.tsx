@@ -2,9 +2,17 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { PageBanner } from "../_components/PageBanner";
+import { createPageMetadata } from "../_components/page-metadata";
 import { programmes } from "../_components/site-data";
 
-export const metadata: Metadata = { title: "Academics" };
+export const metadata: Metadata = createPageMetadata({
+  title: "Academics",
+  description: "Explore the Early Years, Primary and Secondary academic stages at Way to Success Standard Schools in Ejigbo.",
+  path: "/academics",
+  image: "/images/classroom.webp",
+  imageAlt: "Pupils learning together in a Way to Success Standard Schools classroom",
+  keywords: ["primary school Ejigbo", "secondary school Ejigbo", "Early Years education Ejigbo"],
+});
 
 const learningCommitments = [
   ["Clear foundations", "Children build essential literacy, numeracy, study habits and confidence from the earliest stages."],
