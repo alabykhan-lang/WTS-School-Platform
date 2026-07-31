@@ -1,1 +1,0 @@
-Official WTS website image assets.
