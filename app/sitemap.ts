@@ -2,7 +2,7 @@ import type { MetadataRoute } from "next";
 import { school } from "./_components/site-data";
 import { getIndexablePublicNewsItems } from "../data/news";
 
-const pages = ["", "/about", "/academics", "/school-life", "/gallery", "/news", "/staff", "/admissions", "/contact"];
+const pages = ["", "/about", "/academics", "/school-life", "/gallery", "/news", "/staff", "/portal", "/admissions", "/contact"];
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const publicPages: MetadataRoute.Sitemap = pages.map((path) => ({

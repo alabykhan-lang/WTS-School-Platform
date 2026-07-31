@@ -82,7 +82,7 @@ export default function Home() {
 
       <section className="portal section" id="portal-gateway">
         <div><p className="eyebrow">THE WTS DIGITAL PLATFORM</p><h2>School services, brought together.</h2><p>Our unified portal is being developed to connect results, attendance, records and school communication through one secure doorway.</p></div>
-        <div className="portalPreview"><span>Future gateway</span><div><b>Parents &amp; Students</b><b>Teachers &amp; Staff</b><b>School Management</b></div><button disabled>Portal access coming soon</button></div>
+        <div className="portalPreview"><span>Portal gateway</span><div><b>Parents &amp; Students</b><b>Teachers &amp; Staff</b><b>School Management</b></div><Link className="portalCta" href="/portal">Explore the portal gateway <span aria-hidden="true">→</span></Link></div>
       </section>
     </main>
   );
