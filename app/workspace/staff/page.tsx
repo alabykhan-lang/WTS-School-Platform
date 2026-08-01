@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
-import { WorkspaceClient } from "../../_components/PortalWorkspaceClient";
+import { redirect } from "next/navigation";
 import { createPageMetadata } from "../../_components/page-metadata";
 
 export const metadata: Metadata = {
   ...createPageMetadata({
-    title: "Staff Workspace",
-    description: "Authorised WTS staff workspace.",
+    title: "WTS Workspace",
+    description: "The previous staff workspace route now redirects to WTS Workspace.",
     path: "/workspace/staff",
     image: "/images/classroom.webp",
     imageAlt: "A classroom at Way to Success Standard Schools",
@@ -14,5 +14,5 @@ export const metadata: Metadata = {
 };
 
 export default function StaffWorkspacePage() {
-  return <WorkspaceClient requestedView="staff" />;
+  redirect("/workspace");
 }

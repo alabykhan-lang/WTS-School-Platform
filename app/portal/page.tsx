@@ -4,12 +4,12 @@ import { portalGroups, portalStatusLabels, type PortalServiceStatus } from "../.
 import { createPageMetadata } from "../_components/page-metadata";
 
 export const metadata: Metadata = createPageMetadata({
-  title: "Staff and Management Portal",
-  description: "Explore the future WTS School Platform workspace for authorised staff, school management and result administration.",
+  title: "WTS Staff and Management Portal",
+  description: "One permission-driven WTS Workspace for authorised staff and school management.",
   path: "/portal",
   image: "/images/campus2.webp",
   imageAlt: "A view across the Way to Success Standard Schools campus",
-  keywords: ["WTS School Platform", "staff workspace", "school management portal", "result management"],
+  keywords: ["WTS School Platform", "WTS Workspace", "school management portal", "results"],
 });
 
 function PortalStatus({ status }: { status: PortalServiceStatus }) {
@@ -22,19 +22,19 @@ export default function PortalPage() {
       <section className="portalHero">
         <div className="portalHeroContent">
           <p className="eyebrow light">THE WTS SCHOOL PLATFORM</p>
-          <h1>One trusted gateway for authorised school work.</h1>
-          <p>The first rollout is being shaped for staff and school management, with Result Management as the first specialist system to connect. Public school information stays separate from protected workspaces.</p>
-          <div className="heroActions"><Link className="primaryButton" href="/portal/sign-in">Staff and management sign in</Link><a className="ghostButton" href="#portal-services">Explore workspaces</a></div>
+          <h1>WTS Staff and Management Portal</h1>
+          <p>One authenticated destination for authorised school work. After sign-in, the same WTS Workspace adjusts automatically according to the permissions assigned by management.</p>
+          <div className="heroActions"><Link className="primaryButton" href="/portal/sign-in">Sign in to WTS Workspace</Link><a className="ghostButton" href="#portal-services">See module status</a></div>
         </div>
         <aside className="portalHeroPanel" aria-label="Portal access information">
           <div><span>Public website</span><strong>School information and enquiries</strong><p>Open to everyone. No school account is needed.</p></div>
-          <div><span>Protected workspaces</span><strong>Staff and management only</strong><p>Existing Central Registry identities are verified before an authorised workspace is shown.</p></div>
+          <div><span>Protected WTS Workspace</span><strong>One destination, grant-driven modules</strong><p>Existing Central Registry identities are verified before only the modules authorised for that staff member are shown.</p></div>
         </aside>
       </section>
 
       <section className="section portalIntroduction">
         <div><p className="eyebrow">A SAFER FIRST ROLLOUT</p><h2>One verified identity. Only authorised school work.</h2></div>
-        <div><p>Way to Success Standard Schools now verifies active Central Registry staff identities before showing the Staff Workspace. Modules, actions, classes and subjects remain assigned individually by management.</p><p>Parents and students are not part of this first portal rollout. Their future services remain deferred until management approves a separate, secure access design.</p></div>
+        <div><p>Way to Success Standard Schools verifies the active Central Registry staff identity before showing WTS Workspace. Modules, actions, classes and subjects remain assigned individually by management.</p><p>There is no staff-versus-management choice. A user with management permissions sees the corresponding protected modules; a user without those permissions does not.</p></div>
       </section>
 
       <section className="portalBoundaryBand" aria-label="Public and protected service boundary">
@@ -43,7 +43,7 @@ export default function PortalPage() {
       </section>
 
       <section className="portalServices section" id="portal-services" aria-labelledby="portal-services-heading">
-        <div className="portalServicesHeading"><div><p className="eyebrow">WORKSPACE DIRECTORY</p><h2 id="portal-services-heading">Choose the pathway that fits your responsibility.</h2></div><p><strong>Available</strong> applies only to the current Result Portal for authorised users. Every other specialist service remains a clearly labelled preview, planned module or development item.</p></div>
+        <div className="portalServicesHeading"><div><p className="eyebrow">WTS WORKSPACE DIRECTORY</p><h2 id="portal-services-heading">One entrance. The right modules for each grant.</h2></div><p><strong>Available</strong> describes a real connected service. Every other item remains clearly labelled as under development or planned; this page never creates a permission.</p></div>
         <div className="portalGroupGrid">
           {portalGroups.map((group) => <section className="portalGroup" key={group.id} aria-labelledby={`${group.id}-heading`}>
             <header><p>{group.label}</p><h3 id={`${group.id}-heading`}>{group.title}</h3><span>{group.description}</span></header>
@@ -57,7 +57,7 @@ export default function PortalPage() {
         </div>
       </section>
 
-      <section className="portalSecurityBand"><div><p className="eyebrow light">SECURITY AND PRIVACY</p><h2>Private school work deserves a protected route.</h2></div><ul><li>Credentials are collected only on the dedicated protected sign-in route, never on this public gateway.</li><li>Every workspace read checks active employment, account status and explicit Central Registry access again.</li><li>The existing Result Portal remains a separate protected system while its older data-access model is replaced.</li></ul></section>
+      <section className="portalSecurityBand"><div><p className="eyebrow light">SECURITY AND PRIVACY</p><h2>Private school work deserves a protected route.</h2></div><ul><li>Credentials are collected only on the dedicated protected sign-in route, never on this public gateway.</li><li>Every workspace read checks active employment, account status and explicit Central Registry access again.</li><li>Direct module routes and protected actions must repeat the real session and permission checks.</li><li>The existing Result Portal remains separately protected while its older session model is replaced.</li></ul></section>
 
       <section className="section portalReturnBand"><div><p className="eyebrow">NEED SCHOOL INFORMATION?</p><h2>Return to the public school website.</h2><p>Explore admissions, academics, school life, news and contact information without entering any private details.</p></div><Link className="primaryButton" href="/">Visit Way to Success Standard Schools</Link></section>
     </main>

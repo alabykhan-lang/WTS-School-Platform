@@ -4,8 +4,8 @@ import { createPageMetadata } from "../_components/page-metadata";
 
 export const metadata: Metadata = {
   ...createPageMetadata({
-    title: "Authorised Staff Workspace",
-    description: "Authorised WTS Staff and Management Workspace.",
+    title: "WTS Workspace",
+    description: "One permission-driven workspace for authorised WTS staff and management.",
     path: "/workspace",
     image: "/images/campus2.webp",
     imageAlt: "A view across the Way to Success Standard Schools campus",
@@ -14,5 +14,5 @@ export const metadata: Metadata = {
 };
 
 export default function WorkspacePage() {
-  return <WorkspaceClient requestedView="overview" />;
+  return <WorkspaceClient />;
 }
