@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
-import { ManagementWorkspacePreview } from "../../_components/WorkspacePreview";
+import { WorkspaceClient } from "../../_components/PortalWorkspaceClient";
 import { createPageMetadata } from "../../_components/page-metadata";
 
 export const metadata: Metadata = {
   ...createPageMetadata({
-    title: "Management Workspace Preview",
-    description: "Preview the future WTS Management Workspace without authentication or live school data.",
+    title: "Management Workspace",
+    description: "Authorised WTS school management workspace.",
     path: "/workspace/management",
     image: "/images/campus1.webp",
     imageAlt: "Way to Success Standard Schools campus",
@@ -14,5 +14,5 @@ export const metadata: Metadata = {
 };
 
 export default function ManagementWorkspacePage() {
-  return <ManagementWorkspacePreview />;
+  return <WorkspaceClient requestedView="management" />;
 }

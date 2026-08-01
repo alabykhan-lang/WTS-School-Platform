@@ -24,17 +24,17 @@ export default function PortalPage() {
           <p className="eyebrow light">THE WTS SCHOOL PLATFORM</p>
           <h1>One trusted gateway for authorised school work.</h1>
           <p>The first rollout is being shaped for staff and school management, with Result Management as the first specialist system to connect. Public school information stays separate from protected workspaces.</p>
-          <div className="heroActions"><Link className="primaryButton" href="/">Back to main website</Link><a className="ghostButton" href="#portal-services">Explore workspaces</a></div>
+          <div className="heroActions"><Link className="primaryButton" href="/portal/sign-in">Staff and management sign in</Link><a className="ghostButton" href="#portal-services">Explore workspaces</a></div>
         </div>
         <aside className="portalHeroPanel" aria-label="Portal access information">
           <div><span>Public website</span><strong>School information and enquiries</strong><p>Open to everyone. No school account is needed.</p></div>
-          <div><span>Protected workspaces</span><strong>Staff and management only</strong><p>Authentication and live data are not connected on this preview gateway.</p></div>
+          <div><span>Protected workspaces</span><strong>Staff and management only</strong><p>Existing Central Registry identities are verified before an authorised workspace is shown.</p></div>
         </aside>
       </section>
 
       <section className="section portalIntroduction">
-        <div><p className="eyebrow">A SAFER FIRST ROLLOUT</p><h2>Prepare the right workspaces before connecting records.</h2></div>
-        <div><p>Way to Success Standard Schools is preparing one role-based digital workspace for authorised employees and management. This public page does not collect passwords, staff details or private school records.</p><p>Parents and students are not part of this first portal rollout. Their future services remain deferred until management approves a separate, secure access design.</p></div>
+        <div><p className="eyebrow">A SAFER FIRST ROLLOUT</p><h2>One verified identity. Only authorised school work.</h2></div>
+        <div><p>Way to Success Standard Schools now verifies active Central Registry staff identities before showing the Staff Workspace. Modules, actions, classes and subjects remain assigned individually by management.</p><p>Parents and students are not part of this first portal rollout. Their future services remain deferred until management approves a separate, secure access design.</p></div>
       </section>
 
       <section className="portalBoundaryBand" aria-label="Public and protected service boundary">
@@ -57,7 +57,7 @@ export default function PortalPage() {
         </div>
       </section>
 
-      <section className="portalSecurityBand"><div><p className="eyebrow light">SECURITY AND PRIVACY</p><h2>Private school work deserves a protected route.</h2></div><ul><li>This public gateway never asks for a password, staff number or other credential.</li><li>The Staff and Management routes are demonstration shells; they do not load live records, statistics or user identities.</li><li>Future access will identify the user once, then show only the modules authorised for that verified role.</li></ul></section>
+      <section className="portalSecurityBand"><div><p className="eyebrow light">SECURITY AND PRIVACY</p><h2>Private school work deserves a protected route.</h2></div><ul><li>Credentials are collected only on the dedicated protected sign-in route, never on this public gateway.</li><li>Every workspace read checks active employment, account status and explicit Central Registry access again.</li><li>The existing Result Portal remains a separate protected system while its older data-access model is replaced.</li></ul></section>
 
       <section className="section portalReturnBand"><div><p className="eyebrow">NEED SCHOOL INFORMATION?</p><h2>Return to the public school website.</h2><p>Explore admissions, academics, school life, news and contact information without entering any private details.</p></div><Link className="primaryButton" href="/">Visit Way to Success Standard Schools</Link></section>
     </main>

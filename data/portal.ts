@@ -22,14 +22,14 @@ export const portalGroups: PortalGroup[] = [
     id: "staff-workspace",
     label: "01 · Staff Workspace",
     title: "Staff Workspace",
-    description: "For teachers and authorised school employees. The preview shows the intended role-aware workspace without requesting credentials or displaying live school records.",
+    description: "For teachers and authorised school employees. Existing Central Registry identities are checked before only their authorised workspace modules are shown.",
     services: [
       {
-        title: "Staff Workspace preview",
-        description: "Explore the planned first-login experience for classes, subjects, score-entry access, responsibilities and school communication.",
-        status: "preview",
-        href: "/workspace/staff",
-        actionLabel: "View staff preview",
+        title: "Staff Workspace",
+        description: "Sign in with an existing authorised staff identity to view your assigned classes, subjects and available work modules.",
+        status: "available",
+        href: "/portal/sign-in",
+        actionLabel: "Sign in to workspace",
       },
       {
         title: "Attendance module",
@@ -51,14 +51,14 @@ export const portalGroups: PortalGroup[] = [
     id: "management-workspace",
     label: "02 · Management Workspace",
     title: "Management Workspace",
-    description: "For the proprietor, principal, vice principal and authorised administrators. This preview prepares the intended management modules and least-privilege role structure.",
+    description: "For the proprietor, principal, vice principal and authorised administrators. Management access is shown only after an explicit Central Registry permission check.",
     services: [
       {
-        title: "Management Workspace preview",
-        description: "Review the planned command centre for registry, results, attendance, notifications, reports and school-platform settings.",
-        status: "preview",
+        title: "Management Workspace",
+        description: "Open the authorised management workspace after staff sign-in. Modules remain limited to the permissions assigned by management.",
+        status: "available",
         href: "/workspace/management",
-        actionLabel: "View management preview",
+        actionLabel: "Open management workspace",
       },
       {
         title: "Results Administration",
@@ -84,11 +84,10 @@ export const portalGroups: PortalGroup[] = [
     services: [
       {
         title: "Existing Result Portal",
-        description: "Available to authorised users through its current protected entry route. Its exact future unified entry route is being confirmed before wider workspace integration.",
+        description: "Available from the Staff or Management Workspace after your active Central Registry identity and Results grant have been checked.",
         status: "available",
-        href: "https://wts-result-system.vercel.app/",
-        actionLabel: "Open Result Portal",
-        external: true,
+        href: "/portal/sign-in",
+        actionLabel: "Sign in to access results",
       },
       {
         title: "Unified results access",

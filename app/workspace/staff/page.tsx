@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
-import { StaffWorkspacePreview } from "../../_components/WorkspacePreview";
+import { WorkspaceClient } from "../../_components/PortalWorkspaceClient";
 import { createPageMetadata } from "../../_components/page-metadata";
 
 export const metadata: Metadata = {
   ...createPageMetadata({
-    title: "Staff Workspace Preview",
-    description: "Preview the future WTS Staff Workspace without authentication or live school data.",
+    title: "Staff Workspace",
+    description: "Authorised WTS staff workspace.",
     path: "/workspace/staff",
     image: "/images/classroom.webp",
     imageAlt: "A classroom at Way to Success Standard Schools",
@@ -14,5 +14,5 @@ export const metadata: Metadata = {
 };
 
 export default function StaffWorkspacePage() {
-  return <StaffWorkspacePreview />;
+  return <WorkspaceClient requestedView="staff" />;
 }
