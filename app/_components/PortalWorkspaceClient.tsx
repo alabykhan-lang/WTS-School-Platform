@@ -311,7 +311,7 @@ export function WorkspaceClient() {
       profile: app("staff_self_service") && hasAny(permissions, "profile.view", "profile.update", "staff_profile.view", "staff_profile.edit"),
       centralRegistry: app("central_registry") || hasAny(permissions, "central_registry.view", "central_registry.administer", "registry.read", "registry.manage"),
       results: app("results") || Boolean(workspace?.result_portal?.legacy_grant),
-      attendance: app("attendance") || hasAny(permissions, "attendance.view", "attendance.create", "attendance.edit", "attendance.review", "attendance.export"),
+      attendance: app("attendance") || hasAny(permissions, "attendance.history.view", "attendance.view", "attendance.create", "attendance.edit", "attendance.review", "attendance.export"),
       notifications: app("notifications") || hasAny(permissions, "notifications.view", "notifications.create", "notifications.edit", "notifications.approve", "notifications.publish"),
       reports: hasAny(permissions, "reports.view", "reports.export"),
       website: hasAny(permissions, "public_website_content.view", "public_website_content.create", "public_website_content.edit", "public_website_content.publish"),
