@@ -101,3 +101,25 @@ One-login Results access is not claimed complete. It requires a server-verified 
 Non-destructive verification covers login state, compulsory password change, reset state transitions, session invalidation, grant-driven module visibility, old-route redirects and preservation of Result data/report-card behavior.
 
 The critical remaining Results risk is that the legacy browser client calls the Supabase Data API directly and the core Result tables currently have RLS disabled. RLS must be enabled only as part of a dedicated protected-API compatibility release so live result entry is not interrupted. The current transition session is also not the final shared httpOnly authentication design.
+
+## Result authorization foundation update
+
+The first Result integration phase is now implemented in the separate Result
+repository. It does not implement SSO redirects. Central Result login issues a
+short-lived host-only HttpOnly session cookie, and protected Result actions are
+validated against the existing central person, staff, employment, identity
+account, Results grant and class/subject scopes. The Result user mapping is the
+existing `user_profiles.id` relationship; no duplicate identity table or user
+record is created.
+
+The protected boundary covers account administration, invite rotation, result
+publishing, score entry, traits, remarks, fees, student upsert/archive and safe
+configuration operations. Destructive Result user deletion is rejected in
+favor of Central Registry deprovisioning. Result reads and legacy-mode writes
+still require an incremental parity migration before the remaining anonymous
+Data API permissions can be revoked and RLS enabled.
+
+The next portal-level step is therefore not a redirect. It is to complete the
+Result protected-read/RLS compatibility release, prove central credentials and
+real scope assignments, and only then choose a short-lived single-use
+authorization-code handoff for the future subdomain topology.
