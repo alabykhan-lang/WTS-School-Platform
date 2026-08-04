@@ -33,7 +33,7 @@ All three use the existing Supabase project `wuftzyeajmsxdrbwaawl`. No sample pe
 | Home / Overview | Authenticated workspace read | Operational shell; no invented figures or tasks |
 | My Profile | Staff self-service grant plus profile permission | Operational identity link; profile editing remains in the protected Registry service |
 | Central Registry | `central_registry` grant or Registry permission | Under continued development in the unified flow |
-| Results | Active `results` grant or preserved legacy Results grant | Operational existing Result Portal; transitional second login remains |
+| Results | Active `results` grant | Operational existing Result Portal; protected WTS Staff Login is the current entry point |
 | Attendance | Attendance grant or action permission | In development; no fake events or figures |
 | Notifications | Notifications grant or action permission | In development; no fake messages or delivery data |
 | Reports | Reporting permission | In development until an approved reporting service is connected |
@@ -48,9 +48,9 @@ The real Central Registry credential path is:
 
 `school_people` → `staff_attendance_profiles` → `school_identity_accounts` → `school_identity_credentials`
 
-The platform signs in through `school_identity_portal_login` with `p_app_code = staff_self_service`. The server returns a short-lived opaque transition session only after it verifies the active identity, employment, account, credential and WTS grant. The browser stores that opaque session in session storage; it does not receive a password hash or service-role key.
+The platform signs in through the same-origin `/api/workspace-session` route. The server calls `school_identity_portal_login` and issues a short-lived HttpOnly cookie only after it verifies the active identity, employment, account, credential and WTS grant. The browser receives no client code, client secret, password hash or service-role key.
 
-The Central Registry credential is independent of the legacy Result Portal password. A staff member must not assume the two passwords match. First-time and reset credentials return a compulsory-password-change state; the user must choose a compliant password before continuing to `/workspace`.
+The Central Registry credential is the WTS credential used by the protected workspace and Result Portal entry points. First-time and reset credentials return a compulsory-password-change state; the user must choose a compliant password before continuing to `/workspace`.
 
 The sign-in page uses generic incorrect-credential handling for unknown public emails. It also gives clear recovery guidance for inactive accounts, temporary locks, missing workspace grants, compulsory password change and expired sessions without publishing account-existence details.
 
@@ -77,7 +77,7 @@ The bootstrap function is hard-coded to the one confirmed existing super-admin i
 The authorised owner’s safe method is:
 
 1. Set the server-only Supabase service key and a newly generated one-time `WTS_IDENTITY_BOOTSTRAP_SECRET` in the WTS School Platform production environment through the Vercel project settings. Never put either value in GitHub, source code, browser storage or documentation.
-2. Optionally set the non-secret `WTS_IDENTITY_BOOTSTRAP_ACTOR_ID` label for the audit record. From the owner’s private device, open the unlinked, no-index `/portal/recovery` route and enter the bootstrap secret and an operational reason. The same-origin server endpoint accepts only the confirmed account and returns the temporary credential once.
+2. From the owner’s private device, send a same-origin request to `/api/identity/bootstrap-recovery` with the bootstrap secret in the request header and an operational reason in the JSON body. The endpoint accepts only the confirmed account and returns the temporary credential once.
 3. Deliver or enter that credential through an approved private channel. Sign in with the existing WTS staff number or registered email, complete the compulsory password change, and verify workspace access.
 4. Remove the bootstrap environment secret immediately after successful recovery. The account metadata records issuance and completion and the database refuses a second bootstrap issuance.
 
@@ -85,41 +85,6 @@ The temporary credential is never included in this repository, deployment docume
 
 ## Result transition
 
-Results appears inside WTS Workspace only after the current Central Registry session has an active Results grant. The workspace opens the existing Result Portal in a separate protected page. It does not use an iframe and does not pass credentials in a URL.
+The Results module is shown only for an active Results grant. The workspace opens the existing Result Portal separately; it does not embed the portal or pass credentials in a URL. The Result Portal uses WTS Staff Login and its own protected server session until the later PKCE phase.
 
-The existing Result Portal still has its own legacy email/password and browser-local session. Therefore the current transitional behavior is:
-
-1. staff member signs into WTS Workspace;
-2. WTS verifies the Results grant and shows the Results module;
-3. the existing Result Portal opens separately and may request its legacy credential;
-4. its existing score entry, publication and report-card generation remain unchanged.
-
-One-login Results access is not claimed complete. It requires a server-verified shared session or a secure opaque handoff, protected Result APIs, exact action/scope checks and RLS hardening. Credentials must never be copied between systems.
-
-## Rollout and remaining risks
-
-Non-destructive verification covers login state, compulsory password change, reset state transitions, session invalidation, grant-driven module visibility, old-route redirects and preservation of Result data/report-card behavior.
-
-The critical remaining Results risk is that the legacy browser client calls the Supabase Data API directly and the core Result tables currently have RLS disabled. RLS must be enabled only as part of a dedicated protected-API compatibility release so live result entry is not interrupted. The current transition session is also not the final shared httpOnly authentication design.
-
-## Result authorization foundation update
-
-The first Result integration phase is now implemented in the separate Result
-repository. It does not implement SSO redirects. Central Result login issues a
-short-lived host-only HttpOnly session cookie, and protected Result actions are
-validated against the existing central person, staff, employment, identity
-account, Results grant and class/subject scopes. The Result user mapping is the
-existing `user_profiles.id` relationship; no duplicate identity table or user
-record is created.
-
-The protected boundary covers account administration, invite rotation, result
-publishing, score entry, traits, remarks, fees, student upsert/archive and safe
-configuration operations. Destructive Result user deletion is rejected in
-favor of Central Registry deprovisioning. Result reads and legacy-mode writes
-still require an incremental parity migration before the remaining anonymous
-Data API permissions can be revoked and RLS enabled.
-
-The next portal-level step is therefore not a redirect. It is to complete the
-Result protected-read/RLS compatibility release, prove central credentials and
-real scope assignments, and only then choose a short-lived single-use
-authorization-code handoff for the future subdomain topology.
+PKCE SSO remains gated on real-account login, revocation, assignment, end-to-end workflow and production deployment verification.

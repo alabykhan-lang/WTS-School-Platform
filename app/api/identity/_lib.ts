@@ -2,11 +2,6 @@ import { timingSafeEqual } from "node:crypto";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://wuftzyeajmsxdrbwaawl.supabase.co";
 
-export type IdentitySessionInput = {
-  client_code?: unknown;
-  client_secret?: unknown;
-};
-
 export class IdentityApiError extends Error {
   status: number;
   code: string;
@@ -37,15 +32,6 @@ export function noStoreHeaders() {
 
 export function textField(value: unknown, maxLength: number) {
   return typeof value === "string" ? value.trim().slice(0, maxLength) : "";
-}
-
-export function sessionFromBody(body: IdentitySessionInput) {
-  const clientCode = textField(body.client_code, 160);
-  const clientSecret = typeof body.client_secret === "string" ? body.client_secret : "";
-  if (!clientCode || !clientSecret || clientSecret.length > 512) {
-    throw new IdentityApiError("STAFF_SESSION_REQUIRED", 401);
-  }
-  return { clientCode, clientSecret };
 }
 
 export function isSameOrigin(request: Request) {

@@ -2,13 +2,12 @@
 
 import Link from "next/link";
 import { FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
-import { centralIdentityConfig, centralIdentitySessionStorageKey } from "../../data/central-identity";
-import { IdentityAccessPanel } from "./IdentityAccessPanel";
 
-export type StoredSession = {
-  clientCode: string;
-  clientSecret: string;
-  expiresAt: string;
+export type WorkspaceSession = {
+  ok: boolean;
+  code?: string;
+  expires_at?: string;
+  permissions?: string[];
 };
 
 type WorkspaceGrant = {
@@ -33,7 +32,7 @@ type Workspace = {
   class_assignments?: Array<{ class_key: string; display_name: string }>;
   subject_assignments?: Array<{ class_key: string; display_name: string; subject_index: number; subject_name: string }>;
   result_portal?: {
-    legacy_grant: boolean;
+    active_grant: boolean;
     can_view_entry: boolean;
     can_create_entry: boolean;
     can_edit_entry: boolean;
@@ -48,9 +47,6 @@ type Workspace = {
 type LoginResponse = {
   ok: boolean;
   code?: string;
-  client_code?: string;
-  client_secret?: string;
-  expires_at?: string;
   must_change_password?: boolean;
 };
 
@@ -74,33 +70,23 @@ function friendlyError(code?: string) {
     INVALID_LOGIN: "The staff number, official email or password was not accepted.",
     LOGIN_AND_PASSWORD_REQUIRED: "Enter your WTS staff number or official email and password.",
     ACCOUNT_NOT_ACTIVE: "This staff account is not active. Please contact authorised school management.",
-    IDENTITY_ACCOUNT_NOT_ACTIVE: "This WTS identity account is inactive. Please contact authorised school management.",
-    IDENTITY_PERSON_NOT_ACTIVE: "This staff identity is inactive. Please contact authorised school management.",
-    IDENTITY_CREDENTIAL_NOT_ACTIVE: "This WTS staff credential is suspended. Please contact authorised school management.",
-    INACTIVE_EMPLOYMENT: "This staff employment record is inactive. Please contact authorised school management.",
     ACCOUNT_TEMPORARILY_LOCKED: "This account is temporarily locked. Please contact authorised school management for recovery.",
     PORTAL_ACCESS_NOT_GRANTED: "This account does not currently have access to the WTS Workspace.",
-    PORTAL_ACCESS_SUSPENDED: "WTS Workspace access is suspended for this account. Please contact authorised school management.",
-    RESULTS_GRANT_MISSING: "This account does not have an active Results grant.",
-    RESULT_ACCESS_NOT_GRANTED: "This account does not have an active Results grant.",
     PORTAL_PERMISSION_SYNC_FAILED: "The account could not be matched to an active workspace grant. Please contact authorised school management.",
     STAFF_SESSION_NOT_ACTIVE: "Your session is no longer active. Please sign in again.",
-    SESSION_EXPIRED: "Your WTS session has expired. Please sign in again.",
-    PASSWORD_CHANGE_REQUIRED: "This credential must be activated by choosing a new password before workspace access.",
+    STAFF_SESSION_REQUIRED: "Your session is no longer active. Please sign in again.",
     INVALID_CURRENT_PASSWORD: "The current password was not accepted.",
     PASSWORD_REQUIREMENTS_NOT_MET: "Use at least 10 characters with uppercase, lowercase and a number.",
     IDENTITY_SERVICE_UNAVAILABLE: "The identity service is temporarily unavailable. Please try again later.",
   };
   return messages[code || ""] || "The protected service could not complete that request.";
 }
-async function callCentralRpc<T>(name: string, body: Record<string, unknown>): Promise<T> {
-  const response = await fetch(`${centralIdentityConfig.url}/rest/v1/rpc/${name}`, {
+async function workspaceSessionRequest<T>(action: string, body: Record<string, unknown> = {}): Promise<T> {
+  const response = await fetch("/api/workspace-session", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      apikey: centralIdentityConfig.publishableKey,
-    },
-    body: JSON.stringify(body),
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ action, ...body }),
     cache: "no-store",
   });
   const payload = await response.json().catch(() => ({ ok: false, code: "IDENTITY_SERVICE_UNAVAILABLE" }));
@@ -108,21 +94,11 @@ async function callCentralRpc<T>(name: string, body: Record<string, unknown>): P
   return payload as T;
 }
 
-export function readStoredSession() {
-  try {
-    const value = window.sessionStorage.getItem(centralIdentitySessionStorageKey);
-    return value ? (JSON.parse(value) as StoredSession) : null;
-  } catch {
-    return null;
-  }
-}
-
-function saveSession(value: StoredSession) {
-  window.sessionStorage.setItem(centralIdentitySessionStorageKey, JSON.stringify(value));
-}
-
-function clearSession() {
-  window.sessionStorage.removeItem(centralIdentitySessionStorageKey);
+async function readWorkspace<T>() {
+  const response = await fetch("/api/workspace", { credentials: "same-origin", headers: { Accept: "application/json" }, cache: "no-store" });
+  const payload = await response.json().catch(() => ({ ok: false, code: "IDENTITY_SERVICE_UNAVAILABLE" }));
+  if (!response.ok || payload?.ok === false) throw new Error(payload?.code || "REQUEST_FAILED");
+  return payload as T;
 }
 
 export function PortalSignIn() {
@@ -141,21 +117,13 @@ export function PortalSignIn() {
     setMessage("");
     setMessageTone("error");
     try {
-      const result = await callCentralRpc<LoginResponse>("school_identity_portal_login", {
-        p_login: login.trim(),
-        p_password: password,
-        p_app_code: "staff_self_service",
-      });
+      const result = await workspaceSessionRequest<LoginResponse>("login", { login: login.trim(), password });
       if (result.must_change_password) {
         setPendingChange(true);
         setMessage("This is a first-time or reset credential. Choose your new password before continuing.");
         setMessageTone("info");
         return;
       }
-      if (!result.client_code || !result.client_secret || !result.expires_at) {
-        throw new Error("IDENTITY_SERVICE_UNAVAILABLE");
-      }
-      saveSession({ clientCode: result.client_code, clientSecret: result.client_secret, expiresAt: result.expires_at });
       window.location.assign("/workspace");
     } catch (error) {
       setMessage(friendlyError(error instanceof Error ? error.message : undefined));
@@ -175,11 +143,7 @@ export function PortalSignIn() {
     setBusy(true);
     setMessage("");
     try {
-      await callCentralRpc("school_identity_change_password", {
-        p_login: login.trim(),
-        p_current_password: password,
-        p_new_password: newPassword,
-      });
+      await workspaceSessionRequest("change_password", { login: login.trim(), current_password: password, new_password: newPassword });
       setPassword("");
       setNewPassword("");
       setConfirmPassword("");
@@ -204,7 +168,7 @@ export function PortalSignIn() {
         {!pendingChange ? <form className="portalAuthForm" onSubmit={submitLogin}>
           <label>WTS staff number or official registered email<input autoComplete="username" required value={login} onChange={(event) => setLogin(event.target.value)} /></label>
           <label>Password<input autoComplete="current-password" type="password" required value={password} onChange={(event) => setPassword(event.target.value)} /></label>
-          <button className="primaryButton" disabled={busy} type="submit">{busy ? "Checking access…" : "Sign In to WTS"}</button>
+          <button className="primaryButton" disabled={busy} type="submit">{busy ? "Checking access…" : "Sign in securely"}</button>
         </form> : <form className="portalAuthForm" onSubmit={submitPasswordChange}>
           <label>New password<input autoComplete="new-password" type="password" required value={newPassword} onChange={(event) => setNewPassword(event.target.value)} /></label>
           <label>Confirm new password<input autoComplete="new-password" type="password" required value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} /></label>
@@ -212,7 +176,7 @@ export function PortalSignIn() {
         </form>}
         <p className={`portalAuthMessage ${message ? "isVisible" : ""} portalAuthMessage--${messageTone}`} role="status">{message}</p>
         <ul className="portalAuthNotes">
-          <li>This credential may differ from a legacy Result Portal password.</li>
+          <li>This sign-in uses the active WTS identity managed by Central Registry.</li>
           <li>First-time or reset accounts must create a new password before workspace access.</li>
           <li>Unknown public emails are handled with the same generic error as incorrect credentials.</li>
           <li>Contact authorised school management when access recovery is required.</li>
@@ -263,27 +227,17 @@ export function WorkspaceClient() {
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [checking, setChecking] = useState(true);
   const [error, setError] = useState("");
-  const [session, setSession] = useState<StoredSession | null>(null);
+  const [authenticated, setAuthenticated] = useState(false);
 
   async function refresh() {
-    const currentSession = readStoredSession();
-    setSession(currentSession);
-    if (!currentSession) {
-      setWorkspace(null);
-      setChecking(false);
-      return;
-    }
     setChecking(true);
     setError("");
     try {
-      const result = await callCentralRpc<Workspace>("school_staff_workspace_read_api", {
-        p_client_code: currentSession.clientCode,
-        p_client_secret: currentSession.clientSecret,
-      });
+      const result = await readWorkspace<Workspace>();
+      setAuthenticated(true);
       setWorkspace(result);
     } catch (requestError) {
-      clearSession();
-      setSession(null);
+      setAuthenticated(false);
       setWorkspace(null);
       setError(friendlyError(requestError instanceof Error ? requestError.message : undefined));
     } finally {
@@ -294,20 +248,9 @@ export function WorkspaceClient() {
   useEffect(() => { void refresh(); }, []);
 
   async function signOut() {
-    const currentSession = readStoredSession();
-    clearSession();
-    setSession(null);
+    setAuthenticated(false);
     setWorkspace(null);
-    if (currentSession) {
-      try {
-        await callCentralRpc("school_identity_portal_logout", {
-          p_client_code: currentSession.clientCode,
-          p_client_secret: currentSession.clientSecret,
-        });
-      } catch {
-        // Local removal still prevents this browser from continuing the workspace.
-      }
-    }
+    await fetch("/api/workspace-session", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "logout" }) }).catch(() => {});
     window.location.assign("/portal");
   }
 
@@ -319,7 +262,7 @@ export function WorkspaceClient() {
     const moduleAccess: Record<WorkspaceModuleKey, boolean> = {
       profile: app("staff_self_service") && hasAny(permissions, "profile.view", "profile.update", "staff_profile.view", "staff_profile.edit"),
       centralRegistry: app("central_registry") || hasAny(permissions, "central_registry.view", "central_registry.administer", "registry.read", "registry.manage"),
-      results: app("results") || Boolean(workspace?.result_portal?.legacy_grant),
+      results: app("results"),
       attendance: app("attendance") || hasAny(permissions, "attendance.history.view", "attendance.view", "attendance.create", "attendance.edit", "attendance.review", "attendance.export"),
       notifications: app("notifications") || hasAny(permissions, "notifications.view", "notifications.create", "notifications.edit", "notifications.approve", "notifications.publish"),
       reports: hasAny(permissions, "reports.view", "reports.export"),
@@ -332,7 +275,7 @@ export function WorkspaceClient() {
   }, [workspace]);
 
   if (checking) return <main id="main-content" className="workspaceGate"><p>Checking your authorised WTS Workspace…</p></main>;
-  if (!workspace || !session) return <main id="main-content" className="workspaceGate"><section><p className="eyebrow">PROTECTED WORKSPACE</p><h1>Sign in is required.</h1><p>{error || "This route does not display records until an active staff identity is verified."}</p><Link className="primaryButton" href="/portal/sign-in">Sign in to WTS Workspace</Link></section></main>;
+  if (!workspace || !authenticated) return <main id="main-content" className="workspaceGate"><section><p className="eyebrow">PROTECTED WORKSPACE</p><h1>Sign in is required.</h1><p>{error || "This route does not display records until an active staff identity is verified."}</p><Link className="primaryButton" href="/portal/sign-in">Sign in to WTS Workspace</Link></section></main>;
 
   const grantedModules = access.moduleAccess;
   const roles = access.roleNames.length ? access.roleNames.join(" · ") : "No descriptive role assignment is displayed";
@@ -378,13 +321,13 @@ export function WorkspaceClient() {
           <header className="workspaceModuleDirectoryHeader"><div><p className="eyebrow">AUTHORISED MODULES</p><h2 id="workspace-modules-heading">Your WTS work, in one place.</h2></div><p>Only active Central Registry grants are shown. A module status describes the real integration state; it does not create access.</p></header>
           <div className="workspaceModuleGrid">
             {grantedModules.profile ? <ModuleCard id="profile" title="My Profile" status="operational" description="Your staff identity is supplied by Central Registry. This workspace does not create a duplicate profile." action={<a className="workspaceExternalLink" href="https://wts-central-registry.vercel.app/staff" target="_blank" rel="noreferrer">Open protected profile service ↗</a>} /> : null}
-            {grantedModules.centralRegistry ? <ModuleCard id="centralRegistry" title="Central Registry" status="under-development" description="The real registry remains the authority for people, admissions, staff identity and access grants." action={<a className="workspaceExternalLink" href={centralRegistryUrl} target="_blank" rel="noreferrer">Open Central Registry ↗</a>} note="The Registry still uses its own protected transition session until shared session integration is completed." /> : null}
-            {grantedModules.results ? <ModuleCard id="results" title="Results" status="operational" description="The existing Result Portal remains the operational score, report-card and publication system. This workspace checks your real Results grant before offering access." action={<a className="workspaceExternalLink" href={resultPortalUrl} target="_blank" rel="noreferrer">Open existing Result Portal ↗</a>} note="The legacy Result Portal may still request its separate credential during transition." /> : null}
+            {grantedModules.centralRegistry ? <ModuleCard id="centralRegistry" title="Central Registry" status="under-development" description="The real registry remains the authority for people, admissions, staff identity and access grants." action={<a className="workspaceExternalLink" href={centralRegistryUrl} target="_blank" rel="noreferrer">Open Central Registry ↗</a>} note="The Registry uses its own host-only protected session; cross-application PKCE remains a later phase." /> : null}
+            {grantedModules.results ? <ModuleCard id="results" title="Results" status="operational" description="The existing Result Portal remains the operational score, report-card and publication system. This workspace checks your real Results grant before offering access." action={<a className="workspaceExternalLink" href={resultPortalUrl} target="_blank" rel="noreferrer">Open existing Result Portal ↗</a>} note="The Result Portal uses WTS Staff Login and its own protected server session until the later PKCE phase." /> : null}
             {grantedModules.attendance ? <ModuleCard id="attendance" title="Attendance" status="under-development" description="Attendance access is assigned to this identity, but the protected WTS Workspace interface is still in development." note="No attendance events, devices or figures are shown here." /> : null}
             {grantedModules.notifications ? <ModuleCard id="notifications" title="Notifications" status="under-development" description="Notification access is assigned to this identity, but the protected WTS Workspace interface is still in development." note="No contacts, messages or delivery figures are shown here." /> : null}
             {grantedModules.reports ? <ModuleCard id="reports" title="Reports" status="under-development" description="Reporting access is assigned to this identity. The approved reporting service is not connected to this workspace yet." note="No invented metrics or report records are displayed." /> : null}
             {grantedModules.website ? <ModuleCard id="website" title="Public Website Management" status="under-development" description="Website-management permission is assigned to this identity. A real protected publishing interface is not connected yet." note="The public website remains unchanged from this workspace." /> : null}
-            {grantedModules.systemAdministration ? <ModuleCard id="systemAdministration" title="System Administration" status="protected" description="Identity and access controls are available only to the real administrators whose grants include access-management authority." action={<a className="workspaceExternalLink" href="#system-administration-panel">Open identity and access controls ↓</a>} /> : null}
+            {grantedModules.systemAdministration ? <ModuleCard id="systemAdministration" title="System Administration" status="protected" description="Identity and access controls are available only to accounts with explicit access-management authority." action={<a className="workspaceExternalLink" href="#system-administration-panel">Open identity and access controls ↓</a>} /> : null}
             {!access.assignedModules ? <EmptyState>No additional WTS modules are assigned to this identity. Contact authorised school management if access is expected.</EmptyState> : null}
           </div>
         </section>
@@ -396,12 +339,12 @@ export function WorkspaceClient() {
 
         {grantedModules.results ? <section className="workspaceLiveGrid" aria-labelledby="results-heading">
           <article><p className="eyebrow">RESULTS ACCESS</p><h2 id="results-heading">Real grant and scope status</h2><ModuleStatus status="operational" /><p>{result?.can_view_entry ? "An explicit Result Entry view permission is assigned." : "The active Results grant is present, but a unified Result Entry action is not assigned."}</p>{hasClassData ? <><p className="eyebrow workspaceSubEyebrow">ACTIVE RESULT SCOPES</p><ul>{(workspace.class_assignments || []).map((item) => <li key={`class-${item.class_key}`}>{item.display_name}</li>)}{(workspace.subject_assignments || []).map((item) => <li key={`subject-${item.class_key}-${item.subject_index}`}>{item.display_name} · {item.subject_name}</li>)}</ul></> : <EmptyState>No active Result class or subject scope is assigned to this identity.</EmptyState>}</article>
-          <article><p className="eyebrow">TRANSITION STATUS</p><h2>Existing Result Portal</h2><p>Report-card generation and existing result data remain unchanged. The portal is not embedded and no credential is passed in a URL.</p><a className="workspaceExternalLink" href={resultPortalUrl} target="_blank" rel="noreferrer">Open Result Portal ↗</a><EmptyState>One-login Results access is not complete because the legacy portal still uses browser-local authentication and direct Data API access.</EmptyState></article>
+           <article><p className="eyebrow">RESULT ACCESS</p><h2>Existing Result Portal</h2><p>Report-card generation and existing result data remain unchanged. The portal is not embedded and no credential is passed in a URL.</p><a className="workspaceExternalLink" href={resultPortalUrl} target="_blank" rel="noreferrer">Open Result Portal</a><EmptyState>PKCE SSO remains a separate next phase. The Result Portal accepts WTS Staff Login and protects data through its server boundary.</EmptyState></article>
         </section> : null}
 
         {grantedModules.systemAdministration ? <section id="system-administration-panel" className="workspaceAdminSection" aria-labelledby="system-admin-heading">
           <header className="workspaceModuleDirectoryHeader"><div><p className="eyebrow">SYSTEM ADMINISTRATION</p><h2 id="system-admin-heading">Identity and access controls.</h2></div><p>Credential recovery is server-side, permission-checked, one-time for each issuance and audited without exposing password hashes or storing temporary passwords.</p></header>
-          <IdentityAccessPanel session={session} />
+           <p>Identity and access administration is handled in the protected Central Registry. No duplicate staff-management or credential-reset surface is exposed in this workspace.</p><a className="workspaceExternalLink" href={centralRegistryUrl} target="_blank" rel="noreferrer">Open Central Registry management â†—</a>
         </section> : null}
       </section>
     </div>
