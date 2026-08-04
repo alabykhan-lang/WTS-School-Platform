@@ -242,4 +242,111 @@ export function WorkspaceClient() {
       setError(friendlyError(requestError instanceof Error ? requestError.message : undefined));
     } finally {
       setChecking(false);
-   
+    }
+  }
+
+  useEffect(() => { void refresh(); }, []);
+
+  async function signOut() {
+    setAuthenticated(false);
+    setWorkspace(null);
+    await fetch("/api/workspace-session", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "logout" }) }).catch(() => {});
+    window.location.assign("/portal");
+  }
+
+  const access = useMemo(() => {
+    const grants = workspace?.grants || [];
+    const appCodes = new Set(grants.map((grant) => grant.app_code));
+    const permissions = new Set(grants.flatMap((grant) => grant.permissions || []));
+    const app = (appCode: string) => appCodes.has(appCode);
+    const moduleAccess: Record<WorkspaceModuleKey, boolean> = {
+      profile: app("staff_self_service") && hasAny(permissions, "profile.view", "profile.update", "staff_profile.view", "staff_profile.edit"),
+      centralRegistry: app("central_registry") || hasAny(permissions, "central_registry.view", "central_registry.administer", "registry.read", "registry.manage"),
+      results: app("results"),
+      attendance: app("attendance") || hasAny(permissions, "attendance.history.view", "attendance.view", "attendance.create", "attendance.edit", "attendance.review", "attendance.export"),
+      notifications: app("notifications") || hasAny(permissions, "notifications.view", "notifications.create", "notifications.edit", "notifications.approve", "notifications.publish"),
+      reports: hasAny(permissions, "reports.view", "reports.export"),
+      website: hasAny(permissions, "public_website_content.view", "public_website_content.create", "public_website_content.edit", "public_website_content.publish"),
+      systemAdministration: hasAny(permissions, "access.manage", "system_administration.view", "system_administration.administer", "staff_management.administer"),
+    };
+    const roleNames = workspace?.roles?.map((role) => role.role_name).filter(Boolean) || [];
+    const assignedModules = Object.values(moduleAccess).filter(Boolean).length;
+    return { permissions, moduleAccess, roleNames, assignedModules };
+  }, [workspace]);
+
+  if (checking) return <main id="main-content" className="workspaceGate"><p>Checking your authorised WTS Workspace…</p></main>;
+  if (!workspace || !authenticated) return <main id="main-content" className="workspaceGate"><section><p className="eyebrow">PROTECTED WORKSPACE</p><h1>Sign in is required.</h1><p>{error || "This route does not display records until an active staff identity is verified."}</p><Link className="primaryButton" href="/portal/sign-in">Sign in to WTS Workspace</Link></section></main>;
+
+  const grantedModules = access.moduleAccess;
+  const roles = access.roleNames.length ? access.roleNames.join(" · ") : "No descriptive role assignment is displayed";
+  const result = workspace.result_portal;
+  const hasClassData = grantedModules.results && Boolean(workspace.class_assignments?.length || workspace.subject_assignments?.length);
+
+  return <main id="main-content" className="workspaceLivePage">
+    <div className="workspaceLiveFrame">
+      <aside className="workspaceLiveSidebar" aria-label="WTS Workspace navigation">
+        <Link className="workspaceBrand" href="/portal"><span>WTS</span><strong>Workspace</strong></Link>
+        <p>Permission-driven access</p>
+        <nav>
+          <a href="#overview">Overview</a>
+          {grantedModules.profile ? <a href="#profile">My Profile</a> : null}
+          {grantedModules.centralRegistry ? <a href="#centralRegistry">Central Registry</a> : null}
+          {grantedModules.results ? <a href="#results">Results</a> : null}
+          {grantedModules.attendance ? <a href="#attendance">Attendance</a> : null}
+          {grantedModules.notifications ? <a href="#notifications">Notifications</a> : null}
+          {grantedModules.reports ? <a href="#reports">Reports</a> : null}
+          {grantedModules.website ? <a href="#website">Public Website Management</a> : null}
+          {grantedModules.systemAdministration ? <a href="#systemAdministration">System Administration</a> : null}
+        </nav>
+        <button type="button" className="workspaceSignOut" onClick={() => void signOut()}>Sign out</button>
+      </aside>
+
+      <section className="workspaceLiveContent">
+        <header className="workspaceLiveHeader">
+          <div>
+            <p className="eyebrow">WTS WORKSPACE</p>
+            <h1>Welcome, {workspace.person?.full_name}.</h1>
+            <p>{workspace.person?.designation || workspace.person?.staff_category || "Authorised staff member"} · {roles}</p>
+          </div>
+          <button className="ghostButton workspaceRefreshButton" type="button" onClick={() => void refresh()}>Refresh permissions</button>
+        </header>
+
+        <section id="overview" className="workspaceLiveSummary" aria-label="Workspace overview">
+          <article><span>Staff identity</span><strong>{workspace.person?.staff_number || "Not assigned"}</strong></article>
+          <article><span>Authorised modules</span><strong>{access.assignedModules}</strong></article>
+          <article><span>Academic source</span><strong>Current session and term are not connected to this workspace yet.</strong></article>
+        </section>
+
+        <section className="workspaceModuleDirectory" aria-labelledby="workspace-modules-heading">
+          <header className="workspaceModuleDirectoryHeader"><div><p className="eyebrow">AUTHORISED MODULES</p><h2 id="workspace-modules-heading">Your WTS work, in one place.</h2></div><p>Only active Central Registry grants are shown. A module status describes the real integration state; it does not create access.</p></header>
+          <div className="workspaceModuleGrid">
+            {grantedModules.profile ? <ModuleCard id="profile" title="My Profile" status="operational" description="Your staff identity is supplied by Central Registry. This workspace does not create a duplicate profile." action={<a className="workspaceExternalLink" href="https://wts-central-registry.vercel.app/staff" target="_blank" rel="noreferrer">Open protected profile service ↗</a>} /> : null}
+            {grantedModules.centralRegistry ? <ModuleCard id="centralRegistry" title="Central Registry" status="under-development" description="The real registry remains the authority for people, admissions, staff identity and access grants." action={<a className="workspaceExternalLink" href={centralRegistryUrl} target="_blank" rel="noreferrer">Open Central Registry ↗</a>} note="The Registry uses its own host-only protected session; cross-application PKCE remains a later phase." /> : null}
+            {grantedModules.results ? <ModuleCard id="results" title="Results" status="operational" description="The existing Result Portal remains the operational score, report-card and publication system. This workspace checks your real Results grant before offering access." action={<a className="workspaceExternalLink" href={resultPortalUrl} target="_blank" rel="noreferrer">Open existing Result Portal ↗</a>} note="The Result Portal uses WTS Staff Login and its own protected server session until the later PKCE phase." /> : null}
+            {grantedModules.attendance ? <ModuleCard id="attendance" title="Attendance" status="under-development" description="Attendance access is assigned to this identity, but the protected WTS Workspace interface is still in development." note="No attendance events, devices or figures are shown here." /> : null}
+            {grantedModules.notifications ? <ModuleCard id="notifications" title="Notifications" status="under-development" description="Notification access is assigned to this identity, but the protected WTS Workspace interface is still in development." note="No contacts, messages or delivery figures are shown here." /> : null}
+            {grantedModules.reports ? <ModuleCard id="reports" title="Reports" status="under-development" description="Reporting access is assigned to this identity. The approved reporting service is not connected to this workspace yet." note="No invented metrics or report records are displayed." /> : null}
+            {grantedModules.website ? <ModuleCard id="website" title="Public Website Management" status="under-development" description="Website-management permission is assigned to this identity. A real protected publishing interface is not connected yet." note="The public website remains unchanged from this workspace." /> : null}
+            {grantedModules.systemAdministration ? <ModuleCard id="systemAdministration" title="System Administration" status="protected" description="Identity and access controls are available only to accounts with explicit access-management authority." action={<a className="workspaceExternalLink" href="#system-administration-panel">Open identity and access controls ↓</a>} /> : null}
+            {!access.assignedModules ? <EmptyState>No additional WTS modules are assigned to this identity. Contact authorised school management if access is expected.</EmptyState> : null}
+          </div>
+        </section>
+
+        {grantedModules.profile ? <section className="workspaceLiveGrid" aria-labelledby="profile-heading">
+          <article><p className="eyebrow">MY PROFILE</p><h2 id="profile-heading">{workspace.person?.full_name}</h2><ModuleStatus status="operational" /><p>Staff number: {workspace.person?.staff_number || "Not assigned"}. Designation: {workspace.person?.designation || workspace.person?.staff_category || "Not supplied"}.</p><EmptyState>Profile editing remains inside the protected Central Registry staff profile service.</EmptyState></article>
+          <article><p className="eyebrow">PROFILE SOURCE</p><h2>Central Registry identity</h2><p>This workspace reads the existing staff identity and does not create a second identity record.</p></article>
+        </section> : null}
+
+        {grantedModules.results ? <section className="workspaceLiveGrid" aria-labelledby="results-heading">
+          <article><p className="eyebrow">RESULTS ACCESS</p><h2 id="results-heading">Real grant and scope status</h2><ModuleStatus status="operational" /><p>{result?.can_view_entry ? "An explicit Result Entry view permission is assigned." : "The active Results grant is present, but a unified Result Entry action is not assigned."}</p>{hasClassData ? <><p className="eyebrow workspaceSubEyebrow">ACTIVE RESULT SCOPES</p><ul>{(workspace.class_assignments || []).map((item) => <li key={`class-${item.class_key}`}>{item.display_name}</li>)}{(workspace.subject_assignments || []).map((item) => <li key={`subject-${item.class_key}-${item.subject_index}`}>{item.display_name} · {item.subject_name}</li>)}</ul></> : <EmptyState>No active Result class or subject scope is assigned to this identity.</EmptyState>}</article>
+           <article><p className="eyebrow">RESULT ACCESS</p><h2>Existing Result Portal</h2><p>Report-card generation and existing result data remain unchanged. The portal is not embedded and no credential is passed in a URL.</p><a className="workspaceExternalLink" href={resultPortalUrl} target="_blank" rel="noreferrer">Open Result Portal</a><EmptyState>PKCE SSO remains a separate next phase. The Result Portal accepts WTS Staff Login and protects data through its server boundary.</EmptyState></article>
+        </section> : null}
+
+        {grantedModules.systemAdministration ? <section id="system-administration-panel" className="workspaceAdminSection" aria-labelledby="system-admin-heading">
+          <header className="workspaceModuleDirectoryHeader"><div><p className="eyebrow">SYSTEM ADMINISTRATION</p><h2 id="system-admin-heading">Identity and access controls.</h2></div><p>Credential recovery is server-side, permission-checked, one-time for each issuance and audited without exposing password hashes or storing temporary passwords.</p></header>
+           <p>Identity and access administration is handled in the protected Central Registry. No duplicate staff-management or credential-reset surface is exposed in this workspace.</p><a className="workspaceExternalLink" href={centralRegistryUrl} target="_blank" rel="noreferrer">Open Central Registry management â†—</a>
+        </section> : null}
+      </section>
+    </div>
+  </main>;
+}
