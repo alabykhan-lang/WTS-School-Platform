@@ -77,7 +77,7 @@ The bootstrap function is hard-coded to the one confirmed existing super-admin i
 The authorised owner’s safe method is:
 
 1. Set the server-only Supabase service key and a newly generated one-time `WTS_IDENTITY_BOOTSTRAP_SECRET` in the WTS School Platform production environment through the Vercel project settings. Never put either value in GitHub, source code, browser storage or documentation.
-2. From the owner’s private device, send a same-origin request to `/api/identity/bootstrap-recovery` with the bootstrap secret in the request header and an operational reason in the JSON body. The endpoint accepts only the confirmed account and returns the temporary credential once.
+2. Optionally set the non-secret `WTS_IDENTITY_BOOTSTRAP_ACTOR_ID` label for the audit record. From the owner’s private device, open the unlinked, no-index `/portal/recovery` route and enter the bootstrap secret and an operational reason. The same-origin server endpoint accepts only the confirmed account and returns the temporary credential once.
 3. Deliver or enter that credential through an approved private channel. Sign in with the existing WTS staff number or registered email, complete the compulsory password change, and verify workspace access.
 4. Remove the bootstrap environment secret immediately after successful recovery. The account metadata records issuance and completion and the database refuses a second bootstrap issuance.
 

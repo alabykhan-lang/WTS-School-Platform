@@ -74,10 +74,19 @@ function friendlyError(code?: string) {
     INVALID_LOGIN: "The staff number, official email or password was not accepted.",
     LOGIN_AND_PASSWORD_REQUIRED: "Enter your WTS staff number or official email and password.",
     ACCOUNT_NOT_ACTIVE: "This staff account is not active. Please contact authorised school management.",
+    IDENTITY_ACCOUNT_NOT_ACTIVE: "This WTS identity account is inactive. Please contact authorised school management.",
+    IDENTITY_PERSON_NOT_ACTIVE: "This staff identity is inactive. Please contact authorised school management.",
+    IDENTITY_CREDENTIAL_NOT_ACTIVE: "This WTS staff credential is suspended. Please contact authorised school management.",
+    INACTIVE_EMPLOYMENT: "This staff employment record is inactive. Please contact authorised school management.",
     ACCOUNT_TEMPORARILY_LOCKED: "This account is temporarily locked. Please contact authorised school management for recovery.",
     PORTAL_ACCESS_NOT_GRANTED: "This account does not currently have access to the WTS Workspace.",
+    PORTAL_ACCESS_SUSPENDED: "WTS Workspace access is suspended for this account. Please contact authorised school management.",
+    RESULTS_GRANT_MISSING: "This account does not have an active Results grant.",
+    RESULT_ACCESS_NOT_GRANTED: "This account does not have an active Results grant.",
     PORTAL_PERMISSION_SYNC_FAILED: "The account could not be matched to an active workspace grant. Please contact authorised school management.",
     STAFF_SESSION_NOT_ACTIVE: "Your session is no longer active. Please sign in again.",
+    SESSION_EXPIRED: "Your WTS session has expired. Please sign in again.",
+    PASSWORD_CHANGE_REQUIRED: "This credential must be activated by choosing a new password before workspace access.",
     INVALID_CURRENT_PASSWORD: "The current password was not accepted.",
     PASSWORD_REQUIREMENTS_NOT_MET: "Use at least 10 characters with uppercase, lowercase and a number.",
     IDENTITY_SERVICE_UNAVAILABLE: "The identity service is temporarily unavailable. Please try again later.",
@@ -195,7 +204,7 @@ export function PortalSignIn() {
         {!pendingChange ? <form className="portalAuthForm" onSubmit={submitLogin}>
           <label>WTS staff number or official registered email<input autoComplete="username" required value={login} onChange={(event) => setLogin(event.target.value)} /></label>
           <label>Password<input autoComplete="current-password" type="password" required value={password} onChange={(event) => setPassword(event.target.value)} /></label>
-          <button className="primaryButton" disabled={busy} type="submit">{busy ? "Checking access…" : "Sign in securely"}</button>
+          <button className="primaryButton" disabled={busy} type="submit">{busy ? "Checking access…" : "Sign In to WTS"}</button>
         </form> : <form className="portalAuthForm" onSubmit={submitPasswordChange}>
           <label>New password<input autoComplete="new-password" type="password" required value={newPassword} onChange={(event) => setNewPassword(event.target.value)} /></label>
           <label>Confirm new password<input autoComplete="new-password" type="password" required value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} /></label>

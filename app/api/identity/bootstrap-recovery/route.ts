@@ -27,6 +27,10 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => ({}));
     const reason = textField(body.reason, 500);
     if (reason.length < 8) throw new IdentityApiError("RESET_REASON_REQUIRED", 400);
+    const actorId = textField(
+      process.env.WTS_IDENTITY_BOOTSTRAP_ACTOR_ID || "bootstrap_operator",
+      160,
+    );
 
     const result = await callPrivilegedRpc<{
       ok: boolean;
@@ -35,10 +39,11 @@ export async function POST(request: NextRequest) {
       temporary_password?: string;
       must_change_password?: boolean;
       request_id?: string;
-    }>("school_identity_bootstrap_reset", {
+    }>("school_identity_bootstrap_reset_with_actor", {
       p_staff_number: BOOTSTRAP_STAFF_NUMBER,
       p_login_email: BOOTSTRAP_EMAIL,
       p_reason: reason,
+      p_actor_id: actorId || "bootstrap_operator",
     });
 
     if (!result?.ok) throw new IdentityApiError(result?.code || "BOOTSTRAP_RECOVERY_FAILED", 403);
