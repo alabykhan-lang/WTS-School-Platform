@@ -1,6 +1,12 @@
 import { timingSafeEqual } from "node:crypto";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://wuftzyeajmsxdrbwaawl.supabase.co";
+const SUPABASE_KEY = process.env.WTS_SUPABASE_PUBLISHABLE_KEY
+  || process.env.SUPABASE_PUBLISHABLE_KEY
+  || process.env.SUPABASE_ANON_KEY
+  || process.env.SUPABASE_SERVICE_ROLE_KEY
+  || process.env.SUPABASE_SECRET_KEY
+  || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind1ZnR6eWVham1zeGRyYndhYXdsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM4NjczNTgsImV4cCI6MjA4OTQ0MzM1OH0.QUeDRP1IpHCjvecqAOEZAqmMalEFlCLXylZP5D5iLog";
 
 export class IdentityApiError extends Error {
   status: number;
@@ -15,9 +21,7 @@ export class IdentityApiError extends Error {
 }
 
 function serviceKey() {
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY;
-  if (!key) throw new IdentityApiError("IDENTITY_SERVICE_NOT_CONFIGURED", 503);
-  return key;
+  return SUPABASE_KEY;
 }
 
 export function noStoreHeaders() {
