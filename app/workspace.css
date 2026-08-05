@@ -71,6 +71,7 @@ body:has(.workspaceLivePage) { background: #edf2ee; }
 .workspaceClassKey { max-width: 110px; overflow-wrap: anywhere; text-align: right; }
 .workspaceMiniMetrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 22px; }
 .workspaceMiniMetrics--compact { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 18px; }
+.workspaceClassCard .workspaceMiniMetrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .workspaceMiniMetrics > div { min-width: 0; padding: 11px; background: #f3f7f3; }
 .workspaceMiniMetrics strong { display: block; margin-top: 7px; color: var(--navy); font-size: 13px; line-height: 1.35; overflow-wrap: anywhere; }
 .workspaceDetailList { display: grid; gap: 8px; margin-top: 13px; }
@@ -205,7 +206,7 @@ body:has(.workspaceLivePage) { background: #edf2ee; }
   .workspaceSectionHeading h2, .publicWorkspaceSectionHeading h2, .publicWorkspaceIntro h2, .publicWorkspaceBoundary h2, .publicWorkspaceReturn h2 { font-size: 39px; }
   .workspaceRoleSection { padding: 20px; }
   .workspaceRoleHeading, .workspaceCardHeader { align-items: flex-start; flex-direction: column; }
-  .workspaceMiniMetrics, .workspaceMiniMetrics--compact { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .workspaceMiniMetrics, .workspaceMiniMetrics--compact, .workspaceClassCard .workspaceMiniMetrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .workspaceDetailList strong { max-width: 58%; }
   .workspaceCardActions { align-items: flex-start; flex-direction: column; }
   .workspaceLaunchButton { width: 100%; }

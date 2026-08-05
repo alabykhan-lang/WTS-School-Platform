@@ -366,13 +366,18 @@ function ClassOverviewCard({ overview, launchHref }: { overview: ClassOverview; 
     <div className="workspaceMiniMetrics">
       <div><span>Pupils</span><strong>{formatCount(overview.active_pupils ?? overview.total_pupils)}</strong></div>
       <div><span>Male / female</span><strong>{formatCount(overview.male_pupils)} / {formatCount(overview.female_pupils)}</strong></div>
-      <div><span>Subjects with scores</span><strong>{overview.subjects_with_scores === null || overview.subjects_with_scores === undefined ? "Not available" : `${formatCount(overview.subjects_with_scores)} / ${formatCount(overview.expected_subjects)}`}</strong></div>
+      <div><span>Expected subjects</span><strong>{formatCount(overview.expected_subjects)}</strong></div>
+      <div><span>Subjects with scores</span><strong>{formatCount(overview.subjects_with_scores)}</strong></div>
+      <div><span>Incomplete subjects</span><strong>{formatCount(overview.incomplete_subjects)}</strong></div>
       <div><span>Missing required scores</span><strong>{formatCount(overview.pupils_with_missing_required_scores)}</strong></div>
     </div>
     <div className="workspaceDetailList">
       <div><span>Report cards</span><strong>{readiness}</strong></div>
       <div><span>Registry records</span><strong>{overview.registry?.incomplete_records === null || overview.registry?.incomplete_records === undefined ? "Not available" : `${formatCount(overview.registry.incomplete_records)} incomplete`}</strong></div>
-      <div><span>Attendance</span><strong>{overview.attendance?.available ? `${formatCount(overview.attendance.absent_pupils_today)} absent today` : "Attendance reporting will appear after operational attendance data becomes available."}</strong></div>
+      <div><span>Attendance summary</span><strong>{overview.attendance?.available ? `${formatCount(overview.attendance.days_recorded)} days recorded` : "Attendance reporting will appear after operational attendance data becomes available."}</strong></div>
+      <div><span>Absent pupils today</span><strong>{overview.attendance?.available ? formatCount(overview.attendance.absent_pupils_today) : "Not available"}</strong></div>
+      <div><span>Repeated-absence alerts</span><strong>{overview.attendance?.available ? formatCount(overview.attendance.repeated_absence_alerts) : "Not available"}</strong></div>
+      <div><span>Class announcements</span><strong>{overview.announcements?.available ? "Available" : overview.announcements?.message || "No class announcement summary is currently connected."}</strong></div>
     </div>
     <div className="workspaceCardActions"><a className="workspaceLaunchButton" href={launchHref} target="_blank" rel="noreferrer">Open Results<span aria-hidden="true">↗</span></a><a className="workspaceTextLink" href={attendanceUrl} target="_blank" rel="noreferrer">Open Attendance ↗</a><a className="workspaceTextLink" href={centralRegistryUrl} target="_blank" rel="noreferrer">Open Registry ↗</a></div>
   </article>;
