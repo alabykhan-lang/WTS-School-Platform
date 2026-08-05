@@ -4,8 +4,8 @@ import { createPageMetadata } from "../../_components/page-metadata";
 
 export const metadata: Metadata = {
   ...createPageMetadata({
-    title: "Staff and Management Sign In",
-    description: "Secure WTS School Platform sign-in for authorised staff and management users.",
+    title: "WTS Staff Workspace Sign In",
+    description: "Secure sign-in to the authorised WTS Staff Workspace.",
     path: "/portal/sign-in",
     image: "/images/campus2.webp",
     imageAlt: "Way to Success Standard Schools campus",
