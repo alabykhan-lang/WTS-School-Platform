@@ -35,6 +35,25 @@ Use the confirmed authorized administrator account and existing staff accounts o
 - [ ] Mobile and desktop navigation complete the same flow.
 - [ ] No academic rows or identity/grant records change during testing.
 
+## Verification evidence from this rollout
+
+Passed through connected production checks:
+
+- Platform authorization endpoint rejects wrong client/audience and malformed requests.
+- Direct unauthenticated Result entry reaches the central WTS sign-in with a preserved PKCE request.
+- Result session status returns `RESULT_SESSION_REQUIRED` without a cookie.
+- Result exchange endpoint is POST-only and rejects non-POST access.
+- Result portal source is valid UTF-8, complete HTML, has no public credential fields, and includes the PKCE callback.
+- Supabase code table has RLS, no anonymous/authenticated table DML, zero code rows after migration, and the old public Result-password RPC is no longer executable.
+- All affected production deployments are READY with no recent Vercel runtime-error clusters.
+
+Pending because this connected browser reached the protected central credential wall and no credential was entered:
+
+- Successful authorized end-to-end handoff.
+- Result data/report-card workflow after SSO.
+- Logout propagation from a real linked session.
+- Mobile and desktop authenticated-flow confirmation.
+
 ## Evidence to record
 
 Record only deployment IDs, commit SHAs, HTTP status/response codes, safe error codes, timestamps and screenshots without private records. Never record passwords, session secrets, hashes, private keys or confidential student/staff data.
