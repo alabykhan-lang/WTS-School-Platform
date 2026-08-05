@@ -1,0 +1,219 @@
+/* WTS Workspace and public portal refinement. Loaded after the legacy public styles. */
+body:has(.workspaceLivePage) .siteHeader,
+body:has(.workspaceLivePage) .siteFooter,
+body:has(.workspaceLivePage) .whatsAppButton,
+body:has(.portalSignInPage) .siteHeader,
+body:has(.portalSignInPage) .siteFooter,
+body:has(.portalSignInPage) .whatsAppButton { display: none; }
+
+body:has(.workspaceLivePage) { background: #edf2ee; }
+.workspaceLivePage { min-height: 100vh; padding: 0; background: #edf2ee; color: var(--ink); overflow: hidden; }
+.workspaceShell { display: grid; grid-template-columns: 278px minmax(0, 1fr); width: min(1680px, 100%); min-height: 100vh; margin: 0 auto; background: #f8faf7; }
+.workspaceSidebar { position: sticky; top: 0; display: flex; height: 100vh; padding: 32px 22px 25px; flex-direction: column; background: var(--navy2); color: white; }
+.workspaceSidebarBrand { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.workspaceBrand { display: inline-flex; align-items: center; gap: 10px; color: white; }
+.workspaceBrand span { display: inline-flex; width: 39px; height: 39px; align-items: center; justify-content: center; border: 1px solid rgba(156,229,192,.7); border-radius: 50%; color: var(--mint); font-size: 10px; font-weight: 900; letter-spacing: .08em; }
+.workspaceBrand strong { max-width: 130px; font-family: Georgia, serif; font-size: 20px; font-weight: 500; line-height: 1.02; }
+.workspaceSidebarNote { margin: 34px 5px 13px; color: var(--mint); font-size: 9px; font-weight: 850; letter-spacing: .15em; text-transform: uppercase; }
+.workspaceSidebar nav { display: grid; gap: 5px; }
+.workspaceSidebar nav a { padding: 12px 13px; border-left: 2px solid transparent; color: #cbd7e2; font-size: 13px; font-weight: 750; line-height: 1.35; }
+.workspaceSidebar nav a:hover, .workspaceSidebar nav a:focus-visible { border-left-color: var(--mint); background: rgba(255,255,255,.08); color: white; }
+.workspaceSidebarFooter { display: flex; margin-top: auto; padding: 19px 7px 0; flex-direction: column; border-top: 1px solid rgba(255,255,255,.15); }
+.workspaceSidebarFooter span { color: #9cafc2; font-size: 9px; font-weight: 850; letter-spacing: .13em; text-transform: uppercase; }
+.workspaceSidebarFooter strong { margin-top: 8px; color: var(--mint); font-family: Georgia, serif; font-size: 18px; font-weight: 500; overflow-wrap: anywhere; }
+.workspaceSidebarFooter small { margin-top: 5px; color: #cbd7e2; font-size: 11px; }
+.workspaceSignOut { width: 100%; margin-top: 20px; padding: 11px; border: 1px solid rgba(210,230,222,.36); background: transparent; color: var(--mint); cursor: pointer; font: inherit; font-size: 12px; font-weight: 850; }
+.workspaceSignOut:hover { background: rgba(156,229,192,.12); }
+.workspaceNavClose, .workspaceMobileBar { display: none; }
+.workspaceMain { min-width: 0; padding: 58px clamp(25px, 5vw, 82px) 72px; overflow: hidden; }
+.workspaceTopbar { display: flex; align-items: flex-end; justify-content: space-between; gap: 25px; padding-bottom: 36px; border-bottom: 1px solid var(--line); }
+.workspaceOverline, .workspaceCardKicker { margin: 0 0 14px; color: var(--green); font-size: 10px; font-weight: 900; letter-spacing: .17em; text-transform: uppercase; }
+.workspaceTopbar h1 { max-width: 790px; margin: 0; color: var(--navy); font-family: Georgia, serif; font-size: clamp(42px, 5.4vw, 77px); font-weight: 500; line-height: .98; letter-spacing: -.055em; }
+.workspaceTopbarIntro { max-width: 650px; margin: 16px 0 0; color: #596779; font-size: 15px; line-height: 1.65; }
+.workspaceRefreshButton { display: inline-flex; flex: none; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 11px 15px; border: 1px solid rgba(10,35,72,.2); border-radius: 999px; background: white; color: var(--navy); cursor: pointer; font-size: 12px; font-weight: 850; }
+.workspaceRefreshButton:hover { border-color: var(--green); color: var(--green); }
+.workspaceRefreshButton:disabled { cursor: progress; opacity: .65; }
+.workspaceIdentityCard { display: grid; grid-template-columns: 112px minmax(180px, 1fr) minmax(250px, .95fr); gap: 25px; align-items: center; margin-top: 20px; padding: 27px; border-top: 5px solid var(--gold); background: white; box-shadow: 0 16px 36px rgba(14,37,64,.05); }
+.workspaceIdentityPhoto { width: 112px; height: 112px; overflow: hidden; border-radius: 50%; background: var(--navy); }
+.workspaceIdentityPhoto img { width: 100%; height: 100%; object-fit: cover; }
+.workspaceIdentityPhoto span { display: flex; width: 100%; height: 100%; align-items: center; justify-content: center; color: var(--mint); font-family: Georgia, serif; font-size: 32px; }
+.workspaceIdentityMain { min-width: 0; }
+.workspaceIdentityMain h2 { margin: 0; color: var(--navy); font-family: Georgia, serif; font-size: clamp(29px, 3.1vw, 46px); font-weight: 500; line-height: 1; letter-spacing: -.04em; overflow-wrap: anywhere; }
+.workspaceIdentityRole { margin: 10px 0 0; color: #536075; font-size: 14px; font-weight: 700; line-height: 1.5; }
+.workspaceEmploymentStatus { display: inline-flex; align-items: center; gap: 7px; margin-top: 14px; color: var(--green); font-size: 11px; font-weight: 850; text-transform: capitalize; }
+.workspaceEmploymentStatus i, .workspaceStatus i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.workspaceIdentityMain .workspaceEmptyState { margin-top: 15px; }
+.workspaceIdentityFacts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; min-width: 0; }
+.workspaceIdentityFacts div { min-width: 0; padding: 13px; background: #f1f6f2; }
+.workspaceIdentityFacts span, .workspaceMetric span, .workspaceMiniMetrics span, .workspaceDetailList span { display: block; color: #547060; font-size: 9px; font-weight: 850; letter-spacing: .1em; text-transform: uppercase; }
+.workspaceIdentityFacts strong { display: block; margin-top: 7px; color: #3d4c61; font-size: 12px; line-height: 1.35; overflow-wrap: anywhere; }
+.workspaceMetricGrid, .workspaceAdminMetrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 13px; margin-top: 15px; }
+.workspaceMetric { min-width: 0; padding: 18px; border-top: 4px solid var(--mint); background: white; box-shadow: 0 10px 25px rgba(14,37,64,.035); }
+.workspaceMetric--gold { border-top-color: var(--gold); }
+.workspaceMetric--blue { border-top-color: #5275a0; }
+.workspaceMetric strong { display: block; margin-top: 9px; color: var(--navy); font-family: Georgia, serif; font-size: clamp(19px, 2vw, 27px); font-weight: 500; line-height: 1.15; overflow-wrap: anywhere; }
+.workspaceSection { margin-top: 66px; }
+.workspaceSectionHeading { display: grid; grid-template-columns: 1fr 1fr; gap: 7vw; align-items: end; margin-bottom: 30px; }
+.workspaceSectionHeading h2 { max-width: 700px; margin: 0; color: var(--navy); font-family: Georgia, serif; font-size: clamp(36px, 4.3vw, 62px); font-weight: 500; line-height: .99; letter-spacing: -.05em; }
+.workspaceSectionHeading > p { max-width: 580px; margin: 0; color: #536075; font-family: Georgia, serif; font-size: 17px; line-height: 1.65; }
+.workspaceRoleSection { margin-top: 18px; padding: 25px; background: #eef5f0; border-left: 4px solid var(--green); }
+.workspaceRoleSection + .workspaceRoleSection { margin-top: 15px; background: #f5f1e7; border-left-color: var(--gold); }
+.workspaceRoleHeading { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 20px; }
+.workspaceRoleHeading h3, .workspaceNoAssignment h3, .workspacePersonalAttendance h3 { margin: 0; color: var(--navy); font-family: Georgia, serif; font-size: clamp(27px, 3vw, 39px); font-weight: 500; line-height: 1.05; }
+.workspaceRoleBadge, .workspaceClassKey, .workspaceAssignmentStatus { display: inline-flex; flex: none; align-items: center; padding: 7px 10px; border-radius: 999px; background: #d9ecdf; color: #27634d; font-size: 10px; font-weight: 850; letter-spacing: .07em; text-transform: uppercase; }
+.workspaceClassGrid, .workspaceAssignmentGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; }
+.workspaceClassCard, .workspaceAssignmentCard { min-width: 0; padding: 22px; border: 1px solid #dce6dd; background: white; }
+.workspaceAssignmentCard { border-color: #e5dfcf; }
+.workspaceCardHeader { display: flex; align-items: flex-start; justify-content: space-between; gap: 15px; }
+.workspaceCardHeader .workspaceCardKicker { margin-bottom: 8px; }
+.workspaceCardHeader h3 { margin: 0; color: var(--navy); font-family: Georgia, serif; font-size: 27px; font-weight: 500; line-height: 1.07; overflow-wrap: anywhere; }
+.workspaceCardHeader p:not(.workspaceCardKicker) { margin: 7px 0 0; color: #687384; font-size: 12px; line-height: 1.4; }
+.workspaceClassKey { max-width: 110px; overflow-wrap: anywhere; text-align: right; }
+.workspaceMiniMetrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 22px; }
+.workspaceMiniMetrics--compact { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 18px; }
+.workspaceMiniMetrics > div { min-width: 0; padding: 11px; background: #f3f7f3; }
+.workspaceMiniMetrics strong { display: block; margin-top: 7px; color: var(--navy); font-size: 13px; line-height: 1.35; overflow-wrap: anywhere; }
+.workspaceDetailList { display: grid; gap: 8px; margin-top: 13px; }
+.workspaceDetailList > div { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; padding: 10px 0; border-top: 1px solid #e3ebe3; }
+.workspaceDetailList strong { max-width: 65%; color: #40516a; font-size: 12px; line-height: 1.45; text-align: right; }
+.workspaceCardActions { display: flex; gap: 11px; align-items: center; margin-top: 20px; flex-wrap: wrap; }
+.workspaceLaunchButton { display: inline-flex; align-items: center; justify-content: space-between; gap: 15px; width: max-content; max-width: 100%; padding: 11px 13px; border-radius: 999px; background: var(--navy); color: white; font-size: 12px; font-weight: 850; }
+.workspaceLaunchButton:hover { background: #0d2c55; transform: translateY(-1px); }
+.workspaceLaunchButton span { color: var(--mint); font-size: 15px; }
+.workspaceTextLink { color: var(--green); font-size: 11px; font-weight: 850; }
+.workspaceEmptyState { margin: 0; padding: 13px 15px; border-left: 3px solid var(--gold); background: #fff8e9; color: #725d37; font-size: 12px; line-height: 1.6; }
+.workspaceAssignmentProgress { margin-top: 20px; }
+.workspaceAssignmentProgress > div:first-child { display: flex; align-items: center; justify-content: space-between; gap: 15px; color: #547060; font-size: 10px; font-weight: 850; letter-spacing: .08em; text-transform: uppercase; }
+.workspaceAssignmentProgress strong { color: var(--navy); font-size: 12px; letter-spacing: 0; text-transform: none; }
+.workspaceProgress { height: 7px; margin-top: 9px; overflow: hidden; border-radius: 999px; background: #e1e9e2; }
+.workspaceProgress span { display: block; height: 100%; border-radius: inherit; background: var(--green); }
+.workspacePersonalAttendance { display: grid; grid-template-columns: minmax(190px, .65fr) minmax(0, 1.35fr); gap: 20px; align-items: center; margin-top: 15px; padding-top: 20px; border-top: 1px solid rgba(10,35,72,.12); }
+.workspacePersonalAttendance .workspaceEmptyState { margin: 0; }
+.workspaceNoAssignment { padding: 28px; background: white; border: 1px solid #dfe5de; }
+.workspaceNoAssignment p:not(.workspaceCardKicker) { max-width: 620px; margin: 13px 0 0; color: #5e6b7b; font-size: 14px; line-height: 1.65; }
+.workspaceAdminSection { padding-top: 49px; border-top: 1px solid var(--line); }
+.workspaceAdminPanels { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 13px; margin-top: 15px; }
+.workspacePanel { min-width: 0; padding: 22px; background: white; border-top: 4px solid var(--green); }
+.workspacePanel:nth-child(2) { border-top-color: var(--gold); }
+.workspacePanel:nth-child(3) { border-top-color: #5275a0; }
+.workspacePanel h3 { margin: 7px 0 0; color: var(--navy); font-family: Georgia, serif; font-size: 27px; font-weight: 500; line-height: 1.08; overflow-wrap: anywhere; }
+.workspacePanel p:last-child { margin: 12px 0 0; color: #5d6979; font-size: 13px; line-height: 1.58; }
+.workspaceAdminClasses { margin-top: 15px; background: #f4f7f3; }
+.workspaceAdminClasses summary { padding: 16px 18px; color: var(--green); cursor: pointer; font-size: 12px; font-weight: 850; }
+.workspaceAdminClasses .workspaceClassGrid { padding: 0 15px 15px; }
+.workspaceModulesSection { padding-top: 2px; }
+.workspaceModuleGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.workspaceModuleCard { display: flex; min-width: 0; min-height: 290px; padding: 24px; flex-direction: column; border: 1px solid #dfe5de; background: white; box-shadow: 0 13px 30px rgba(14,37,64,.035); }
+.workspaceModuleCardTop { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.workspaceModuleIcon { display: inline-flex; width: 42px; height: 42px; align-items: center; justify-content: center; border-radius: 13px; background: #e3f2e8; color: var(--green); font-family: Georgia, serif; font-size: 21px; }
+.workspaceModuleCard h3 { margin: 22px 0 11px; color: var(--navy); font-family: Georgia, serif; font-size: 28px; font-weight: 500; line-height: 1.04; overflow-wrap: anywhere; }
+.workspaceModuleCard p { margin: 0; color: #5d6979; font-size: 13px; line-height: 1.65; }
+.workspaceModuleCard .workspaceLaunchButton { margin-top: auto; }
+.workspaceMutedNote { margin-top: auto; padding-top: 20px; color: #6b7785; font-size: 11px; line-height: 1.55; }
+.workspaceStatus { display: inline-flex; align-items: center; gap: 6px; width: max-content; padding: 6px 9px; border-radius: 999px; font-size: 9px; font-weight: 900; letter-spacing: .08em; line-height: 1; text-transform: uppercase; }
+.workspaceStatus--operational { background: #dff1e5; color: #1f684c; }
+.workspaceStatus--under-development { background: #e8edf5; color: #355479; }
+.workspaceStatus--protected { background: #fff0d7; color: #795717; }
+.workspaceNoticeBand { display: grid; grid-template-columns: .6fr 1.4fr; gap: 20px; align-items: center; margin-top: 15px; padding: 24px; background: #eef3f6; border-left: 4px solid #5275a0; }
+.workspaceNoticeBand h3 { margin: 0; color: var(--navy); font-family: Georgia, serif; font-size: 28px; font-weight: 500; }
+.workspaceNoticeBand .workspaceEmptyState { background: white; }
+.workspaceFooter { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-top: 57px; padding-top: 20px; border-top: 1px solid var(--line); color: #687384; font-size: 11px; }
+.workspaceFooter span:first-child { color: var(--green); font-weight: 850; }
+.workspaceFooter button { padding: 0; border: 0; background: transparent; color: var(--green); cursor: pointer; font-size: 11px; font-weight: 850; }
+
+/* Public portal showcase */
+.publicWorkspaceHero { display: grid; grid-template-columns: 1.1fr .9fr; gap: 8vw; align-items: center; min-height: 700px; padding: 155px 7vw 100px; background: var(--navy2); color: white; }
+.publicWorkspaceHeroCopy { max-width: 800px; }
+.publicWorkspaceHero h1 { margin: 0; color: white; font-family: Georgia, serif; font-size: clamp(52px, 7vw, 96px); font-weight: 500; line-height: .94; letter-spacing: -.06em; }
+.publicWorkspaceHeroCopy > p:not(.eyebrow) { max-width: 680px; margin: 28px 0 0; color: #dbe5ed; font-size: 18px; line-height: 1.7; }
+.publicWorkspaceTextLink { display: inline-flex; align-items: center; padding: 13px 3px; color: var(--mint); font-size: 13px; font-weight: 850; }
+.publicWorkspaceHeroCard { display: flex; min-height: 310px; padding: 34px; flex-direction: column; justify-content: flex-end; border-top: 5px solid var(--gold); background: rgba(255,255,255,.97); color: var(--navy); box-shadow: 0 28px 60px rgba(0,0,0,.22); }
+.publicWorkspaceHeroMark { display: inline-flex; width: 67px; height: 67px; align-items: center; justify-content: center; border: 1px solid var(--green); border-radius: 50%; color: var(--green); font-size: 14px; font-weight: 900; letter-spacing: .08em; }
+.publicWorkspaceHeroCard p { margin: 38px 0 0; color: var(--green); font-size: 10px; font-weight: 900; letter-spacing: .16em; }
+.publicWorkspaceHeroCard strong { margin-top: 10px; font-family: Georgia, serif; font-size: 30px; font-weight: 500; line-height: 1.08; }
+.publicWorkspaceHeroCard small { margin-top: 18px; color: #687384; font-size: 12px; line-height: 1.55; }
+.publicWorkspaceIntro { display: grid; grid-template-columns: .95fr 1.05fr; gap: 9vw; background: white; }
+.publicWorkspaceIntro h2, .publicWorkspaceSectionHeading h2, .publicWorkspaceBoundary h2, .publicWorkspaceReturn h2 { margin: 0; color: var(--navy); font-family: Georgia, serif; font-size: clamp(39px, 4.7vw, 66px); font-weight: 500; line-height: 1.02; letter-spacing: -.05em; }
+.publicWorkspaceIntro > div:last-child { color: #536075; font-family: Georgia, serif; font-size: 20px; line-height: 1.7; }
+.publicWorkspaceIntro > div:last-child p { margin: 0 0 20px; }
+.publicWorkspaceShowcase { background: #f0f3ee; }
+.publicWorkspaceSectionHeading { display: grid; grid-template-columns: 1fr 1fr; gap: 8vw; align-items: end; margin-bottom: 38px; }
+.publicWorkspaceSectionHeading > p { max-width: 560px; margin: 0; color: #536075; font-family: Georgia, serif; font-size: 17px; line-height: 1.65; }
+.publicWorkspaceCardGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 15px; }
+.publicWorkspaceCard { display: flex; min-height: 310px; padding: 28px; flex-direction: column; border: 1px solid #dfe5de; background: white; }
+.publicWorkspaceCardTop { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.publicWorkspaceGlyph { display: inline-flex; width: 45px; height: 45px; align-items: center; justify-content: center; border-radius: 14px; background: #e3f2e8; color: var(--green); font-family: Georgia, serif; font-size: 22px; }
+.publicWorkspaceCard h3 { margin: 24px 0 12px; color: var(--navy); font-family: Georgia, serif; font-size: 29px; font-weight: 500; line-height: 1.05; }
+.publicWorkspaceCard > p { margin: 0; color: #5c6879; font-size: 14px; line-height: 1.65; }
+.publicWorkspaceBenefit { margin-top: auto; padding-top: 23px; }
+.publicWorkspaceBenefit span { display: block; color: var(--green); font-size: 9px; font-weight: 900; letter-spacing: .13em; text-transform: uppercase; }
+.publicWorkspaceBenefit strong { display: block; margin-top: 7px; color: #40516a; font-size: 12px; line-height: 1.5; }
+.portalStatus { display: inline-flex; align-items: center; gap: 6px; padding: 6px 9px; border-radius: 999px; font-size: 9px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+.portalStatus i { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.portalStatus--available { background: #dff1e5; color: #1f684c; }
+.portalStatus--in-development { background: #e8edf5; color: #355479; }
+.portalStatus--planned { background: #fff0d7; color: #795717; }
+.publicWorkspaceBoundary { display: flex; align-items: center; justify-content: space-between; gap: 40px; padding: 78px 7vw; background: var(--navy); color: white; }
+.publicWorkspaceBoundary > div { max-width: 780px; }
+.publicWorkspaceBoundary h2 { color: white; }
+.publicWorkspaceBoundary p:not(.eyebrow) { max-width: 650px; margin: 22px 0 0; color: #c7d4e0; font-size: 16px; line-height: 1.7; }
+.publicWorkspaceBoundary .primaryButton { flex: none; }
+.publicWorkspaceReturn { display: flex; align-items: center; justify-content: space-between; gap: 40px; background: white; }
+.publicWorkspaceReturn > div { max-width: 750px; }
+.publicWorkspaceReturn p:not(.eyebrow) { margin: 19px 0 0; color: #5c6879; font-size: 16px; line-height: 1.65; }
+.publicWorkspaceReturn .primaryButton { flex: none; }
+
+@media (max-width: 1180px) {
+  .workspaceIdentityCard { grid-template-columns: 96px minmax(180px, 1fr); }
+  .workspaceIdentityPhoto { width: 96px; height: 96px; }
+  .workspaceIdentityFacts { grid-column: 1 / -1; }
+  .workspaceModuleGrid, .publicWorkspaceCardGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .publicWorkspaceHero { gap: 5vw; }
+  .workspaceSectionHeading, .publicWorkspaceSectionHeading { grid-template-columns: 1fr; gap: 20px; }
+}
+@media (max-width: 900px) {
+  .workspaceShell { display: block; }
+  .workspaceSidebar { position: fixed; z-index: 70; inset: 0 auto 0 0; width: min(330px, 88vw); height: 100vh; transform: translateX(-104%); transition: transform .22s ease; box-shadow: 18px 0 50px rgba(0,0,0,.2); }
+  .workspaceSidebar.isOpen { transform: translateX(0); }
+  .workspaceNavClose { display: inline-flex; width: 35px; height: 35px; align-items: center; justify-content: center; border: 1px solid rgba(255,255,255,.28); border-radius: 50%; background: transparent; color: white; cursor: pointer; font-size: 23px; line-height: 1; }
+  .workspaceMobileBar { display: flex; align-items: center; justify-content: space-between; gap: 15px; padding-bottom: 22px; }
+  .workspaceMobileBar .workspaceBrand { color: var(--navy); }
+  .workspaceMobileBar .workspaceBrand span { border-color: var(--green); color: var(--green); }
+  .workspaceMobileBar .workspaceBrand strong { color: var(--navy); }
+  .workspaceMenuButton { padding: 10px 13px; border: 1px solid rgba(10,35,72,.2); border-radius: 999px; background: white; color: var(--navy); cursor: pointer; font-size: 11px; font-weight: 850; }
+  .workspaceMain { padding: 23px 5vw 60px; }
+  .workspaceTopbar { align-items: flex-start; flex-direction: column; padding-bottom: 30px; }
+  .workspaceRefreshButton { width: max-content; }
+  .workspaceMetricGrid, .workspaceAdminMetrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .workspaceModuleGrid, .publicWorkspaceCardGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .workspaceClassGrid, .workspaceAssignmentGrid, .workspaceAdminPanels { grid-template-columns: 1fr; }
+  .workspacePersonalAttendance { grid-template-columns: 1fr; }
+  .publicWorkspaceHero { grid-template-columns: 1fr; min-height: 0; padding: 125px 7vw 75px; }
+  .publicWorkspaceHeroCard { min-height: 270px; }
+  .publicWorkspaceBoundary, .publicWorkspaceReturn { align-items: flex-start; flex-direction: column; }
+}
+@media (max-width: 620px) {
+  .workspaceMain { padding: 18px 5vw 48px; }
+  .workspaceTopbar h1 { font-size: 44px; }
+  .workspaceIdentityCard { grid-template-columns: 76px minmax(0, 1fr); gap: 16px; padding: 20px; }
+  .workspaceIdentityPhoto { width: 76px; height: 76px; }
+  .workspaceIdentityPhoto span { font-size: 23px; }
+  .workspaceIdentityMain h2 { font-size: 30px; }
+  .workspaceIdentityFacts { grid-template-columns: 1fr 1fr; }
+  .workspaceMetricGrid, .workspaceAdminMetrics, .workspaceModuleGrid, .publicWorkspaceCardGrid { grid-template-columns: 1fr; }
+  .workspaceSection { margin-top: 49px; }
+  .workspaceSectionHeading h2, .publicWorkspaceSectionHeading h2, .publicWorkspaceIntro h2, .publicWorkspaceBoundary h2, .publicWorkspaceReturn h2 { font-size: 39px; }
+  .workspaceRoleSection { padding: 20px; }
+  .workspaceRoleHeading, .workspaceCardHeader { align-items: flex-start; flex-direction: column; }
+  .workspaceMiniMetrics, .workspaceMiniMetrics--compact { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .workspaceDetailList strong { max-width: 58%; }
+  .workspaceCardActions { align-items: flex-start; flex-direction: column; }
+  .workspaceLaunchButton { width: 100%; }
+  .workspaceFooter { align-items: flex-start; flex-direction: column; gap: 8px; }
+  .workspaceNoticeBand { grid-template-columns: 1fr; }
+  .publicWorkspaceHero { padding: 112px 7vw 58px; }
+  .publicWorkspaceHero h1 { font-size: 52px; }
+  .publicWorkspaceHeroCard { padding: 27px; }
+  .publicWorkspaceIntro, .publicWorkspaceShowcase { padding-top: 70px; padding-bottom: 70px; }
+  .publicWorkspaceBoundary, .publicWorkspaceReturn { padding: 58px 7vw; }
+}

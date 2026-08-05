@@ -31,6 +31,12 @@ assert.equal(Object.hasOwn(login.payload, "session_secret"), false);
 for (const path of ["app/_components/PortalWorkspaceClient.tsx"]) {
   const source = await readFile(new URL(`../${path}`, import.meta.url), "utf8");
   assert.equal(/sessionStorage|localStorage/.test(source), false, `${path} stores browser session state`);
+  assert.match(source, /school_staff_workspace_read_summary_api|summary\?\./, `${path} does not render the read-only summary contract`);
+  assert.match(source, /No photograph has been approved\./, `${path} is missing the honest photograph empty state`);
 }
+
+const routeSource = await readFile(new URL("../app/api/workspace/route.ts", import.meta.url), "utf8");
+assert.match(routeSource, /school_staff_workspace_read_summary_api/);
+assert.match(routeSource, /noStoreHeaders/);
 
 console.log(`School Platform workspace session contract passed against ${baseUrl}`);

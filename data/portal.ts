@@ -1,57 +1,67 @@
-export type PortalServiceStatus = "available" | "in-development" | "planned" | "preview";
+export type PortalServiceStatus = "available" | "in-development" | "planned";
 
 export type PortalService = {
-  title: string;
-  description: string;
-  status: PortalServiceStatus;
-  href: string;
-  actionLabel: string;
-  external?: boolean;
-};
-
-export type PortalGroup = {
   id: string;
-  label: string;
   title: string;
   description: string;
-  services: PortalService[];
+  benefit: string;
+  status: PortalServiceStatus;
+  icon: string;
 };
 
-export const portalGroups: PortalGroup[] = [
+export const portalServices: PortalService[] = [
   {
-    id: "wts-workspace",
-    label: "ONE AUTHENTICATED DESTINATION",
-    title: "WTS Staff and Management Portal",
-    description: "One protected workspace for authorised school employees. The modules shown after sign-in come from the real permissions assigned by management; management is not a separate workspace.",
-    services: [
-      {
-        title: "WTS Workspace",
-        description: "Sign in with your existing WTS staff identity. The same destination adjusts automatically for your active grants and never invents access, records or dashboard figures.",
-        status: "available",
-        href: "/portal/sign-in",
-        actionLabel: "Sign in to WTS Workspace",
-      },
-      {
-        title: "Results",
-        description: "The existing Result Portal remains operational and is offered from the unified workspace after the current Results grant is checked.",
-        status: "available",
-        href: "/portal/sign-in",
-        actionLabel: "Sign in for authorised Results access",
-      },
-      {
-        title: "Central Registry, Attendance and Notifications",
-        description: "These real services remain protected and permission-driven. Central Registry is under continued development in the unified flow; Attendance and Notifications are in development.",
-        status: "in-development",
-        href: "/portal/sign-in",
-        actionLabel: "View WTS Workspace status",
-      },
-    ],
+    id: "central-registry",
+    title: "Central Registry",
+    description: "The school’s trusted foundation for staff identity, pupil records and authorised access.",
+    benefit: "Keeps school information organised and access carefully assigned.",
+    status: "available",
+    icon: "R",
+  },
+  {
+    id: "results",
+    title: "Results",
+    description: "A focused Result service for score entry, report-card preparation and academic publishing.",
+    benefit: "Helps teachers and school leaders keep academic records accurate and timely.",
+    status: "available",
+    icon: "∑",
+  },
+  {
+    id: "attendance",
+    title: "Attendance",
+    description: "A developing view of pupil and staff attendance across the school day.",
+    benefit: "Supports early awareness of absence and stronger pastoral follow-up.",
+    status: "in-development",
+    icon: "A",
+  },
+  {
+    id: "notifications",
+    title: "Notifications",
+    description: "A developing communication service for clear, purposeful school updates.",
+    benefit: "Helps the school community receive important information in the right place.",
+    status: "in-development",
+    icon: "N",
+  },
+  {
+    id: "reports",
+    title: "Reports",
+    description: "A planned home for trusted summaries that help authorised leaders make informed decisions.",
+    benefit: "Turns connected school information into useful, responsible insight.",
+    status: "planned",
+    icon: "▤",
+  },
+  {
+    id: "future-modules",
+    title: "Future school services",
+    description: "Additional services will be introduced carefully as they become ready for the school community.",
+    benefit: "Creates room for the platform to grow without making access confusing.",
+    status: "planned",
+    icon: "+",
   },
 ];
 
 export const portalStatusLabels: Record<PortalServiceStatus, string> = {
-  available: "Available",
-  "in-development": "In development",
+  available: "Operational",
+  "in-development": "Coming online",
   planned: "Planned",
-  preview: "Preview only",
 };
