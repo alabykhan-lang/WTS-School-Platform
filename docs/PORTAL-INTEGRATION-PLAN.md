@@ -1,90 +1,73 @@
 # WTS Portal Integration Plan
 
-**Status:** production correction in progress
+**Status:** Result Portal PKCE SSO implemented; Attendance and Notification remain outside this phase.
 
 ## Decision: one WTS Workspace
 
-There is one authenticated destination: `/workspace`, presented as **WTS Workspace**. A user never chooses a Staff or Management workspace. After Central Registry verifies the real staff identity and active session, the workspace reads the current active grants and displays only the modules authorised for that person.
+There is one authenticated destination: `/workspace`, presented as WTS Workspace. A user never chooses a Staff or Management workspace. The Workspace reads current active grants and displays only modules authorized for that person.
 
-The old `/workspace/staff` and `/workspace/management` paths are compatibility routes that redirect to `/workspace`. They are not alternate experiences, access paths or permission boundaries.
+A module card is navigation only. Each specialist API and database authorization boundary revalidates the session, identity, grant and operation scope.
 
-The distinction is:
+## Production applications
 
-- **Workspace:** the single authenticated shell and navigation.
-- **Module:** a connected school service shown only when its current grant or permission permits it.
-- **Action and scope:** a second server-side decision for protected operations, including Results class/subject scope and identity administration.
-
-The browser hiding a card is never the security boundary. The workspace read RPC, server API routes and specialist systems must verify the session and permission again.
-
-## Current production applications
-
-| Application | Repository | Production URL | Current responsibility |
+| Application | Repository | Production URL | Responsibility |
 | --- | --- | --- | --- |
-| WTS School Platform | `alabykhan-lang/WTS-School-Platform` | `https://wts-school-platform.vercel.app` | Public website, gateway and unified WTS Workspace |
-| Central Registry | `alabykhan-lang/WTS-Central-Registry-` | `https://wts-central-registry.vercel.app` | People, staff identity, credentials and grants |
-| Result Portal | `alabykhan-lang/wts-result-system` | `https://wts-result-system.vercel.app` | Existing scores, publication and report-card generation |
+| WTS School Platform | `alabykhan-lang/WTS-School-Platform` | `https://wts-school-platform.vercel.app` | WTS Workspace and central entry |
+| Central Registry | `alabykhan-lang/WTS-Central-Registry-` | `https://wts-central-registry.vercel.app` | Identity, credentials, employment, grants and scopes |
+| Result Portal | `alabykhan-lang/wts-result-system` | `https://wts-result-system.vercel.app` | Classes, scores, publication and report cards |
 
-All three use the existing Supabase project `wuftzyeajmsxdrbwaawl`. No sample people, users, grants, classes, subjects, scores or placeholder dashboard records are part of this integration.
+All three use Supabase project `wuftzyeajmsxdrbwaawl`. No sample people, users, grants, sessions, academic records or placeholder metrics are part of this integration.
 
-## Unified module directory
+## Module status
 
-| Workspace module | Visibility decision | Current status |
+| Module | Visibility | Status |
 | --- | --- | --- |
-| Home / Overview | Authenticated workspace read | Operational shell; no invented figures or tasks |
-| My Profile | Staff self-service grant plus profile permission | Operational identity link; profile editing remains in the protected Registry service |
-| Central Registry | `central_registry` grant or Registry permission | Under continued development in the unified flow |
-| Results | Active `results` grant | Operational existing Result Portal; protected WTS Staff Login is the current entry point |
-| Attendance | Attendance grant or action permission | In development; no fake events or figures |
-| Notifications | Notifications grant or action permission | In development; no fake messages or delivery data |
-| Reports | Reporting permission | In development until an approved reporting service is connected |
-| Public Website Management | Website-content permission | In development until a real protected publishing interface exists |
-| System Administration | `access.manage` or an explicit system-administration permission | Protected identity/access controls only |
+| My Profile | Staff self-service/profile permission | Operational identity link |
+| Central Registry | Central Registry grant or Registry permission | Protected external service |
+| Results | Active `results` grant | PKCE SSO operational integration |
+| Attendance | Attendance grant/action permission | Untouched; outside this phase |
+| Notifications | Notification grant/action permission | Untouched; outside this phase |
+| Reports / Website / System Administration | Current real permissions | Existing protected or development surfaces |
 
-The workspace response filters grants by active status and validity dates. Result class and subject scopes are returned only when an active Results grant exists. Management authority is represented by grants such as `access.manage`; it is not a separate workspace.
+## Result PKCE handoff
 
-## Current credential system
+The Workspace Results link enters Result Portal at `portal_core.html?sso=1`. Result Portal creates a verifier, state and nonce and navigates to:
 
-The real Central Registry credential path is:
+`https://wts-school-platform.vercel.app/api/sso/authorize`
 
-`school_people` → `staff_attendance_profiles` → `school_identity_accounts` → `school_identity_credentials`
+The Platform endpoint accepts only:
 
-The platform signs in through the same-origin `/api/workspace-session` route. The server calls `school_identity_portal_login` and issues a short-lived HttpOnly cookie only after it verifies the active identity, employment, account, credential and WTS grant. The browser receives no client code, client secret, password hash or service-role key.
+- client `result_portal`;
+- target scope `results`;
+- response type `code`;
+- PKCE method `S256`; and
+- callback `https://wts-result-system.vercel.app/portal_core.html`.
 
-The Central Registry credential is the WTS credential used by the protected workspace and Result Portal entry points. First-time and reset credentials return a compulsory-password-change state; the user must choose a compliant password before continuing to `/workspace`.
+It requires a live `staff_self_service` Workspace session and revalidates person status, staff registration, employment, identity account, active credential, Result profile mapping and the current Results grant.
 
-The sign-in page uses generic incorrect-credential handling for unknown public emails. It also gives clear recovery guidance for inactive accounts, temporary locks, missing workspace grants, compulsory password change and expired sessions without publishing account-existence details.
+The endpoint stores only hashes of the short-lived code, state and nonce. The code expires after five minutes and is consumed once. It never places passwords, central session secrets, hashes or service keys in the URL.
 
-## Password activation and management recovery
+Result Portal posts the code and verifier to its own `/api/result-sso-token` server endpoint. The exchange revalidates the central session linkage and the current person, employment, identity, credential, Result grant and Result mapping before creating the Result session.
 
-The Central Registry migration `20260801160000_secure_identity_recovery_and_unified_workspace` adds a guarded temporary-credential flow over the existing identity tables. It does not create a temporary identity table or recreate the confirmed account.
+## Session and logout contract
 
-An authorised administrator with an active Central Registry session and `access.manage` permission uses the System Administration module. The platform server route, not the browser RPC, calls the privileged reset function with the server-only Supabase service key. The reset:
+- WTS Workspace uses its existing host-only `wts_school_workspace_session` cookie.
+- Result Portal uses its own host-only HttpOnly `wts_result_session` cookie.
+- The Result cookie is not accepted as proof of central authorization by itself.
+- Each protected Result request continues through server-side Result authorization and scope validation.
+- Result logout revokes its Result session and returns to Workspace.
+- Workspace or Central Registry logout revokes linked Result sessions issued from that central session.
+- Employment, account or grant changes fail closed at the Result server boundary.
 
-1. selects the existing active staff identity and credential;
-2. issues a one-time temporary credential in memory;
-3. sets `must_change_password`, clears failed attempts and clears an expired lock;
-4. preserves the person ID, staff identity, grants and history;
-5. invalidates existing opaque sessions for the target identity;
-6. records actor, timestamp, reason, request ID and before/after status in `school_registry_audit`;
-7. returns the temporary credential once to the authorised management browser without writing it to audit data, logs or repository files.
+## Exclusions
 
-The former public execution path for the identity-admin write RPC is revoked. The reset RPC is callable only by the server-side service-role route, and the server route requires same-origin requests plus a live Central Registry session. No password hash is returned.
+This phase does not alter Attendance or Notification source, sessions, devices, provider configuration or records. It does not alter students, scores, traits, remarks, fees, publishing records or report-card data.
 
-## One-time bootstrap recovery
+Detailed controls and verification are in:
 
-The bootstrap function is hard-coded to the one confirmed existing super-admin identity and refuses every other target. It does not create another account or alter grants.
-
-The authorised owner’s safe method is:
-
-1. Set the server-only Supabase service key and a newly generated one-time `WTS_IDENTITY_BOOTSTRAP_SECRET` in the WTS School Platform production environment through the Vercel project settings. Never put either value in GitHub, source code, browser storage or documentation.
-2. From the owner’s private device, send a same-origin request to `/api/identity/bootstrap-recovery` with the bootstrap secret in the request header and an operational reason in the JSON body. The endpoint accepts only the confirmed account and returns the temporary credential once.
-3. Deliver or enter that credential through an approved private channel. Sign in with the existing WTS staff number or registered email, complete the compulsory password change, and verify workspace access.
-4. Remove the bootstrap environment secret immediately after successful recovery. The account metadata records issuance and completion and the database refuses a second bootstrap issuance.
-
-The temporary credential is never included in this repository, deployment documentation, GitHub commit, Vercel log statement or audit metadata.
-
-## Result transition
-
-The Results module is shown only for an active Results grant. The workspace opens the existing Result Portal separately; it does not embed the portal or pass credentials in a URL. The Result Portal uses WTS Staff Login and its own protected server session until the later PKCE phase.
-
-PKCE SSO remains gated on real-account login, revocation, assignment, end-to-end workflow and production deployment verification.
+- `docs/WTS-PKCE-SSO-ARCHITECTURE.md`
+- `docs/RESULT-SSO-INTEGRATION.md`
+- `docs/SSO-SECURITY-CONTROLS.md`
+- `docs/SSO-LOGOUT-AND-REVOCATION.md`
+- `docs/SSO-ROLLBACK-PLAN.md`
+- `docs/SSO-PRODUCTION-VERIFICATION.md`
