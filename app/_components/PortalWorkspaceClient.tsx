@@ -62,7 +62,7 @@ type WorkspaceModuleKey =
 
 type WorkspaceModuleStatus = "operational" | "under-development" | "protected";
 
-const resultPortalUrl = "https://wts-result-system.vercel.app/";
+const resultPortalUrl = "https://wts-result-system.vercel.app/portal_core.html?sso=1";
 const centralRegistryUrl = "https://wts-central-registry.vercel.app/";
 
 function friendlyError(code?: string) {
@@ -71,6 +71,7 @@ function friendlyError(code?: string) {
     LOGIN_AND_PASSWORD_REQUIRED: "Enter your WTS staff number or official email and password.",
     ACCOUNT_NOT_ACTIVE: "This staff account is not active. Please contact authorised school management.",
     ACCOUNT_TEMPORARILY_LOCKED: "This account is temporarily locked. Please contact authorised school management for recovery.",
+    RESULT_ACCESS_NOT_GRANTED: "This account does not currently have an active Results grant.",
     PORTAL_ACCESS_NOT_GRANTED: "This account does not currently have access to the WTS Workspace.",
     PORTAL_PERMISSION_SYNC_FAILED: "The account could not be matched to an active workspace grant. Please contact authorised school management.",
     STAFF_SESSION_NOT_ACTIVE: "Your session is no longer active. Please sign in again.",
@@ -101,6 +102,17 @@ async function readWorkspace<T>() {
   return payload as T;
 }
 
+function safeWorkspaceReturnTo(value: string | null) {
+  if (!value) return "/workspace";
+  try {
+    const parsed = new URL(value, window.location.origin);
+    if (parsed.origin !== window.location.origin || parsed.pathname !== "/api/sso/authorize") return "/workspace";
+    return `${parsed.pathname}${parsed.search}`;
+  } catch {
+    return "/workspace";
+  }
+}
+
 export function PortalSignIn() {
   const [login, setLogin] = useState("");
   const [password, setPassword] = useState("");
@@ -110,6 +122,12 @@ export function PortalSignIn() {
   const [message, setMessage] = useState("");
   const [messageTone, setMessageTone] = useState<"error" | "success" | "info">("error");
   const [busy, setBusy] = useState(false);
+  const [returnTo, setReturnTo] = useState("/workspace");
+
+  useEffect(() => {
+    const query = new URLSearchParams(window.location.search);
+    setReturnTo(safeWorkspaceReturnTo(query.get("return_to")));
+  }, []);
 
   async function submitLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -124,7 +142,7 @@ export function PortalSignIn() {
         setMessageTone("info");
         return;
       }
-      window.location.assign("/workspace");
+      window.location.assign(returnTo);
     } catch (error) {
       setMessage(friendlyError(error instanceof Error ? error.message : undefined));
       setMessageTone("error");
@@ -322,7 +340,7 @@ export function WorkspaceClient() {
           <div className="workspaceModuleGrid">
             {grantedModules.profile ? <ModuleCard id="profile" title="My Profile" status="operational" description="Your staff identity is supplied by Central Registry. This workspace does not create a duplicate profile." action={<a className="workspaceExternalLink" href="https://wts-central-registry.vercel.app/staff" target="_blank" rel="noreferrer">Open protected profile service ↗</a>} /> : null}
             {grantedModules.centralRegistry ? <ModuleCard id="centralRegistry" title="Central Registry" status="under-development" description="The real registry remains the authority for people, admissions, staff identity and access grants." action={<a className="workspaceExternalLink" href={centralRegistryUrl} target="_blank" rel="noreferrer">Open Central Registry ↗</a>} note="The Registry uses its own host-only protected session; cross-application PKCE remains a later phase." /> : null}
-            {grantedModules.results ? <ModuleCard id="results" title="Results" status="operational" description="The existing Result Portal remains the operational score, report-card and publication system. This workspace checks your real Results grant before offering access." action={<a className="workspaceExternalLink" href={resultPortalUrl} target="_blank" rel="noreferrer">Open existing Result Portal ↗</a>} note="The Result Portal uses WTS Staff Login and its own protected server session until the later PKCE phase." /> : null}
+            {grantedModules.results ? <ModuleCard id="results" title="Results" status="operational" description="The existing Result Portal remains the operational score, report-card and publication system. This workspace checks your real Results grant before offering access." action={<a className="workspaceExternalLink" href={resultPortalUrl}>Open Results with WTS SSO ↗</a>} note="Results starts an exact-redirect PKCE flow through the central WTS authorization endpoint and creates its own protected Result session." /> : null}
             {grantedModules.attendance ? <ModuleCard id="attendance" title="Attendance" status="under-development" description="Attendance access is assigned to this identity, but the protected WTS Workspace interface is still in development." note="No attendance events, devices or figures are shown here." /> : null}
             {grantedModules.notifications ? <ModuleCard id="notifications" title="Notifications" status="under-development" description="Notification access is assigned to this identity, but the protected WTS Workspace interface is still in development." note="No contacts, messages or delivery figures are shown here." /> : null}
             {grantedModules.reports ? <ModuleCard id="reports" title="Reports" status="under-development" description="Reporting access is assigned to this identity. The approved reporting service is not connected to this workspace yet." note="No invented metrics or report records are displayed." /> : null}
