@@ -481,7 +481,7 @@ export function WorkspaceClient() {
   return <main id="main-content" className="workspaceLivePage">
     <div className="workspaceShell">
       <aside id="workspace-navigation" className={`workspaceSidebar ${navOpen ? "isOpen" : ""}`} aria-label="WTS Workspace navigation">
-        <div className="workspaceSidebarBrand"><Link className="workspaceBrand" href="/portal"><span>WTS</span><strong>Staff Workspace</strong></Link><button className="workspaceNavClose" type="button" onClick={() => setNavOpen(false)} aria-label="Close workspace navigation">×</button></div>
+        <div className="workspaceSidebarBrand"><Link className="workspaceBrand" href="/portal"><img className="workspaceBrandLogo" src="/images/logo.webp" alt="Way to Success Standard Schools logo" /><strong>Staff Workspace</strong></Link><button className="workspaceNavClose" type="button" onClick={() => setNavOpen(false)} aria-label="Close workspace navigation">×</button></div>
         <p className="workspaceSidebarNote">Read-only command centre</p>
         <nav onClick={() => setNavOpen(false)}>
           <a href="#overview">Overview</a>
@@ -495,7 +495,7 @@ export function WorkspaceClient() {
       </aside>
 
       <section className="workspaceMain">
-        <div className="workspaceMobileBar"><Link className="workspaceBrand" href="/portal"><span>WTS</span><strong>Staff Workspace</strong></Link><button type="button" className="workspaceMenuButton" onClick={() => setNavOpen((current) => !current)} aria-expanded={navOpen} aria-controls="workspace-navigation">{navOpen ? "Close" : "Menu"}</button></div>
+        <div className="workspaceMobileBar"><Link className="workspaceBrand" href="/portal"><img className="workspaceBrandLogo" src="/images/logo.webp" alt="Way to Success Standard Schools logo" /><strong>Staff Workspace</strong></Link><button type="button" className="workspaceMenuButton" onClick={() => setNavOpen((current) => !current)} aria-expanded={navOpen} aria-controls="workspace-navigation">{navOpen ? "Close" : "Menu"}</button></div>
         <header id="overview" className="workspaceTopbar"><div><p className="workspaceOverline">WTS STAFF WORKSPACE</p><h1>Your WTS Workspace.</h1><p className="workspaceTopbarIntro">Welcome back, {fullName}. Your responsibilities and active services are gathered here.</p></div><button className="workspaceRefreshButton" type="button" onClick={() => void refresh()} disabled={checking}><span aria-hidden="true">↻</span>{checking ? "Refreshing…" : "Refresh"}</button></header>
 
         <section className="workspaceIdentityCard" id="identity" aria-labelledby="identity-heading">
