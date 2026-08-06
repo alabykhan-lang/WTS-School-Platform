@@ -33,6 +33,11 @@ for (const path of ["app/_components/PortalWorkspaceClient.tsx"]) {
   assert.equal(/sessionStorage|localStorage/.test(source), false, `${path} stores browser session state`);
   assert.match(source, /school_staff_workspace_read_summary_api|summary\?\./, `${path} does not render the read-only summary contract`);
   assert.match(source, /No photograph has been approved\./, `${path} is missing the honest photograph empty state`);
+  assert.match(source, /centralRegistry: app\("central_registry"\)/, `${path} does not use the explicit Central Registry grant`);
+  assert.match(source, /results: app\("results"\)/, `${path} does not use the explicit Results grant`);
+  assert.match(source, /showNotifications=\{grantedModules\.notifications\}/, `${path} does not gate class announcements by the Notifications grant`);
+  assert.match(source, /grantedModules\.attendance \? <div className="workspacePersonalAttendance"/, `${path} does not gate personal attendance by the Attendance grant`);
+  assert.equal(source.includes('title="My Profile"'), false, `${path} renders Workspace as a separate module card`);
 }
 
 const routeSource = await readFile(new URL("../app/api/workspace/route.ts", import.meta.url), "utf8");

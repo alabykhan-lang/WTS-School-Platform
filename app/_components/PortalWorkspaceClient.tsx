@@ -359,27 +359,39 @@ function Metric({ label, value, tone = "mint" }: { label: string; value: string;
   return <article className={`workspaceMetric workspaceMetric--${tone}`}><span>{label}</span><strong>{value}</strong></article>;
 }
 
-function ClassOverviewCard({ overview, launchHref }: { overview: ClassOverview; launchHref: string }) {
+function ClassOverviewCard({
+  overview,
+  launchHref,
+  showResults,
+  showAttendance,
+  showRegistry,
+  showNotifications,
+}: {
+  overview: ClassOverview;
+  launchHref: string;
+  showResults: boolean;
+  showAttendance: boolean;
+  showRegistry: boolean;
+  showNotifications: boolean;
+}) {
   const readiness = overview.report_card_readiness?.label || "Report-card readiness is not available.";
   return <article className="workspaceClassCard">
     <div className="workspaceCardHeader"><div><p className="workspaceCardKicker">CLASS OVERVIEW</p><h3>{overview.class_name || overview.class_key}</h3><p>{overview.academic_session || "Session not available"} · {overview.term || "Term not available"}</p></div><span className="workspaceClassKey">{overview.class_key}</span></div>
     <div className="workspaceMiniMetrics">
-      <div><span>Pupils</span><strong>{formatCount(overview.active_pupils ?? overview.total_pupils)}</strong></div>
-      <div><span>Male / female</span><strong>{formatCount(overview.male_pupils)} / {formatCount(overview.female_pupils)}</strong></div>
-      <div><span>Expected subjects</span><strong>{formatCount(overview.expected_subjects)}</strong></div>
-      <div><span>Subjects with scores</span><strong>{formatCount(overview.subjects_with_scores)}</strong></div>
-      <div><span>Incomplete subjects</span><strong>{formatCount(overview.incomplete_subjects)}</strong></div>
-      <div><span>Missing required scores</span><strong>{formatCount(overview.pupils_with_missing_required_scores)}</strong></div>
+      {showRegistry ? <><div><span>Pupils</span><strong>{formatCount(overview.active_pupils ?? overview.total_pupils)}</strong></div><div><span>Male / female</span><strong>{formatCount(overview.male_pupils)} / {formatCount(overview.female_pupils)}</strong></div></> : null}
+      {showResults ? <><div><span>Expected subjects</span><strong>{formatCount(overview.expected_subjects)}</strong></div><div><span>Subjects with scores</span><strong>{formatCount(overview.subjects_with_scores)}</strong></div><div><span>Incomplete subjects</span><strong>{formatCount(overview.incomplete_subjects)}</strong></div><div><span>Missing required scores</span><strong>{formatCount(overview.pupils_with_missing_required_scores)}</strong></div></> : null}
     </div>
     <div className="workspaceDetailList">
-      <div><span>Report cards</span><strong>{readiness}</strong></div>
-      <div><span>Registry records</span><strong>{overview.registry?.incomplete_records === null || overview.registry?.incomplete_records === undefined ? "Not available" : `${formatCount(overview.registry.incomplete_records)} incomplete`}</strong></div>
-      <div><span>Attendance summary</span><strong>{overview.attendance?.available ? `${formatCount(overview.attendance.days_recorded)} days recorded` : "Attendance reporting will appear after operational attendance data becomes available."}</strong></div>
-      <div><span>Absent pupils today</span><strong>{overview.attendance?.available ? formatCount(overview.attendance.absent_pupils_today) : "Not available"}</strong></div>
-      <div><span>Repeated-absence alerts</span><strong>{overview.attendance?.available ? formatCount(overview.attendance.repeated_absence_alerts) : "Not available"}</strong></div>
-      <div><span>Class announcements</span><strong>{overview.announcements?.available ? "Available" : overview.announcements?.message || "No class announcement summary is currently connected."}</strong></div>
+      {showResults ? <div><span>Report cards</span><strong>{readiness}</strong></div> : null}
+      {showRegistry ? <div><span>Registry records</span><strong>{overview.registry?.incomplete_records === null || overview.registry?.incomplete_records === undefined ? "Not available" : `${formatCount(overview.registry.incomplete_records)} incomplete`}</strong></div> : null}
+      {showAttendance ? <><div><span>Attendance summary</span><strong>{overview.attendance?.available ? `${formatCount(overview.attendance.days_recorded)} days recorded` : "Attendance reporting will appear after operational attendance data becomes available."}</strong></div><div><span>Absent pupils today</span><strong>{overview.attendance?.available ? formatCount(overview.attendance.absent_pupils_today) : "Not available"}</strong></div><div><span>Repeated-absence alerts</span><strong>{overview.attendance?.available ? formatCount(overview.attendance.repeated_absence_alerts) : "Not available"}</strong></div></> : null}
+      {showNotifications ? <div><span>Class announcements</span><strong>{overview.announcements?.available ? "Available" : overview.announcements?.message || "No class announcement summary is currently connected."}</strong></div> : null}
     </div>
-    <div className="workspaceCardActions"><a className="workspaceLaunchButton" href={launchHref} target="_blank" rel="noreferrer">Open Results<span aria-hidden="true">↗</span></a><a className="workspaceTextLink" href={attendanceUrl} target="_blank" rel="noreferrer">Open Attendance ↗</a><a className="workspaceTextLink" href={centralRegistryUrl} target="_blank" rel="noreferrer">Open Registry ↗</a></div>
+    {(showResults || showAttendance || showRegistry) ? <div className="workspaceCardActions">
+      {showResults ? <a className="workspaceLaunchButton" href={launchHref} target="_blank" rel="noreferrer">Open Results<span aria-hidden="true">↗</span></a> : null}
+      {showAttendance ? <a className="workspaceTextLink" href={attendanceUrl} target="_blank" rel="noreferrer">Open Attendance ↗</a> : null}
+      {showRegistry ? <a className="workspaceTextLink" href={centralRegistryUrl} target="_blank" rel="noreferrer">Open Registry ↗</a> : null}
+    </div> : null}
   </article>;
 }
 
@@ -426,22 +438,24 @@ export function WorkspaceClient() {
 
   const access = useMemo(() => {
     const grants = workspace?.grants || [];
-    const appCodes = new Set(grants.map((grant) => grant.app_code));
-    const permissions = new Set(grants.flatMap((grant) => grant.permissions || []));
+    const now = Date.now();
+    const activeGrants = grants.filter((grant) => !grant.valid_until || new Date(grant.valid_until).getTime() > now);
+    const appCodes = new Set(activeGrants.map((grant) => grant.app_code));
+    const permissions = new Set(activeGrants.flatMap((grant) => grant.permissions || []));
     const app = (appCode: string) => appCodes.has(appCode);
     const moduleAccess: Record<WorkspaceModuleKey, boolean> = {
-      profile: app("staff_self_service") || hasAny(permissions, "profile.view", "profile.update", "staff_profile.view", "staff_profile.edit"),
-      centralRegistry: app("central_registry") || hasAny(permissions, "central_registry.view", "central_registry.administer", "registry.read", "registry.manage"),
-      results: app("results") || hasAny(permissions, "results.view", "results.manage"),
-      attendance: app("attendance") || hasAny(permissions, "attendance.history.view", "attendance.view", "attendance.create", "attendance.edit", "attendance.review", "attendance.export"),
-      notifications: app("notifications") || hasAny(permissions, "notifications.view", "notifications.create", "notifications.edit", "notifications.approve", "notifications.publish"),
+      profile: app("staff_self_service"),
+      centralRegistry: app("central_registry"),
+      results: app("results"),
+      attendance: app("attendance"),
+      notifications: app("notifications"),
       reports: hasAny(permissions, "reports.view", "reports.export"),
       website: hasAny(permissions, "public_website_content.view", "public_website_content.create", "public_website_content.edit", "public_website_content.publish"),
       systemAdministration: hasAny(permissions, "access.manage", "system_administration.view", "system_administration.administer", "staff_management.administer"),
     };
     const roleNames = workspace?.roles?.map((role) => role.role_name).filter(Boolean) || [];
     const roleCodes = new Set(workspace?.roles?.map((role) => role.role_code) || []);
-    return { permissions, moduleAccess, roleNames, roleCodes, assignedModules: Object.values(moduleAccess).filter(Boolean).length };
+    return { permissions, moduleAccess, roleNames, roleCodes, assignedModules: Object.entries(moduleAccess).filter(([key, value]) => key !== "profile" && value).length };
   }, [workspace]);
 
   if (checking) return <main id="main-content" className="workspaceGate"><p>Preparing your WTS Workspace…</p></main>;
@@ -462,6 +476,7 @@ export function WorkspaceClient() {
   const classTeacherAssignments = classTeacher?.assignments || [];
   const showClassTeacherSection = Boolean(classTeacher?.available || access.roleCodes.has("class_teacher") || classTeacherAssignments.length);
   const showSubjectSection = Boolean(grantedModules.results && (subjectTeacher?.available || assignments.length || access.roleCodes.has("subject_teacher")));
+  const hasSpecialistModules = Object.entries(grantedModules).some(([key, value]) => key !== "profile" && value);
 
   return <main id="main-content" className="workspaceLivePage">
     <div className="workspaceShell">
@@ -474,14 +489,14 @@ export function WorkspaceClient() {
           {grantedModules.results ? <a href="#results">Results</a> : null}
           {grantedModules.attendance ? <a href="#attendance">Attendance</a> : null}
           {grantedModules.notifications ? <a href="#notifications">Notifications</a> : null}
-          <a href="#modules">My modules</a>
+          {hasSpecialistModules ? <a href="#modules">My modules</a> : null}
         </nav>
         <div className="workspaceSidebarFooter"><span>Current context</span><strong>{context?.session || "Session unavailable"}</strong><small>{context?.term || "Term unavailable"}</small><button type="button" className="workspaceSignOut" onClick={() => void signOut()}>Sign out</button></div>
       </aside>
 
       <section className="workspaceMain">
         <div className="workspaceMobileBar"><Link className="workspaceBrand" href="/portal"><span>WTS</span><strong>Staff Workspace</strong></Link><button type="button" className="workspaceMenuButton" onClick={() => setNavOpen((current) => !current)} aria-expanded={navOpen} aria-controls="workspace-navigation">{navOpen ? "Close" : "Menu"}</button></div>
-        <header id="overview" className="workspaceTopbar"><div><p className="workspaceOverline">WTS STAFF WORKSPACE</p><h1>Your school day, clearly organised.</h1><p className="workspaceTopbarIntro">Welcome back, {fullName}. This is a read-only view of the responsibilities and updates connected to your WTS identity.</p></div><button className="workspaceRefreshButton" type="button" onClick={() => void refresh()} disabled={checking}><span aria-hidden="true">↻</span>{checking ? "Refreshing…" : "Refresh"}</button></header>
+        <header id="overview" className="workspaceTopbar"><div><p className="workspaceOverline">WTS STAFF WORKSPACE</p><h1>Your WTS Workspace.</h1><p className="workspaceTopbarIntro">Welcome back, {fullName}. Your responsibilities and active services are gathered here.</p></div><button className="workspaceRefreshButton" type="button" onClick={() => void refresh()} disabled={checking}><span aria-hidden="true">↻</span>{checking ? "Refreshing…" : "Refresh"}</button></header>
 
         <section className="workspaceIdentityCard" id="identity" aria-labelledby="identity-heading">
           <div className="workspaceIdentityPhoto">{person?.photo_url ? <img src={person.photo_url} alt={`${fullName} staff photograph`} /> : <span aria-label="No approved staff photograph">{initials(fullName)}</span>}</div>
@@ -490,17 +505,17 @@ export function WorkspaceClient() {
         </section>
 
         <section className="workspaceMetricGrid" aria-label="Workspace summary"><Metric label="Authorised modules" value={formatCount(access.assignedModules)} tone="mint" /><Metric label="Class-teacher assignments" value={formatCount(classTeacherAssignments.length)} tone="gold" /><Metric label="Subject assignments" value={formatCount(assignments.length)} tone="blue" /><Metric label="Current context" value={`${context?.session || "—"} · ${context?.term || "—"}`} tone="mint" /></section>
+        <section className="workspaceContextBanner" aria-label="Official academic context"><div><p className="workspaceCardKicker">OFFICIAL ACADEMIC CONTEXT</p><h2>{context?.session || "Session unavailable"}<span> · </span>{context?.term || "Term unavailable"}</h2></div><p>Managed in Central Registry. This context is read-only in Workspace.</p></section>
 
         <section id="responsibilities" className="workspaceSection" aria-labelledby="responsibilities-heading"><div className="workspaceSectionHeading"><div><p className="workspaceOverline">YOUR RESPONSIBILITIES</p><h2 id="responsibilities-heading">Only the work connected to you.</h2></div><p>Assignments are filtered by the active grants and scopes held by your signed-in identity. No unrelated classes or school-wide figures are added here.</p></div>
-          {showClassTeacherSection ? <div className="workspaceRoleSection"><div className="workspaceRoleHeading"><div><p className="workspaceCardKicker">CLASS-TEACHER VIEW</p><h3>Class overview</h3></div><span className="workspaceRoleBadge">{classTeacherAssignments.length ? `${classTeacherAssignments.length} active class${classTeacherAssignments.length === 1 ? "" : "es"}` : "No active assignment"}</span></div>{classTeacherAssignments.length ? <div className="workspaceClassGrid">{classTeacherAssignments.map((overview) => <ClassOverviewCard key={overview.class_key} overview={overview} launchHref={resultPortalUrl} />)}</div> : <EmptyState>{classTeacher?.message || "No class-teacher assignment is currently active."}</EmptyState>}</div> : null}
-          {showSubjectSection ? <div className="workspaceRoleSection"><div className="workspaceRoleHeading"><div><p className="workspaceCardKicker">SUBJECT-TEACHER VIEW</p><h3>Subject responsibilities</h3></div><span className="workspaceRoleBadge">{assignments.length ? `${assignments.length} assignment${assignments.length === 1 ? "" : "s"}` : "No current subjects"}</span></div>{assignments.length ? <div className="workspaceAssignmentGrid">{assignments.map((assignment) => <SubjectAssignmentCard key={`${assignment.class_key}-${assignment.subject_index}`} assignment={assignment} />)}</div> : <EmptyState>{subjectTeacher?.message || "No subject assignment has been recorded for this term."}</EmptyState>}<div className="workspacePersonalAttendance" id="attendance"><div><p className="workspaceCardKicker">YOUR ATTENDANCE</p><h3>Staff attendance summary</h3></div>{summary?.staff_attendance?.available ? <div className="workspaceMiniMetrics"><div><span>Days recorded</span><strong>{formatCount(summary.staff_attendance.days_recorded)}</strong></div><div><span>Present days</span><strong>{formatCount(summary.staff_attendance.present_days)}</strong></div><div><span>Absent days</span><strong>{formatCount(summary.staff_attendance.absent_days)}</strong></div></div> : <EmptyState>{summary?.staff_attendance?.message || "Your attendance summary will appear after operational attendance data becomes available."}</EmptyState>}</div></div> : null}
+          {showClassTeacherSection ? <div className="workspaceRoleSection"><div className="workspaceRoleHeading"><div><p className="workspaceCardKicker">CLASS-TEACHER VIEW</p><h3>Class overview</h3></div><span className="workspaceRoleBadge">{classTeacherAssignments.length ? `${classTeacherAssignments.length} active class${classTeacherAssignments.length === 1 ? "" : "es"}` : "No active assignment"}</span></div>{classTeacherAssignments.length ? <div className="workspaceClassGrid">{classTeacherAssignments.map((overview) => <ClassOverviewCard key={overview.class_key} overview={overview} launchHref={resultPortalUrl} showResults={grantedModules.results} showAttendance={grantedModules.attendance} showRegistry={grantedModules.centralRegistry} showNotifications={grantedModules.notifications} />)}</div> : <EmptyState>{classTeacher?.message || "No class-teacher assignment is currently active."}</EmptyState>}</div> : null}
+          {showSubjectSection ? <div className="workspaceRoleSection"><div className="workspaceRoleHeading"><div><p className="workspaceCardKicker">SUBJECT-TEACHER VIEW</p><h3>Subject responsibilities</h3></div><span className="workspaceRoleBadge">{assignments.length ? `${assignments.length} assignment${assignments.length === 1 ? "" : "s"}` : "No current subjects"}</span></div>{assignments.length ? <div className="workspaceAssignmentGrid">{assignments.map((assignment) => <SubjectAssignmentCard key={`${assignment.class_key}-${assignment.subject_index}`} assignment={assignment} />)}</div> : <EmptyState>{subjectTeacher?.message || "No subject assignment has been recorded for this term."}</EmptyState>}{grantedModules.attendance ? <div className="workspacePersonalAttendance" id="attendance"><div><p className="workspaceCardKicker">YOUR ATTENDANCE</p><h3>Staff attendance summary</h3></div>{summary?.staff_attendance?.available ? <div className="workspaceMiniMetrics"><div><span>Days recorded</span><strong>{formatCount(summary.staff_attendance.days_recorded)}</strong></div><div><span>Present days</span><strong>{formatCount(summary.staff_attendance.present_days)}</strong></div><div><span>Absent days</span><strong>{formatCount(summary.staff_attendance.absent_days)}</strong></div></div> : <EmptyState>{summary?.staff_attendance?.message || "Your attendance summary will appear after operational attendance data becomes available."}</EmptyState>}</div> : null}</div> : null}
           {!showClassTeacherSection && !showSubjectSection ? <div className="workspaceNoAssignment"><p className="workspaceCardKicker">CURRENT ASSIGNMENTS</p><h3>No current class or subject assignment is recorded.</h3><p>When an authorised assignment is active for this term, its read-only summary will appear here.</p></div> : null}
         </section>
 
-        {admin?.available ? <section className="workspaceSection workspaceAdminSection" aria-labelledby="admin-heading"><div className="workspaceSectionHeading"><div><p className="workspaceOverline">AUTHORISED ADMINISTRATION</p><h2 id="admin-heading">School overview.</h2></div><p>This broader view is visible only because the active grants include authorised administrative Result or platform permissions.</p></div><div className="workspaceAdminMetrics"><Metric label="Active pupils" value={formatCount(admin.active_pupils)} tone="mint" /><Metric label="Active staff" value={formatCount(admin.active_staff)} tone="blue" /><Metric label="Missing-score alerts" value={formatCount(admin.missing_score_alerts)} tone="gold" /><Metric label="Registry issues" value={formatCount(admin.registry?.incomplete_records)} tone="mint" /></div><div className="workspaceAdminPanels"><article className="workspacePanel"><p className="workspaceCardKicker">REPORT-CARD READINESS</p><h3>{admin.report_card_readiness?.available ? `${formatCount(admin.report_card_readiness.classes_ready)} classes ready` : "Not available"}</h3><p>{admin.report_card_readiness?.available ? `${formatCount(admin.report_card_readiness.classes_incomplete)} classes remain incomplete.` : "No report-card readiness summary is available."}</p></article><article className="workspacePanel"><p className="workspaceCardKicker">ATTENDANCE OVERVIEW</p><h3>{admin.attendance_overview?.available ? `${formatCount(admin.attendance_overview.absent_pupils_today)} pupils absent today` : "Not operational yet"}</h3><p>{admin.attendance_overview?.message || "Attendance reporting will appear after operational attendance data becomes available."}</p></article><article className="workspacePanel"><p className="workspaceCardKicker">PUBLICATION STATUS</p><h3>{admin.publication?.available ? `${formatCount(admin.publication.published_subjects)} of ${formatCount(admin.publication.expected_subjects)} subjects published` : "Not available"}</h3><p>Publication actions remain inside the specialist Result module.</p></article></div>{admin.class_overviews?.length ? <details className="workspaceAdminClasses"><summary>View authorised class summaries</summary><div className="workspaceClassGrid">{admin.class_overviews.map((overview) => <ClassOverviewCard key={overview.class_key} overview={overview} launchHref={resultPortalUrl} />)}</div></details> : null}</section> : null}
+        {admin?.available && (grantedModules.centralRegistry || grantedModules.results || grantedModules.attendance || grantedModules.notifications || grantedModules.reports || grantedModules.systemAdministration) ? <section className="workspaceSection workspaceAdminSection" aria-labelledby="admin-heading"><div className="workspaceSectionHeading"><div><p className="workspaceOverline">AUTHORISED ADMINISTRATION</p><h2 id="admin-heading">School overview.</h2></div><p>This broader view is visible only because the active grants include authorised administrative permissions.</p></div><div className="workspaceAdminMetrics"><Metric label="Active pupils" value={formatCount(admin.active_pupils)} tone="mint" /><Metric label="Active staff" value={formatCount(admin.active_staff)} tone="blue" /><Metric label="Missing-score alerts" value={formatCount(admin.missing_score_alerts)} tone="gold" /><Metric label="Registry issues" value={formatCount(admin.registry?.incomplete_records)} tone="mint" /></div><div className="workspaceAdminPanels"><article className="workspacePanel"><p className="workspaceCardKicker">REPORT-CARD READINESS</p><h3>{admin.report_card_readiness?.available ? `${formatCount(admin.report_card_readiness.classes_ready)} classes ready` : "Not available"}</h3><p>{admin.report_card_readiness?.available ? `${formatCount(admin.report_card_readiness.classes_incomplete)} classes remain incomplete.` : "No report-card readiness summary is available."}</p></article><article className="workspacePanel"><p className="workspaceCardKicker">ATTENDANCE OVERVIEW</p><h3>{admin.attendance_overview?.available ? `${formatCount(admin.attendance_overview.absent_pupils_today)} pupils absent today` : "Not operational yet"}</h3><p>{admin.attendance_overview?.message || "Attendance reporting will appear after operational attendance data becomes available."}</p></article><article className="workspacePanel"><p className="workspaceCardKicker">PUBLICATION STATUS</p><h3>{admin.publication?.available ? `${formatCount(admin.publication.published_subjects)} of ${formatCount(admin.publication.expected_subjects)} subjects published` : "Not available"}</h3><p>Publication actions remain inside the specialist Result module.</p></article></div>{admin.class_overviews?.length ? <details className="workspaceAdminClasses"><summary>View authorised class summaries</summary><div className="workspaceClassGrid">{admin.class_overviews.map((overview) => <ClassOverviewCard key={overview.class_key} overview={overview} launchHref={resultPortalUrl} showResults={grantedModules.results} showAttendance={grantedModules.attendance} showRegistry={grantedModules.centralRegistry} showNotifications={grantedModules.notifications} />)}</div></details> : null}</section> : null}
 
-        <section id="modules" className="workspaceSection workspaceModulesSection" aria-labelledby="modules-heading"><div className="workspaceSectionHeading"><div><p className="workspaceOverline">MY MODULES</p><h2 id="modules-heading">Open the right service.</h2></div><p>Cards appear only for real active module access. Workspace provides context and launch links; operational edits stay in the specialist service.</p></div><div className="workspaceModuleGrid">
-          {grantedModules.profile ? <ModuleCard id="profile" title="My Profile" icon="P" status="operational" description="Your staff identity is supplied by the authorised registry." summary={moduleSummary("central_registry", "Your staff identity and employment record are available.")} href={centralRegistryUrl} /> : null}
+        {hasSpecialistModules ? <section id="modules" className="workspaceSection workspaceModulesSection" aria-labelledby="modules-heading"><div className="workspaceSectionHeading"><div><p className="workspaceOverline">MY MODULES</p><h2 id="modules-heading">Your active services.</h2></div><p>Only services assigned to this staff identity appear here. Workspace itself stays the shell around them.</p></div><div className="workspaceModuleGrid">
           {grantedModules.centralRegistry ? <ModuleCard id="centralRegistry" title="Central Registry" icon="R" status="operational" description="Identity, employment and module access remain authoritative here." summary={moduleSummary("central_registry", "Identity, employment and access grants remain authoritative in Central Registry.")} href={centralRegistryUrl} /> : null}
           {grantedModules.results ? <ModuleCard id="results" title="Results" icon="∑" status="operational" description="Open the specialist Result Portal for score entry, review, report cards and publication." summary={moduleSummary("results", "Authorised Result responsibilities are summarised above.")} href={resultPortalUrl} /> : null}
           {grantedModules.attendance ? <ModuleCard id="attendance" title="Attendance" icon="A" status={moduleSummaries.attendance?.status === "operational" ? "operational" : "under-development"} description="Attendance summaries will appear here when operational data is available." summary={moduleSummary("attendance", "Attendance reporting will appear after operational attendance data becomes available.")} href={attendanceUrl} /> : null}
@@ -508,7 +523,7 @@ export function WorkspaceClient() {
           {grantedModules.reports ? <ModuleCard id="reports" title="Reports" icon="▤" status="protected" description="Reporting remains inside the authorised specialist services." summary={moduleSummary("reports", "Report generation remains inside the authorised specialist Result module.")} href={resultPortalUrl} /> : null}
           {grantedModules.website ? <ModuleCard id="website" title="Website Management" icon="W" status="protected" description="Website actions are not performed in the read-only Workspace." summary="Website-management actions are not performed in Workspace." /> : null}
           {grantedModules.systemAdministration ? <ModuleCard id="systemAdministration" title="System Administration" icon="S" status="protected" description="Access and system controls remain in the protected administration service." summary={moduleSummary("system_administration", "System administration remains inside the protected access-management service.")} href={centralRegistryUrl} /> : null}
-        </div></section>
+        </div></section> : null}
 
         {grantedModules.notifications ? <section id="notifications" className="workspaceNoticeBand"><div><p className="workspaceCardKicker">NOTIFICATIONS</p><h3>School messages</h3></div><EmptyState>{moduleSummary("notifications", "Notification summaries are not yet available.")}</EmptyState></section> : null}
         <footer className="workspaceFooter"><span>WTS Staff Workspace</span><span>Read-only summaries · {context?.session || "current session"} · {context?.term || "current term"}</span><button type="button" onClick={() => void signOut()}>Sign out</button></footer>
