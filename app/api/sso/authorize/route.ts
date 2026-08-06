@@ -12,9 +12,18 @@ import { workspaceSessionFromRequest } from "../../workspace-session/_lib";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const RESULT_CLIENT_ID = "result_portal";
-const RESULT_TARGET = "results";
-const RESULT_REDIRECT_URI = "https://wts-result-system.vercel.app/portal_core.html";
+const APPROVED_CLIENTS = {
+  result_portal: {
+    clientId: "result_portal",
+    target: "results",
+    redirectUri: "https://wts-result-system.vercel.app/portal_core.html",
+  },
+  attendance: {
+    clientId: "attendance",
+    target: "attendance",
+    redirectUri: "https://wts-attendance-system.vercel.app/",
+  },
+} as const;
 
 function redirectResponse(location: string) {
   const headers = new Headers(noStoreHeaders());
@@ -57,11 +66,12 @@ export async function GET(request: NextRequest) {
     const state = requestUrl.searchParams.get("state") || "";
     const nonce = requestUrl.searchParams.get("nonce") || "";
 
+    const client = APPROVED_CLIENTS[clientId as keyof typeof APPROVED_CLIENTS];
     if (
       responseType !== "code"
-      || clientId !== RESULT_CLIENT_ID
-      || redirectUri !== RESULT_REDIRECT_URI
-      || scope !== RESULT_TARGET
+      || !client
+      || redirectUri !== client.redirectUri
+      || scope !== client.target
       || codeChallengeMethod !== "S256"
       || !isBase64Url(codeChallenge, 43, 128)
       || !isBase64Url(state, 16, 512)
@@ -79,9 +89,9 @@ export async function GET(request: NextRequest) {
       {
         p_session_id: current.id,
         p_session_secret: current.secret,
-        p_client_id: RESULT_CLIENT_ID,
-        p_target_app_code: RESULT_TARGET,
-        p_redirect_uri: RESULT_REDIRECT_URI,
+        p_client_id: client.clientId,
+        p_target_app_code: client.target,
+        p_redirect_uri: client.redirectUri,
         p_code_hash: sha256Hex(authorizationCode),
         p_code_challenge: codeChallenge,
         p_code_challenge_method: "S256",
@@ -91,13 +101,15 @@ export async function GET(request: NextRequest) {
     );
 
     if (!issued?.ok) {
-      const code = typeof issued?.code === "string" ? issued.code : "RESULT_ACCESS_NOT_GRANTED";
-      const status = code === "RESULT_ACCESS_NOT_GRANTED" ? 403 : code === "WTS_SESSION_NOT_ACTIVE" ? 401 : 400;
+      const fallbackCode = client.target === "attendance" ? "ATTENDANCE_ACCESS_NOT_GRANTED" : "RESULT_ACCESS_NOT_GRANTED";
+      const code = typeof issued?.code === "string" ? issued.code : fallbackCode;
+      const denied = code === "RESULT_ACCESS_NOT_GRANTED" || code === "ATTENDANCE_ACCESS_NOT_GRANTED";
+      const status = denied ? 403 : code === "WTS_SESSION_NOT_ACTIVE" ? 401 : 400;
       if (status === 401) return loginRedirect(request);
       return errorResponse(code, status);
     }
 
-    const callback = new URL(RESULT_REDIRECT_URI);
+    const callback = new URL(client.redirectUri);
     callback.searchParams.set("code", authorizationCode);
     callback.searchParams.set("state", state);
     callback.searchParams.set("nonce", nonce);

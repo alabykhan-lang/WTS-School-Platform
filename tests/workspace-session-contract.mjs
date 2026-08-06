@@ -36,7 +36,8 @@ for (const path of ["app/_components/PortalWorkspaceClient.tsx"]) {
   assert.match(source, /centralRegistry: app\("central_registry"\)/, `${path} does not use the explicit Central Registry grant`);
   assert.match(source, /results: app\("results"\)/, `${path} does not use the explicit Results grant`);
   assert.match(source, /showNotifications=\{grantedModules\.notifications\}/, `${path} does not gate class announcements by the Notifications grant`);
-  assert.match(source, /grantedModules\.attendance \? <div className="workspacePersonalAttendance"/, `${path} does not gate personal attendance by the Attendance grant`);
+  assert.match(source, /grantedModules\.attendance \? <PersonalAttendanceCard/, `${path} does not gate personal attendance by the Attendance grant`);
+  assert.match(source, /institutional_authority|institutionalModules/, `${path} does not consume server-derived institutional authority`);
   assert.equal(source.includes('title="My Profile"'), false, `${path} renders Workspace as a separate module card`);
 }
 
