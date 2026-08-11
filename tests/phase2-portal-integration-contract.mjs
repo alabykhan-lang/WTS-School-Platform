@@ -12,6 +12,7 @@ const workspace = await read("app/_components/PortalWorkspaceClient.tsx");
 const authorize = await read("app/api/sso/authorize/route.ts");
 const identity = await read("app/api/identity/_lib.ts");
 const documentation = await read("docs/PHASE-2-UNIFIED-PORTAL-INTEGRATION.md");
+const publicPortal = await read("data/portal.ts");
 
 for (const field of ["code", "displayName", "productionOrigin", "launchRoute", "ssoMethod", "requiredCentralModuleGrant", "operationalStatus", "visibilityRule", "displayOrder", "callbackRoute", "logoutReturnRoute"]) {
   assert.match(config, new RegExp(field), `registry is missing ${field}`);
@@ -38,5 +39,7 @@ assert.equal(identity.includes("SUPABASE_SECRET_KEY"), false);
 assert.match(identity, /WTS_SUPABASE_PUBLISHABLE_KEY|SUPABASE_PUBLISHABLE_KEY/);
 assert.match(documentation, /Future custom-domain migration checklist/);
 assert.match(documentation, /No connected repository or Vercel project was found/);
+assert.match(publicPortal, /title: "Administration"/);
+assert.match(publicPortal, /id: "resources"/);
 
 console.log("Phase 2 portal integration contract passed.");
