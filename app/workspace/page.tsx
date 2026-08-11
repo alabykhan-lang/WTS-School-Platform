@@ -4,7 +4,7 @@ import { createPageMetadata } from "../_components/page-metadata";
 
 export const metadata: Metadata = {
   ...createPageMetadata({
-    title: "WTS Staff Workspace",
+    title: "Way to Success Staff Portal",
     description: "A personalised read-only command centre for authorised WTS staff.",
     path: "/workspace",
     image: "/images/campus2.webp",

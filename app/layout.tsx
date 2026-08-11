@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import "./globals.css";
 import "./public-pass.css";
 import "./workspace.css";
@@ -70,10 +71,23 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  const requestHeaders = await headers();
+  const host = (requestHeaders.get("x-forwarded-host") || requestHeaders.get("host") || "")
+    .split(",")[0]
+    .trim()
+    .split(":")[0]
+    .toLowerCase();
+  const isStaffPortalHost = host === "portal.waytosuccessschools.com";
+
   return (
     <html lang="en">
-      <body><a className="skipLink" href="#main-content">Skip to main content</a><SiteHeader />{children}<SiteFooter /><FloatingWhatsApp /><script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(schoolStructuredData) }} /></body>
+      <body className={isStaffPortalHost ? "staffPortalHost" : "publicSchoolHost"}>
+        <a className="skipLink" href="#main-content">Skip to main content</a>
+        {isStaffPortalHost ? null : <SiteHeader />}
+        {children}
+        {isStaffPortalHost ? null : <><SiteFooter /><FloatingWhatsApp /><script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(schoolStructuredData) }} /></>}
+      </body>
     </html>
   );
 }

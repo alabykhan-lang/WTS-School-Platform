@@ -42,7 +42,7 @@ export function SiteHeader() {
         {links.map(([label, href]) => <Link key={href} href={href} className={isActive(href) ? "active" : undefined} aria-current={isActive(href) ? "page" : undefined}>{label}</Link>)}
       </nav>
       <div className="headerActions">
-        <Link className="headerButton" href="/portal/sign-in" aria-current={isActive("/portal") ? "page" : undefined}>WTS Staff <span>Workspace</span></Link>
+        <Link className="headerButton" href="/portal/sign-in" aria-current={isActive("/portal") ? "page" : undefined}>Staff <span>Portal</span></Link>
         <button className="menuButton" type="button" aria-label={open ? "Close navigation menu" : "Open navigation menu"} aria-expanded={open} aria-controls="mobile-navigation" onClick={() => setOpen((current) => !current)}>
           <i aria-hidden="true" /><i aria-hidden="true" /><i aria-hidden="true" />
         </button>
@@ -50,7 +50,7 @@ export function SiteHeader() {
       <div id="mobile-navigation" className={`mobileNav ${open ? "isOpen" : ""}`} aria-hidden={!open}>
         <nav aria-label="Mobile navigation">
           {links.map(([label, href], index) => <Link key={href} href={href} tabIndex={open ? 0 : -1} className={isActive(href) ? "active" : undefined} aria-current={isActive(href) ? "page" : undefined} onClick={() => setOpen(false)}><span>0{index + 1}</span>{label}</Link>)}
-          <Link href="/portal/sign-in" tabIndex={open ? 0 : -1} className={isActive("/portal") ? "active" : undefined} aria-current={isActive("/portal") ? "page" : undefined} onClick={() => setOpen(false)}>WTS Staff Workspace <em>Open</em></Link>
+          <Link href="/portal/sign-in" tabIndex={open ? 0 : -1} className={isActive("/portal") ? "active" : undefined} aria-current={isActive("/portal") ? "page" : undefined} onClick={() => setOpen(false)}>Staff Portal <em>Open</em></Link>
         </nav>
       </div>
     </header>

@@ -256,3 +256,20 @@ body:has(.workspaceLivePage) { background: #edf2ee; }
   .publicWorkspaceIntro, .publicWorkspaceShowcase { padding-top: 70px; padding-bottom: 70px; }
   .publicWorkspaceBoundary, .publicWorkspaceReturn { padding: 58px 7vw; }
 }
+
+/* The custom portal hostname is a focused application surface, not the
+   public website shell. Keep the same institutional palette but give the
+   staff experience its own quiet document canvas. */
+body.staffPortalHost { min-height: 100svh; background: #eef4f1; }
+body.staffPortalHost .skipLink { z-index: 100; }
+.workspaceBrand strong { overflow-wrap: anywhere; }
+.workspaceModuleCard { transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease; }
+.workspaceModuleCard:hover { transform: translateY(-3px); border-color: #b9d8c7; box-shadow: 0 18px 34px rgba(13,53,80,.08); }
+.workspaceModuleCard:focus-within { border-color: #0f7c5c; box-shadow: 0 0 0 3px rgba(15,124,92,.13); }
+.workspaceLaunchButton, .workspaceTextLink, .workspaceRefreshButton, .workspaceSignOut, .workspaceFooter button { transition: transform .2s ease, background .2s ease, color .2s ease, border-color .2s ease; }
+.workspaceLaunchButton:focus-visible, .workspaceTextLink:focus-visible { outline-offset: 5px; }
+.workspaceTopbarIntro { max-width: 620px; }
+@media (max-width: 620px) {
+  .workspaceIdentityFacts strong { font-size: 11px; }
+  .workspaceModuleCard:hover { transform: none; }
+}

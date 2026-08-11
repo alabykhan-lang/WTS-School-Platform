@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
+import { staffPortalModules } from "../../data/staff-portal-modules";
 
 export type WorkspaceSession = {
   ok: boolean;
@@ -210,17 +211,16 @@ type WorkspaceModuleStatus = "operational" | "under-development" | "protected";
 const resultPortalUrl = "https://wts-result-system.vercel.app/portal_core.html?sso=1";
 const centralRegistryUrl = "https://wts-central-registry.vercel.app/";
 const attendanceUrl = "https://wts-attendance-system.vercel.app/";
-const notificationsUrl = "https://wts-notification-system.vercel.app/";
 
 function friendlyError(code?: string) {
   const messages: Record<string, string> = {
     INVALID_LOGIN: "The staff number, official email or password was not accepted.",
-    LOGIN_AND_PASSWORD_REQUIRED: "Enter your WTS staff number or official email and password.",
+    LOGIN_AND_PASSWORD_REQUIRED: "Enter your staff number or official email and password.",
     ACCOUNT_NOT_ACTIVE: "This staff account is not active. Please contact authorised school management.",
     ACCOUNT_TEMPORARILY_LOCKED: "This account is temporarily locked. Please contact authorised school management for recovery.",
     RESULT_ACCESS_NOT_GRANTED: "This account does not currently have an active Results grant.",
-    PORTAL_ACCESS_NOT_GRANTED: "This account does not currently have access to the WTS Workspace.",
-    PORTAL_PERMISSION_SYNC_FAILED: "The account could not be matched to an active workspace grant. Please contact authorised school management.",
+    PORTAL_ACCESS_NOT_GRANTED: "This account does not currently have access to the Staff Portal.",
+    PORTAL_PERMISSION_SYNC_FAILED: "The account could not be matched to an active school access record. Please contact authorised school management.",
     STAFF_SESSION_NOT_ACTIVE: "Your session is no longer active. Please sign in again.",
     STAFF_SESSION_REQUIRED: "Your session is no longer active. Please sign in again.",
     RESULT_SESSION_REQUIRED: "Your session is no longer active. Please sign in again.",
@@ -328,14 +328,14 @@ export function PortalSignIn() {
   return (
     <main id="main-content" className="portalSignInPage">
       <section className="portalSignInCard" aria-labelledby="portal-sign-in-title">
-        <Link className="portalBackLink" href="/portal">← WTS Staff Workspace</Link>
-        <p className="eyebrow">STAFF WORKSPACE</p>
+        <Link className="portalBackLink" href="/portal">← Way to Success Standard Schools</Link>
+        <p className="eyebrow">STAFF PORTAL</p>
         <h1 id="portal-sign-in-title">Welcome back.</h1>
-        <p>Sign in with your WTS staff identity. Your workspace will show only the current information and modules authorised for you.</p>
+        <p>Sign in with your school account. Your portal will show only the current information and services authorised for you.</p>
         {!pendingChange ? <form className="portalAuthForm" onSubmit={submitLogin}>
-          <label>WTS staff number or official registered email<input autoComplete="username" required value={login} onChange={(event) => setLogin(event.target.value)} /></label>
+          <label>Staff number or official registered email<input autoComplete="username" required value={login} onChange={(event) => setLogin(event.target.value)} /></label>
           <label>Password<input autoComplete="current-password" type="password" required value={password} onChange={(event) => setPassword(event.target.value)} /></label>
-          <button className="primaryButton" disabled={busy} type="submit">{busy ? "Checking access…" : "Open my workspace"}</button>
+          <button className="primaryButton" disabled={busy} type="submit">{busy ? "Checking access…" : "Open Staff Portal"}</button>
         </form> : <form className="portalAuthForm" onSubmit={submitPasswordChange}>
           <label>New password<input autoComplete="new-password" type="password" required value={newPassword} onChange={(event) => setNewPassword(event.target.value)} /></label>
           <label>Confirm new password<input autoComplete="new-password" type="password" required value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} /></label>
@@ -343,7 +343,7 @@ export function PortalSignIn() {
         </form>}
         <p className={`portalAuthMessage ${message ? "isVisible" : ""} portalAuthMessage--${messageTone}`} role="status">{message}</p>
         <ul className="portalAuthNotes">
-          <li>Your workspace is assembled from the active identity and grants held by the school.</li>
+          <li>Your portal is assembled from the active identity and access held by the school.</li>
           <li>Specialist modules remain responsible for operational changes.</li>
           <li>Contact authorised school management when access recovery is required.</li>
         </ul>
@@ -377,6 +377,10 @@ function formatDateTime(value: string | null | undefined) {
 
 function initials(name: string) {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase() || "WTS";
+}
+
+function firstName(name: string) {
+  return name.trim().split(/\s+/).filter(Boolean)[0] || "there";
 }
 
 function ModuleStatus({ status }: { status: WorkspaceModuleStatus }) {
@@ -466,7 +470,7 @@ function SubjectAssignmentCard({ assignment }: { assignment: SubjectAssignment }
 function PersonalAttendanceCard({ attendance }: { attendance: WorkspaceSummary["staff_attendance"] }) {
   const required = attendance?.attendance_required !== false;
   const hasRecords = Boolean(attendance?.available);
-  return <section className="workspacePersonalAttendance" id="attendance" aria-labelledby="personal-attendance-heading">
+  return <section className="workspacePersonalAttendance" id="personal-attendance" aria-labelledby="personal-attendance-heading">
     <div className="workspaceRoleHeading"><div><p className="workspaceCardKicker">YOUR ATTENDANCE</p><h3 id="personal-attendance-heading">Staff attendance summary</h3></div><span className="workspaceRoleBadge">{required ? "Personal attendance required" : "Personal attendance not required"}</span></div>
     {!required ? <EmptyState>{attendance?.message || "Personal attendance is not required for this institutional account and does not reduce staff percentages."}</EmptyState> : <>
       <div className="workspaceMiniMetrics"><div><span>Today</span><strong>{hasRecords ? formatLabel(attendance?.today?.status) : "No record yet"}</strong></div><div><span>Check-in</span><strong>{hasRecords ? formatDateTime(attendance?.today?.check_in_time) : "Not available"}</strong></div><div><span>Check-out</span><strong>{hasRecords ? formatDateTime(attendance?.today?.check_out_time) : "Not available"}</strong></div><div><span>Unresolved corrections</span><strong>{formatCount(attendance?.unresolved_correction_count)}</strong></div></div>
@@ -482,6 +486,7 @@ export function WorkspaceClient() {
   const [error, setError] = useState("");
   const [authenticated, setAuthenticated] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
+  const [greeting, setGreeting] = useState("Welcome back");
 
   async function refresh() {
     setChecking(true);
@@ -499,7 +504,11 @@ export function WorkspaceClient() {
     }
   }
 
-  useEffect(() => { void refresh(); }, []);
+  useEffect(() => {
+    void refresh();
+    const hour = new Date().getHours();
+    setGreeting(hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening");
+  }, []);
 
   async function signOut() {
     setAuthenticated(false);
@@ -533,12 +542,12 @@ export function WorkspaceClient() {
     return { permissions, moduleAccess, roleNames, roleCodes, protectedAuthority, assignedModules: Object.entries(moduleAccess).filter(([key, value]) => key !== "profile" && value).length };
   }, [workspace]);
 
-  if (checking) return <main id="main-content" className="workspaceGate"><p>Preparing your WTS Workspace…</p></main>;
-  if (!workspace || !authenticated) return <main id="main-content" className="workspaceGate"><section><p className="eyebrow">WTS STAFF WORKSPACE</p><h1>Sign in is required.</h1><p>{error || "This workspace does not display records until an active staff identity is verified."}</p><Link className="primaryButton" href="/portal/sign-in">Sign in to WTS Staff Workspace</Link></section></main>;
+  if (checking) return <main id="main-content" className="workspaceGate"><p>Preparing your Staff Portal…</p></main>;
+  if (!workspace || !authenticated) return <main id="main-content" className="workspaceGate"><section><p className="eyebrow">WAY TO SUCCESS STAFF PORTAL</p><h1>Sign in is required.</h1><p>{error || "This portal does not display school records until an active staff identity is verified."}</p><Link className="primaryButton" href="/portal/sign-in">Sign in to Staff Portal</Link></section></main>;
 
   const summary = workspace.summary;
   const person = summary?.person || workspace.person;
-  const fullName = person?.full_name || workspace.person?.full_name || "WTS staff member";
+  const fullName = person?.full_name || workspace.person?.full_name || "Way to Success staff member";
   const context = summary?.academic_context;
   const moduleSummaries = summary?.module_summaries || {};
   const classTeacher = summary?.class_teacher;
@@ -555,9 +564,9 @@ export function WorkspaceClient() {
 
   return <main id="main-content" className="workspaceLivePage">
     <div className="workspaceShell">
-      <aside id="workspace-navigation" className={`workspaceSidebar ${navOpen ? "isOpen" : ""}`} aria-label="WTS Workspace navigation">
-        <div className="workspaceSidebarBrand"><Link className="workspaceBrand" href="/portal"><img className="workspaceBrandLogo" src="/images/logo.webp" alt="Way to Success Standard Schools logo" /><strong>Staff Workspace</strong></Link><button className="workspaceNavClose" type="button" onClick={() => setNavOpen(false)} aria-label="Close workspace navigation">×</button></div>
-        <p className="workspaceSidebarNote">Read-only command centre</p>
+      <aside id="workspace-navigation" className={`workspaceSidebar ${navOpen ? "isOpen" : ""}`} aria-label="Staff Portal navigation">
+        <div className="workspaceSidebarBrand"><Link className="workspaceBrand" href="/"><img className="workspaceBrandLogo" src="/images/logo.webp" alt="Way to Success Standard Schools logo" /><strong>Staff portal</strong></Link><button className="workspaceNavClose" type="button" onClick={() => setNavOpen(false)} aria-label="Close portal navigation">×</button></div>
+        <p className="workspaceSidebarNote">Your school view</p>
         <nav onClick={() => setNavOpen(false)}>
           <a href="#overview">Overview</a>
           <a href="#responsibilities">Responsibilities</a>
@@ -566,12 +575,12 @@ export function WorkspaceClient() {
           {grantedModules.notifications ? <a href="#notifications">Notifications</a> : null}
           {hasSpecialistModules ? <a href="#modules">My modules</a> : null}
         </nav>
-        <div className="workspaceSidebarFooter"><span>Current context</span><strong>{context?.session || "Session unavailable"}</strong><small>{context?.term || "Term unavailable"}</small><button type="button" className="workspaceSignOut" onClick={() => void signOut()}>Sign out</button></div>
+        <div className="workspaceSidebarFooter"><span>Current academic context</span><strong>{context?.session || "Session unavailable"}</strong><small>{context?.term || "Term unavailable"}</small><button type="button" className="workspaceSignOut" onClick={() => void signOut()}>Sign out</button></div>
       </aside>
 
       <section className="workspaceMain">
-        <div className="workspaceMobileBar"><Link className="workspaceBrand" href="/portal"><img className="workspaceBrandLogo" src="/images/logo.webp" alt="Way to Success Standard Schools logo" /><strong>Staff Workspace</strong></Link><button type="button" className="workspaceMenuButton" onClick={() => setNavOpen((current) => !current)} aria-expanded={navOpen} aria-controls="workspace-navigation">{navOpen ? "Close" : "Menu"}</button></div>
-        <header id="overview" className="workspaceTopbar"><div><p className="workspaceOverline">WTS STAFF WORKSPACE</p><h1>Your WTS Workspace.</h1><p className="workspaceTopbarIntro">Welcome back, {fullName}. Your responsibilities and active services are gathered here.</p></div><button className="workspaceRefreshButton" type="button" onClick={() => void refresh()} disabled={checking}><span aria-hidden="true">↻</span>{checking ? "Refreshing…" : "Refresh"}</button></header>
+        <div className="workspaceMobileBar"><Link className="workspaceBrand" href="/"><img className="workspaceBrandLogo" src="/images/logo.webp" alt="Way to Success Standard Schools logo" /><strong>Staff portal</strong></Link><button type="button" className="workspaceMenuButton" onClick={() => setNavOpen((current) => !current)} aria-expanded={navOpen} aria-controls="workspace-navigation">{navOpen ? "Close" : "Menu"}</button></div>
+        <header id="overview" className="workspaceTopbar"><div><p className="workspaceOverline">WAY TO SUCCESS STAFF PORTAL</p><h1>{greeting}, {firstName(fullName)}.</h1><p className="workspaceTopbarIntro">Here is the current view of your school identity, responsibilities and authorised services.</p></div><button className="workspaceRefreshButton" type="button" onClick={() => void refresh()} disabled={checking}><span aria-hidden="true">↻</span>{checking ? "Refreshing…" : "Refresh view"}</button></header>
 
         <section className="workspaceIdentityCard" id="identity" aria-labelledby="identity-heading">
           <div className="workspaceIdentityPhoto">{person?.photo_url ? <img src={person.photo_url} alt={`${fullName} staff photograph`} /> : <span aria-label="No approved staff photograph">{initials(fullName)}</span>}</div>
@@ -579,10 +588,10 @@ export function WorkspaceClient() {
           <div className="workspaceIdentityFacts"><div><span>Staff number</span><strong>{person?.staff_number || "Not assigned"}</strong></div><div><span>Employment</span><strong>{formatLabel(person?.employment_status)}</strong></div><div><span>Session</span><strong>{context?.session || "Not available"}</strong></div><div><span>Term</span><strong>{context?.term || "Not available"}</strong></div></div>
         </section>
 
-        <section className="workspaceMetricGrid" aria-label="Workspace summary"><Metric label="Authorised modules" value={formatCount(access.assignedModules)} tone="mint" /><Metric label="Class-teacher assignments" value={formatCount(classTeacherAssignments.length)} tone="gold" /><Metric label="Subject assignments" value={formatCount(assignments.length)} tone="blue" /><Metric label="Current context" value={`${context?.session || "—"} · ${context?.term || "—"}`} tone="mint" /></section>
+        <section className="workspaceMetricGrid" aria-label="Staff Portal summary"><Metric label="Available services" value={formatCount(access.assignedModules)} tone="mint" /><Metric label="Class-teacher assignments" value={formatCount(classTeacherAssignments.length)} tone="gold" /><Metric label="Subject assignments" value={formatCount(assignments.length)} tone="blue" /><Metric label="Current context" value={`${context?.session || "—"} · ${context?.term || "—"}`} tone="mint" /></section>
         <section className="workspaceContextBanner" aria-label="Official academic context"><div><p className="workspaceCardKicker">OFFICIAL ACADEMIC CONTEXT</p><h2>{context?.session || "Session unavailable"}<span> · </span>{context?.term || "Term unavailable"}</h2></div><p>Managed in Central Registry. This context is read-only in Workspace.</p></section>
 
-        <section id="responsibilities" className="workspaceSection" aria-labelledby="responsibilities-heading"><div className="workspaceSectionHeading"><div><p className="workspaceOverline">YOUR RESPONSIBILITIES</p><h2 id="responsibilities-heading">Only the work connected to you.</h2></div><p>Assignments are filtered by the active grants and scopes held by your signed-in identity. No unrelated classes or school-wide figures are added here.</p></div>
+        <section id="responsibilities" className="workspaceSection" aria-labelledby="responsibilities-heading"><div className="workspaceSectionHeading"><div><p className="workspaceOverline">YOUR RESPONSIBILITIES</p><h2 id="responsibilities-heading">Only the work connected to you.</h2></div><p>Assignments are filtered by the active access held by your signed-in account. No unrelated classes or school-wide figures are added here.</p></div>
           {showClassTeacherSection ? <div className="workspaceRoleSection"><div className="workspaceRoleHeading"><div><p className="workspaceCardKicker">CLASS-TEACHER VIEW</p><h3>Class overview</h3></div><span className="workspaceRoleBadge">{classTeacherAssignments.length ? `${classTeacherAssignments.length} active class${classTeacherAssignments.length === 1 ? "" : "es"}` : "No active assignment"}</span></div>{classTeacherAssignments.length ? <div className="workspaceClassGrid">{classTeacherAssignments.map((overview) => <ClassOverviewCard key={overview.class_key} overview={overview} launchHref={resultPortalUrl} showResults={grantedModules.results} showAttendance={grantedModules.attendance} showRegistry={grantedModules.centralRegistry} showNotifications={grantedModules.notifications} />)}</div> : <EmptyState>{classTeacher?.message || "No class-teacher assignment is currently active."}</EmptyState>}</div> : null}
           {showSubjectSection ? <div className="workspaceRoleSection"><div className="workspaceRoleHeading"><div><p className="workspaceCardKicker">SUBJECT-TEACHER VIEW</p><h3>Subject responsibilities</h3></div><span className="workspaceRoleBadge">{assignments.length ? `${assignments.length} assignment${assignments.length === 1 ? "" : "s"}` : "No current subjects"}</span></div>{assignments.length ? <div className="workspaceAssignmentGrid">{assignments.map((assignment) => <SubjectAssignmentCard key={`${assignment.class_key}-${assignment.subject_index}`} assignment={assignment} />)}</div> : <EmptyState>{subjectTeacher?.message || "No subject assignment has been recorded for this term."}</EmptyState>}</div> : null}
           {grantedModules.attendance ? <PersonalAttendanceCard attendance={summary?.staff_attendance} /> : null}
@@ -592,17 +601,11 @@ export function WorkspaceClient() {
         {admin?.available && (grantedModules.centralRegistry || grantedModules.results || grantedModules.attendance || grantedModules.notifications || grantedModules.reports || grantedModules.systemAdministration) ? <section className="workspaceSection workspaceAdminSection" aria-labelledby="admin-heading"><div className="workspaceSectionHeading"><div><p className="workspaceOverline">AUTHORISED ADMINISTRATION</p><h2 id="admin-heading">School overview.</h2></div><p>This broader view is visible only because the active identity is authorised for management oversight.</p></div><div className="workspaceAdminMetrics"><Metric label="Active pupils" value={formatCount(admin.active_pupils)} tone="mint" /><Metric label="Active staff" value={formatCount(admin.active_staff)} tone="blue" /><Metric label="Missing-score alerts" value={formatCount(admin.missing_score_alerts)} tone="gold" /><Metric label="Registry issues" value={formatCount(admin.registry?.incomplete_records)} tone="mint" /></div>{admin.attendance_management ? <div className="workspaceAdminMetrics"><Metric label="Staff present today" value={formatCount(admin.attendance_management.staff_present_today)} tone="mint" /><Metric label="Staff absent today" value={formatCount(admin.attendance_management.staff_absent_today)} tone="gold" /><Metric label="Staff late today" value={formatCount(admin.attendance_management.staff_late_today)} tone="blue" /><Metric label="Pupils present today" value={formatCount(admin.attendance_management.pupils_present_today)} tone="mint" /><Metric label="Pupils absent today" value={formatCount(admin.attendance_management.pupils_absent_today)} tone="gold" /><Metric label="Incomplete registers" value={formatCount(admin.attendance_management.classes_with_incomplete_registers)} tone="blue" /></div> : null}<div className="workspaceAdminPanels"><article className="workspacePanel"><p className="workspaceCardKicker">REPORT-CARD READINESS</p><h3>{admin.report_card_readiness?.available ? `${formatCount(admin.report_card_readiness.classes_ready)} classes ready` : "Not available"}</h3><p>{admin.report_card_readiness?.available ? `${formatCount(admin.report_card_readiness.classes_incomplete)} classes remain incomplete.` : "No report-card readiness summary is available."}</p></article><article className="workspacePanel"><p className="workspaceCardKicker">ATTENDANCE OVERVIEW</p><h3>{admin.attendance_overview?.available ? `${formatCount(admin.attendance_overview.absent_pupils_today)} pupils absent today` : "No records yet"}</h3><p>{admin.attendance_management?.message || admin.attendance_overview?.message || "No attendance records have been recorded for the current date."}</p></article><article className="workspacePanel"><p className="workspaceCardKicker">DEVICE / IMPORT HEALTH</p><h3>{admin.attendance_management?.device_import_health?.available ? `${formatCount(admin.attendance_management.device_import_health.healthy_devices)} of ${formatCount(admin.attendance_management.device_import_health.registered_devices)} devices healthy` : "Not available"}</h3><p>{admin.attendance_management?.device_import_health?.available ? `${formatCount(admin.attendance_management.device_import_health.pending_imports)} pending imports.` : "Attendance device and import health is not available."}</p></article><article className="workspacePanel"><p className="workspaceCardKicker">PUBLICATION STATUS</p><h3>{admin.publication?.available ? `${formatCount(admin.publication.published_subjects)} of ${formatCount(admin.publication.expected_subjects)} subjects published` : "Not available"}</h3><p>Publication actions remain inside the specialist Result module.</p></article></div>{admin.class_overviews?.length ? <details className="workspaceAdminClasses"><summary>View authorised class summaries</summary><div className="workspaceClassGrid">{admin.class_overviews.map((overview) => <ClassOverviewCard key={overview.class_key} overview={overview} launchHref={resultPortalUrl} showResults={grantedModules.results} showAttendance={grantedModules.attendance} showRegistry={grantedModules.centralRegistry} showNotifications={grantedModules.notifications} />)}</div></details> : null}</section> : null}
 
         {hasSpecialistModules ? <section id="modules" className="workspaceSection workspaceModulesSection" aria-labelledby="modules-heading"><div className="workspaceSectionHeading"><div><p className="workspaceOverline">MY MODULES</p><h2 id="modules-heading">Your active services.</h2></div><p>Only services assigned to this staff identity appear here. Workspace itself stays the shell around them.</p></div><div className="workspaceModuleGrid">
-          {grantedModules.centralRegistry ? <ModuleCard id="centralRegistry" title="Central Registry" icon="R" status="operational" description="Identity, employment and module access remain authoritative here." summary={moduleSummary("central_registry", "Identity, employment and access grants remain authoritative in Central Registry.")} href={centralRegistryUrl} /> : null}
-          {grantedModules.results ? <ModuleCard id="results" title="Results" icon="∑" status="operational" description="Open the specialist Result Portal for score entry, review, report cards and publication." summary={moduleSummary("results", "Authorised Result responsibilities are summarised above.")} href={resultPortalUrl} /> : null}
-          {grantedModules.attendance ? <ModuleCard id="attendance" title="Attendance" icon="A" status={moduleSummaries.attendance?.status === "operational" ? "operational" : "protected"} description="Open the live Attendance service through central WTS authentication." summary={moduleSummary("attendance", "Attendance summaries are connected to the live Attendance service.")} href={attendanceUrl} /> : null}
-          {grantedModules.notifications ? <ModuleCard id="notifications" title="Notifications" icon="N" status={moduleSummaries.notifications?.status === "operational" ? "operational" : "under-development"} description="Notification summaries remain read-only in Workspace." summary={moduleSummary("notifications", "Notification summaries are not yet available.")} href={notificationsUrl} /> : null}
-          {grantedModules.reports ? <ModuleCard id="reports" title="Reports" icon="▤" status="protected" description="Reporting remains inside the authorised specialist services." summary={moduleSummary("reports", "Report generation remains inside the authorised specialist Result module.")} href={resultPortalUrl} /> : null}
-          {grantedModules.website ? <ModuleCard id="website" title="Website Management" icon="W" status="protected" description="Website actions are not performed in the read-only Workspace." summary="Website-management actions are not performed in Workspace." /> : null}
-          {grantedModules.systemAdministration ? <ModuleCard id="systemAdministration" title="System Administration" icon="S" status="protected" description="Access and system controls remain in the protected administration service." summary={moduleSummary("system_administration", "System administration remains inside the protected access-management service.")} href={centralRegistryUrl} /> : null}
+          {staffPortalModules.filter((module) => grantedModules[module.key]).map((module) => <ModuleCard key={module.key} id={module.key} title={module.title} icon={module.icon} status={module.key === "attendance" ? (moduleSummaries.attendance?.status === "operational" ? "operational" : "protected") : module.key === "notifications" ? (moduleSummaries.notifications?.status === "operational" ? "operational" : "under-development") : module.status} description={module.description} summary={moduleSummary(module.summaryKey, module.summaryFallback)} href={module.href} />)}
         </div></section> : null}
 
         {grantedModules.notifications ? <section id="notifications" className="workspaceNoticeBand"><div><p className="workspaceCardKicker">NOTIFICATIONS</p><h3>School messages</h3></div><EmptyState>{moduleSummary("notifications", "Notification summaries are not yet available.")}</EmptyState></section> : null}
-        <footer className="workspaceFooter"><span>WTS Staff Workspace</span><span>Read-only summaries · {context?.session || "current session"} · {context?.term || "current term"}</span><button type="button" onClick={() => void signOut()}>Sign out</button></footer>
+        <footer className="workspaceFooter"><span>Way to Success Staff Portal</span><span>Read-only summaries · {context?.session || "current session"} · {context?.term || "current term"}</span><button type="button" onClick={() => void signOut()}>Sign out</button></footer>
       </section>
     </div>
   </main>;

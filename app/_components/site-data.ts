@@ -2,7 +2,7 @@ export const school = {
   name: "Way to Success Standard Schools",
   shortName: "Way to Success",
   motto: "Quality Education with Discipline",
-  url: "https://wts-school-platform.vercel.app",
+  url: "https://waytosuccessschools.com",
   phone: "0703 652 1734",
   phoneHref: "tel:+2347036521734",
   whatsappHref: "https://wa.me/2347036521734?text=Hello%20Way%20to%20Success%20Standard%20Schools%2C%20I%20would%20like%20to%20make%20an%20enquiry.",

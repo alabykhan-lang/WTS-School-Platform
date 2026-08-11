@@ -4,8 +4,8 @@ import { createPageMetadata } from "../../_components/page-metadata";
 
 export const metadata: Metadata = {
   ...createPageMetadata({
-    title: "WTS Workspace",
-    description: "The previous management workspace route now redirects to WTS Workspace.",
+    title: "Way to Success Staff Portal",
+    description: "The management route now opens the unified Way to Success staff view.",
     path: "/workspace/management",
     image: "/images/campus1.webp",
     imageAlt: "Way to Success Standard Schools campus",
