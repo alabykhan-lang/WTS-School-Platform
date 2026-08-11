@@ -33,7 +33,7 @@ for (const path of ["app/_components/PortalWorkspaceClient.tsx"]) {
   assert.equal(/sessionStorage|localStorage/.test(source), false, `${path} stores browser session state`);
   assert.match(source, /school_staff_workspace_read_summary_api|summary\?\./, `${path} does not render the read-only summary contract`);
   assert.match(source, /No photograph has been approved\./, `${path} is missing the honest photograph empty state`);
-  assert.match(source, /centralRegistry: app\("central_registry"\)/, `${path} does not use the explicit Central Registry grant`);
+  assert.match(source, /centralRegistry: managementAuthority/, `${path} does not gate Administration by server-derived management authority`);
   assert.match(source, /results: app\("results"\)/, `${path} does not use the explicit Results grant`);
   assert.match(source, /showNotifications=\{grantedModules\.notifications\}/, `${path} does not gate class announcements by the Notifications grant`);
   assert.match(source, /grantedModules\.attendance \? <PersonalAttendanceCard/, `${path} does not gate personal attendance by the Attendance grant`);

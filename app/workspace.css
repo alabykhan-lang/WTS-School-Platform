@@ -115,6 +115,7 @@ body:has(.workspaceLivePage) { background: #edf2ee; }
 .workspaceStatus--operational { background: #dff1e5; color: #1f684c; }
 .workspaceStatus--under-development { background: #e8edf5; color: #355479; }
 .workspaceStatus--protected { background: #fff0d7; color: #795717; }
+.workspaceStatus--unavailable { background: #edf0f2; color: #596675; }
 .workspaceNoticeBand { display: grid; grid-template-columns: .6fr 1.4fr; gap: 20px; align-items: center; margin-top: 15px; padding: 24px; background: #eef3f6; border-left: 4px solid #5275a0; }
 .workspaceNoticeBand h3 { margin: 0; color: var(--navy); font-family: Georgia, serif; font-size: 28px; font-weight: 500; }
 .workspaceNoticeBand .workspaceEmptyState { background: white; }

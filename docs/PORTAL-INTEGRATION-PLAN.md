@@ -1,6 +1,6 @@
 # WTS Portal Integration Plan
 
-**Status:** Result Portal PKCE SSO implemented; Attendance and Notification remain outside this phase.
+**Status:** Phase 2 registry and operational handoffs are documented in `docs/PHASE-2-UNIFIED-PORTAL-INTEGRATION.md`.
 
 ## Decision: one WTS Workspace
 
@@ -15,6 +15,8 @@ A module card is navigation only. Each specialist API and database authorization
 | WTS School Platform | `alabykhan-lang/WTS-School-Platform` | `https://wts-school-platform.vercel.app` | WTS Workspace and central entry |
 | Central Registry | `alabykhan-lang/WTS-Central-Registry-` | `https://wts-central-registry.vercel.app` | Identity, credentials, employment, grants and scopes |
 | Result Portal | `alabykhan-lang/wts-result-system` | `https://wts-result-system.vercel.app` | Classes, scores, publication and report cards |
+| Attendance | `alabykhan-lang/WTS--ATTENDANCE-SYSTEM-` | `https://wts-attendance-system.vercel.app` | Attendance capture, registers, devices and reporting |
+| Notifications | `alabykhan-lang/WTS-Notification-System` | `https://wts-notification-system.vercel.app` | Notification delivery service; portal handoff pending |
 
 All three use Supabase project `wuftzyeajmsxdrbwaawl`. No sample people, users, grants, sessions, academic records or placeholder metrics are part of this integration.
 
@@ -23,15 +25,16 @@ All three use Supabase project `wuftzyeajmsxdrbwaawl`. No sample people, users, 
 | Module | Visibility | Status |
 | --- | --- | --- |
 | My Profile | Staff self-service/profile permission | Operational identity link |
-| Central Registry | Central Registry grant or Registry permission | Protected external service |
+| Administration | Management authority derived server-side from Central Registry | Protected external service |
 | Results | Active `results` grant | PKCE SSO operational integration |
-| Attendance | Attendance grant/action permission | Untouched; outside this phase |
-| Notifications | Notification grant/action permission | Untouched; outside this phase |
+| Attendance | Active `attendance` grant | PKCE SSO operational integration |
+| Notifications | Active `notifications` grant | Honest under-development state until secure portal handoff |
+| Resources | Active `resources` grant | Unavailable until a real deployment is connected |
 | Reports / Website / System Administration | Current real permissions | Existing protected or development surfaces |
 
 ## Result PKCE handoff
 
-The Workspace Results link enters Result Portal at `portal_core.html?sso=1`. Result Portal creates a verifier, state and nonce and navigates to:
+The Workspace Results link enters Result Portal at `portal_core.html?sso=1`. Result Portal creates a verifier, state and nonce and navigates to the configured portal authorization origin:
 
 `https://wts-school-platform.vercel.app/api/sso/authorize`
 
@@ -61,7 +64,7 @@ Result Portal posts the code and verifier to its own `/api/result-sso-token` ser
 
 ## Exclusions
 
-This phase does not alter Attendance or Notification source, sessions, devices, provider configuration or records. It does not alter students, scores, traits, remarks, fees, publishing records or report-card data.
+This phase does not alter Attendance workflows, devices, provider configuration or records. Notification remains unmodified while its portal handoff is pending. It does not alter students, scores, traits, remarks, fees, publishing records or report-card data.
 
 Detailed controls and verification are in:
 

@@ -1,10 +1,10 @@
 # WTS PKCE SSO Architecture
 
-**Status:** Result Portal integration implemented on the production main branches.
+**Status:** Results integration is operational; Attendance uses the same central PKCE contract. Current origins and exact callback/logout values are generated from `data/portal-config.ts`.
 
 ## Scope
 
-This integration connects the existing WTS Workspace to the existing Result Portal. Central Registry remains the authority for person identity, employment, identity accounts, credentials, grants and permission scope. Attendance and Notification are outside this phase.
+This integration connects the existing WTS Workspace to the existing Results and Attendance services. Central Registry remains the authority for person identity, employment, identity accounts, credentials, grants and permission scope. Notification remains status-only until its secure handoff is implemented.
 
 The browser never receives a central password, client secret, service-role key, password hash or reusable central session secret.
 
@@ -24,8 +24,9 @@ The browser never receives a central password, client secret, service-role key, 
 - Target audience: `results`
 - Code response type: `code`
 - PKCE method: `S256`
-- Exact callback: `https://wts-result-system.vercel.app/portal_core.html`
-- Authorization endpoint: `https://wts-school-platform.vercel.app/api/sso/authorize`
+- Current Results callback: `https://wts-result-system.vercel.app/portal_core.html`
+- Current Attendance callback: `https://wts-attendance-system.vercel.app/`
+- Current authorization endpoint: `https://wts-school-platform.vercel.app/api/sso/authorize`
 - Authorization-code lifetime: five minutes
 - Result session lifetime: eight hours, subject to server revalidation and revocation
 
@@ -33,7 +34,7 @@ Deployment URLs and wildcard callback URLs are not accepted.
 
 ## Flow
 
-1. The Results module is rendered only from the current active `results` grant in the WTS Workspace.
+1. Results or Attendance is rendered only from the current active grant in the WTS Workspace.
 2. Result Portal creates a random verifier, state and nonce using browser cryptography. Only transient flow values are held in `sessionStorage`; they are not authentication authority.
 3. The browser navigates to the Platform authorization endpoint.
 4. The endpoint validates the WTS Workspace session and active Results authorization, then stores only hashes of the code, state and nonce. It redirects with the short-lived single-use code.

@@ -7,7 +7,7 @@
 | Grant validation | An active, currently valid `results` grant is required at issue, exchange and every protected Result request. |
 | PKCE | Browser-generated verifier with SHA-256 S256 challenge; the verifier is never sent to the authorization endpoint. |
 | State and nonce | Random values are created per flow, stored transiently, hashed in the database and compared at callback/exchange. |
-| Exact redirect | Only `https://wts-result-system.vercel.app/portal_core.html` is accepted. |
+| Exact redirect | Results accepts only its configured `/portal_core.html` callback; Attendance accepts only its configured `/` callback. Current values are the Vercel origins in `data/portal-config.ts`. |
 | Audience | Client ID `result_portal` and target audience `results` are fixed in the endpoint and database constraints. |
 | Code lifetime | Authorization codes expire after five minutes and have a locked single-use consumption marker. |
 | Code storage | Only a SHA-256 code hash is stored. Raw codes exist only for the redirect and immediate exchange. |

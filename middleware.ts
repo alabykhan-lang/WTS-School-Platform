@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isStaffPortalHost } from "./data/portal-config";
 
 const WORKSPACE_SESSION_COOKIE = "wts_school_workspace_session";
-const PORTAL_HOST = "portal.waytosuccessschools.com";
 
 function requestHost(request: NextRequest) {
   return (request.headers.get("x-forwarded-host") || request.headers.get("host") || "")
@@ -18,7 +18,7 @@ function requestHost(request: NextRequest) {
  * changing the browser URL or creating a second authentication system.
  */
 export function middleware(request: NextRequest) {
-  if (requestHost(request) !== PORTAL_HOST) return NextResponse.next();
+  if (!isStaffPortalHost(requestHost(request))) return NextResponse.next();
 
   const pathname = request.nextUrl.pathname;
   if (pathname !== "/" && pathname !== "/index.html" && pathname !== "/portal") {

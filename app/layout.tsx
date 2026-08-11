@@ -7,6 +7,7 @@ import { FloatingWhatsApp } from "./_components/FloatingWhatsApp";
 import { SiteFooter } from "./_components/SiteFooter";
 import { SiteHeader } from "./_components/SiteHeader";
 import { school, siteKeywords } from "./_components/site-data";
+import { isStaffPortalHost } from "../data/portal-config";
 
 const schoolStructuredData = {
   "@context": "https://schema.org",
@@ -78,15 +79,15 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
     .trim()
     .split(":")[0]
     .toLowerCase();
-  const isStaffPortalHost = host === "portal.waytosuccessschools.com";
+  const portalHost = isStaffPortalHost(host);
 
   return (
     <html lang="en">
-      <body className={isStaffPortalHost ? "staffPortalHost" : "publicSchoolHost"}>
+      <body className={portalHost ? "staffPortalHost" : "publicSchoolHost"}>
         <a className="skipLink" href="#main-content">Skip to main content</a>
-        {isStaffPortalHost ? null : <SiteHeader />}
+        {portalHost ? null : <SiteHeader />}
         {children}
-        {isStaffPortalHost ? null : <><SiteFooter /><FloatingWhatsApp /><script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(schoolStructuredData) }} /></>}
+        {portalHost ? null : <><SiteFooter /><FloatingWhatsApp /><script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(schoolStructuredData) }} /></>}
       </body>
     </html>
   );

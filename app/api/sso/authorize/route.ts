@@ -8,22 +8,12 @@ import {
   resultErrorResponse,
 } from "../../identity/_lib";
 import { workspaceSessionFromRequest } from "../../workspace-session/_lib";
+import { portalSsoClients } from "../../../../data/portal-config";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const APPROVED_CLIENTS = {
-  result_portal: {
-    clientId: "result_portal",
-    target: "results",
-    redirectUri: "https://wts-result-system.vercel.app/portal_core.html",
-  },
-  attendance: {
-    clientId: "attendance",
-    target: "attendance",
-    redirectUri: "https://wts-attendance-system.vercel.app/",
-  },
-} as const;
+const APPROVED_CLIENTS = portalSsoClients;
 
 function redirectResponse(location: string) {
   const headers = new Headers(noStoreHeaders());
