@@ -11,7 +11,7 @@ export function SiteFooter() {
       </div>
       <div><h2>Visit</h2><p>{school.address}</p></div>
       <div><h2>Contact</h2><a href={school.phoneHref}>{school.phone}</a><a href={school.emailHref}>{school.email}</a><a href={school.whatsappHref} target="_blank" rel="noreferrer">WhatsApp us</a></div>
-      <div><h2>Explore</h2><Link href="/">Home</Link><Link href="/about">About Us</Link><Link href="/academics">Academics</Link><Link href="/school-life">School Life</Link><Link href="/gallery">Gallery</Link><Link href="/news">News &amp; Events</Link><Link href="/staff">Staff</Link><Link href="/portal/sign-in">WTS Staff Workspace</Link><Link href="/admissions">Admissions</Link><Link href="/contact">Contact</Link></div>
+      <div><h2>Explore</h2><Link href="/">Home</Link><Link href="/about">About Us</Link><Link href="/academics">Academics</Link><Link href="/school-life">School Life</Link><Link href="/gallery">Gallery</Link><Link href="/news">News &amp; Events</Link><Link href="/staff">Staff</Link><Link href="/portal/sign-in">Staff Portal</Link><Link href="/admissions">Admissions</Link><Link href="/contact">Contact</Link></div>
       <div className="copyright">© {new Date().getFullYear()} Way to Success Standard Schools. All rights reserved.</div>
     </footer>
   );
