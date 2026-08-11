@@ -11,10 +11,10 @@ export type PortalService = {
 
 export const portalServices: PortalService[] = [
   {
-    id: "central-registry",
-    title: "Central Registry",
-    description: "The school’s trusted foundation for staff identity, pupil records and authorised access.",
-    benefit: "Keeps school information organised and access carefully assigned.",
+    id: "administration",
+    title: "Administration",
+    description: "Protected management access to the school’s authoritative identity, assignments and access service.",
+    benefit: "Keeps school information organised while management authority remains protected.",
     status: "available",
     icon: "R",
   },
@@ -29,9 +29,9 @@ export const portalServices: PortalService[] = [
   {
     id: "attendance",
     title: "Attendance",
-    description: "A developing view of pupil and staff attendance across the school day.",
-    benefit: "Supports early awareness of absence and stronger pastoral follow-up.",
-    status: "in-development",
+    description: "A connected specialist service for pupil and staff attendance across the school day.",
+    benefit: "Supports accurate registers, absence awareness and stronger pastoral follow-up.",
+    status: "available",
     icon: "A",
   },
   {
@@ -41,6 +41,14 @@ export const portalServices: PortalService[] = [
     benefit: "Helps the school community receive important information in the right place.",
     status: "in-development",
     icon: "N",
+  },
+  {
+    id: "resources",
+    title: "Resources",
+    description: "A planned school resource service that will be connected when a real operational deployment is available.",
+    benefit: "Keeps future resources discoverable without presenting unavailable data as live.",
+    status: "planned",
+    icon: "◇",
   },
   {
     id: "reports",
