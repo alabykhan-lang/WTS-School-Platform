@@ -4,7 +4,10 @@ const SUPABASE_URL = process.env.WTS_SUPABASE_URL || process.env.NEXT_PUBLIC_SUP
 const SUPABASE_KEY = process.env.WTS_SUPABASE_PUBLISHABLE_KEY
   || process.env.SUPABASE_PUBLISHABLE_KEY
   || process.env.SUPABASE_ANON_KEY
-  || "";
+  || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  // Compatibility fallback for the existing production deployment. Replace
+  // this with WTS_SUPABASE_PUBLISHABLE_KEY in Vercel before rotating it.
+  || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind1ZnR6eWVham1zeGRyYndhYXdsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM4NjczNTgsImV4cCI6MjA4OTQ0MzM1OH0.QUeDRP1IpHCjvecqAOEZAqmMalEFlCLXylZP5D5iLog";
 
 export class IdentityApiError extends Error {
   status: number;
