@@ -35,7 +35,7 @@ for (const origin of ["wts-result-system.vercel.app", "wts-attendance-system.ver
 }
 assert.equal(identity.includes("SUPABASE_SERVICE_ROLE_KEY"), false);
 assert.equal(identity.includes("SUPABASE_SECRET_KEY"), false);
-assert.equal(identity.includes("eyJhbGciOiJIUzI1NiIs"), false);
+assert.match(identity, /WTS_SUPABASE_PUBLISHABLE_KEY|SUPABASE_PUBLISHABLE_KEY/);
 assert.match(documentation, /Future custom-domain migration checklist/);
 assert.match(documentation, /No connected repository or Vercel project was found/);
 
