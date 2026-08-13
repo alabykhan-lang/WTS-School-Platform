@@ -13,7 +13,7 @@ export default function StaffPortalHelpPage() {
           <div><strong>Forgot your password?</strong><span>Use Forgot Password and follow the secure email link.</span></div>
           <div><strong>Existing staff, not activated?</strong><span>Use Activate Existing Account. If employment is pending or inactive, contact authorised management.</span></div>
           <div><strong>Newly employed?</strong><span>Use New Staff Registration. Management approval is required before access is available.</span></div>
-          <div><strong>Registration pending?</strong><span>Wait for management approval. Pending registrations cannot open school modules.</span></div>
+          <div><strong>Registration received · Pending Management Approval</strong><span>Wait for management approval. Pending registrations cannot open school modules.</span></div>
         </div>
         <div className="portalEntryActions">
           <Link href="/portal/sign-in">Open Staff Portal</Link>
