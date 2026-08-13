@@ -37,12 +37,10 @@ export async function POST(request: NextRequest) {
     payload = { action: "request", purpose, login };
   } else if (action === "complete") {
     const token = textValue((input as Record<string, unknown>).token, 512);
-    const password = typeof (input as Record<string, unknown>).password === "string"
-      ? (input as Record<string, unknown>).password
-      : "";
-    const confirmPassword = typeof (input as Record<string, unknown>).confirmPassword === "string"
-      ? (input as Record<string, unknown>).confirmPassword
-      : "";
+    const passwordValue = (input as Record<string, unknown>).password;
+    const confirmPasswordValue = (input as Record<string, unknown>).confirmPassword;
+    const password: string = typeof passwordValue === "string" ? passwordValue : "";
+    const confirmPassword: string = typeof confirmPasswordValue === "string" ? confirmPasswordValue : "";
     if (!token || !password || password !== confirmPassword || password.length > 512) {
       return json({ ok: false, code: "PASSWORD_CONFIRMATION_REQUIRED" }, 400);
     }
