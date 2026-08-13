@@ -138,7 +138,7 @@ export default function StaffRegistrationPage() {
         <Link className="portalBackLink" href="/portal/sign-in">← Back to Staff Portal</Link>
         <p className="eyebrow">STAFF PORTAL</p>
         <h1 id="registration-title">{submitted ? "Registration received." : "New Staff Registration"}</h1>
-        {!submitted ? <p>Share the approved staff details below. Management reviews every registration before an identity or portal access is activated.</p> : <p>Your registration is on file as <strong>Pending Management Approval</strong>. No password, assignment or module access has been created.</p>}
+        {!submitted ? <p>Share the approved staff details below. Management reviews every registration before an identity or portal access is activated.</p><div className="portalEntryNotice"><strong>After submission: Pending Management Approval.</strong><span>Portal and module access become available only after approval and self-service activation.</span></div> : <p>Your registration is on file as <strong>Pending Management Approval</strong>. No password, assignment or module access has been created.</p>}
 
         {!submitted ? <form className="portalAuthForm portalRegistrationForm" onSubmit={submit}>
           <label>Full Name<input name="fullName" autoComplete="name" required maxLength={160} value={form.fullName} onChange={(event) => updateField("fullName", event.target.value)} /></label>
