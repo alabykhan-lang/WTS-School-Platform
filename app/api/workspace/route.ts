@@ -16,12 +16,24 @@ export async function GET(request: NextRequest) {
       p_session_secret: current.secret,
     });
     if (!result?.ok) return Response.json(result, { status: 401, headers: { ...noStoreHeaders(), "Set-Cookie": clearWorkspaceSessionCookie() } });
-    const summary = await callPrivilegedRpc<Record<string, unknown>>("school_staff_workspace_read_summary_api", {
-      p_session_id: current.id,
-      p_session_secret: current.secret,
-    });
+    // The session response is the authorization boundary. Summary is read-only enrichment;
+    // an enrichment failure must not be presented as a failed sign-in.
+    let summary: Record<string, unknown> | null = null;
+    try {
+      summary = await callPrivilegedRpc<Record<string, unknown>>("school_staff_workspace_read_summary_api", {
+        p_session_id: current.id,
+        p_session_secret: current.secret,
+      });
+    } catch (error) {
+      const errorCode = error instanceof IdentityApiError ? error.code : "";
+      if (errorCode !== "IDENTITY_SERVICE_UNAVAILABLE") throw error;
+      return Response.json(
+        { ...result, summary: null, summary_status: "unavailable" },
+        { headers: noStoreHeaders() },
+      );
+    }
     if (!summary?.ok) {
-      const summaryCode = typeof summary?.code === "string" ? summary.code : "";
+      const summaryCode = typeof summary.code === "string" ? summary.code : "";
       const sessionFailure = summaryCode === "RESULT_SESSION_REQUIRED" || summaryCode === "STAFF_SESSION_REQUIRED" || summaryCode === "STAFF_SESSION_NOT_ACTIVE";
       return Response.json(summary, {
         status: sessionFailure ? 401 : 503,
