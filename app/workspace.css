@@ -274,3 +274,53 @@ body.staffPortalHost .skipLink { z-index: 100; }
   .workspaceIdentityFacts strong { font-size: 11px; }
   .workspaceModuleCard:hover { transform: none; }
 }
+
+
+/* Staff Portal account entry */
+body:has(.portalEntryPage) { background: #eef4f1; }
+.portalEntryPage { min-height: 100svh; display: flex; align-items: center; justify-content: center; padding: clamp(24px, 6vw, 72px) 18px; background: radial-gradient(circle at 15% 15%, rgba(125,212,176,.22), transparent 34%), linear-gradient(135deg, #eef4f1 0%, #f7faf7 55%, #e9f0ed 100%); }
+.portalEntryCard { width: min(620px, 100%); padding: clamp(28px, 5vw, 54px); border: 1px solid rgba(18,50,81,.1); border-radius: 24px; background: rgba(255,255,255,.96); box-shadow: 0 24px 70px rgba(18,50,81,.14); }
+.portalRegistrationCard { width: min(760px, 100%); }
+.portalBackLink { display: inline-flex; margin-bottom: 32px; color: var(--green); font-size: 12px; font-weight: 850; }
+.portalEntryCard h1 { margin: 10px 0 14px; color: var(--navy); font-family: Georgia, "Times New Roman", serif; font-size: clamp(34px, 5vw, 52px); line-height: 1; letter-spacing: -.04em; }
+.portalEntryCard > p:not(.eyebrow):not(.portalAuthMessage):not(.portalFormHelp) { color: #536477; font-size: 14px; line-height: 1.7; }
+.portalAuthForm { display: grid; gap: 17px; margin-top: 28px; }
+.portalAuthForm label { display: grid; gap: 8px; color: var(--navy); font-size: 12px; font-weight: 850; }
+.portalAuthForm input, .portalAuthForm textarea { width: 100%; box-sizing: border-box; border: 1px solid #cbd9d2; border-radius: 12px; padding: 13px 14px; background: #fbfdfb; color: var(--navy); font: inherit; font-size: 14px; outline: none; }
+.portalAuthForm textarea { resize: vertical; min-height: 86px; }
+.portalAuthForm input:focus, .portalAuthForm textarea:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgba(49,126,92,.12); }
+.portalPasswordControl { position: relative; display: flex; align-items: stretch; }
+.portalPasswordControl input { padding-right: 112px; }
+.portalPasswordToggle { position: absolute; top: 50%; right: 8px; transform: translateY(-50%); border: 0; border-radius: 8px; padding: 7px 8px; background: #e6f2ec; color: var(--green); cursor: pointer; font-size: 10px; font-weight: 850; }
+.portalPasswordToggle:hover { background: #d8ecdf; }
+.portalEntryCard .primaryButton { width: 100%; border: 0; cursor: pointer; }
+.portalEntryCard .primaryButton:disabled { cursor: wait; opacity: .62; transform: none; }
+.portalEntryActions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px 14px; margin-top: 24px; padding-top: 21px; border-top: 1px solid #e3ebe5; }
+.portalEntryActions a { color: var(--green); font-size: 12px; font-weight: 850; line-height: 1.35; }
+.portalEntryActions a:hover { color: var(--navy); text-decoration: underline; }
+.portalAuthMessage { min-height: 18px; margin: 14px 0 0; color: #7a8a88; font-size: 12px; line-height: 1.5; }
+.portalAuthMessage:not(.isVisible) { visibility: hidden; }
+.portalAuthMessage--error { color: #a33f3f; }
+.portalAuthMessage--success { color: #1d6a4b; }
+.portalAuthMessage--info { color: #496278; }
+.portalAuthNotes { display: grid; gap: 5px; margin: 20px 0 0; padding-left: 18px; color: #718078; font-size: 11px; line-height: 1.55; }
+.portalEntryNotice { display: grid; gap: 7px; margin-top: 28px; padding: 16px 17px; border-left: 3px solid var(--gold); background: #fff8e9; color: #735d37; font-size: 13px; line-height: 1.55; }
+.portalEntryNotice--success { border-left-color: var(--green); background: #edf8f1; color: #2f684d; }
+.portalFormHelp { margin: -6px 0 0; color: #718078; font-size: 11px; line-height: 1.5; }
+.portalRegistrationForm { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.portalRegistrationForm > label:not(.portalFieldWide) { min-width: 0; }
+.portalFieldWide { grid-column: 1 / -1; }
+.portalPhotoPreviewWrap { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.portalPhotoPreview { width: 88px; height: 88px; border-radius: 14px; object-fit: cover; border: 1px solid #cbd9d2; }
+.portalSecondaryButton { border: 1px solid #b7cbc0; border-radius: 999px; padding: 9px 12px; background: white; color: var(--green); cursor: pointer; font-size: 11px; font-weight: 850; }
+.portalHelpList { display: grid; gap: 12px; margin-top: 27px; }
+.portalHelpList > div { display: grid; gap: 4px; padding: 14px 15px; border: 1px solid #e2ebe5; border-radius: 13px; background: #fbfdfb; }
+.portalHelpList strong { color: var(--navy); font-size: 12px; }
+.portalHelpList span { color: #61736b; font-size: 12px; line-height: 1.55; }
+@media (max-width: 640px) {
+  .portalEntryPage { align-items: flex-start; padding: 20px 12px; }
+  .portalEntryCard { border-radius: 18px; padding: 26px 19px; }
+  .portalRegistrationForm { grid-template-columns: 1fr; }
+  .portalFieldWide { grid-column: auto; }
+  .portalEntryActions { grid-template-columns: 1fr; }
+}
