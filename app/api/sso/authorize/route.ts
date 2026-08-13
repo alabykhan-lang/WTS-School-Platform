@@ -91,9 +91,20 @@ export async function GET(request: NextRequest) {
     );
 
     if (!issued?.ok) {
-      const fallbackCode = client.target === "attendance" ? "ATTENDANCE_ACCESS_NOT_GRANTED" : "RESULT_ACCESS_NOT_GRANTED";
+      const fallbackCode = client.target === "attendance"
+        ? "ATTENDANCE_ACCESS_NOT_GRANTED"
+        : client.target === "central_registry"
+          ? "CENTRAL_REGISTRY_ACCESS_NOT_GRANTED"
+          : client.target === "notifications"
+            ? "NOTIFICATIONS_ACCESS_NOT_GRANTED"
+            : "RESULT_ACCESS_NOT_GRANTED";
       const code = typeof issued?.code === "string" ? issued.code : fallbackCode;
-      const denied = code === "RESULT_ACCESS_NOT_GRANTED" || code === "ATTENDANCE_ACCESS_NOT_GRANTED";
+      const denied = [
+        "RESULT_ACCESS_NOT_GRANTED",
+        "ATTENDANCE_ACCESS_NOT_GRANTED",
+        "CENTRAL_REGISTRY_ACCESS_NOT_GRANTED",
+        "NOTIFICATIONS_ACCESS_NOT_GRANTED",
+      ].includes(code);
       const status = denied ? 403 : code === "WTS_SESSION_NOT_ACTIVE" ? 401 : 400;
       if (status === 401) return loginRedirect(request);
       return errorResponse(code, status);
