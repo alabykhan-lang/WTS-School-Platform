@@ -558,8 +558,8 @@ export function WorkspaceClient() {
     return { permissions, moduleAccess, roleNames, roleCodes, protectedAuthority, assignedModules: Object.entries(moduleAccess).filter(([key, value]) => key !== "profile" && value).length };
   }, [workspace]);
 
-  if (checking) return <main id="main-content" className="workspaceGate"><p>Preparing your Staff Portal…</p></main>;
-  if (!workspace || !authenticated) return <main id="main-content" className="workspaceGate"><section><p className="eyebrow">WAY TO SUCCESS STAFF PORTAL</p><h1>Sign in is required.</h1><p>{error || "This portal does not display school records until an active staff identity is verified."}</p><Link className="primaryButton" href="/portal/sign-in">Sign in to Staff Portal</Link></section></main>;
+  if (checking) return <main id="main-content" className="workspaceGate"><p>Preparing your School Portal…</p></main>;
+  if (!workspace || !authenticated) return <main id="main-content" className="workspaceGate"><section><p className="eyebrow">WAY TO SUCCESS SCHOOL PORTAL</p><h1>Sign in is required.</h1><p>{error || "This portal does not display school records until an active staff identity is verified."}</p><Link className="primaryButton" href="/portal/sign-in">Sign in to Staff Portal</Link></section></main>;
 
   const summary = workspace.summary;
   const person = summary?.person || workspace.person;
@@ -580,23 +580,23 @@ export function WorkspaceClient() {
 
   return <main id="main-content" className="workspaceLivePage">
     <div className="workspaceShell">
-      <aside id="workspace-navigation" className={`workspaceSidebar ${navOpen ? "isOpen" : ""}`} aria-label="Staff Portal navigation">
-        <div className="workspaceSidebarBrand"><Link className="workspaceBrand" href="/"><img className="workspaceBrandLogo" src="/images/logo.webp" alt="Way to Success Standard Schools logo" /><strong>Staff portal</strong></Link><button className="workspaceNavClose" type="button" onClick={() => setNavOpen(false)} aria-label="Close portal navigation">×</button></div>
+      <aside id="workspace-navigation" className={`workspaceSidebar ${navOpen ? "isOpen" : ""}`} aria-label="School Portal navigation">
+        <div className="workspaceSidebarBrand"><Link className="workspaceBrand" href="/"><img className="workspaceBrandLogo" src="/images/logo.webp" alt="Way to Success Standard Schools logo" /><strong>School Portal</strong></Link><button className="workspaceNavClose" type="button" onClick={() => setNavOpen(false)} aria-label="Close portal navigation">×</button></div>
         <p className="workspaceSidebarNote">Your school view</p>
         <nav onClick={() => setNavOpen(false)}>
           <a href="#overview">Overview</a>
-          <a href="#responsibilities">Responsibilities</a>
+          <a href="#responsibilities">My Work</a>
           {grantedModules.results ? <a href="#results">Results</a> : null}
           {grantedModules.attendance ? <a href="#attendance">Attendance</a> : null}
           {grantedModules.notifications ? <a href="#notifications">Notifications</a> : null}
-          {hasSpecialistModules ? <a href="#modules">My modules</a> : null}
+          {hasSpecialistModules ? <a href="#modules">School functions</a> : null}
         </nav>
         <div className="workspaceSidebarFooter"><span>Current academic context</span><strong>{context?.session || "Session unavailable"}</strong><small>{context?.term || "Term unavailable"}</small><button type="button" className="workspaceSignOut" onClick={() => void signOut()}>Sign out</button></div>
       </aside>
 
       <section className="workspaceMain">
-        <div className="workspaceMobileBar"><Link className="workspaceBrand" href="/"><img className="workspaceBrandLogo" src="/images/logo.webp" alt="Way to Success Standard Schools logo" /><strong>Staff portal</strong></Link><button type="button" className="workspaceMenuButton" onClick={() => setNavOpen((current) => !current)} aria-expanded={navOpen} aria-controls="workspace-navigation">{navOpen ? "Close" : "Menu"}</button></div>
-        <header id="overview" className="workspaceTopbar"><div><p className="workspaceOverline">WAY TO SUCCESS STAFF PORTAL</p><h1>{greeting}, {firstName(fullName)}.</h1><p className="workspaceTopbarIntro">Here is the current view of your school identity, responsibilities and authorised services.</p></div><button className="workspaceRefreshButton" type="button" onClick={() => void refresh()} disabled={checking}><span aria-hidden="true">↻</span>{checking ? "Refreshing…" : "Refresh view"}</button></header>
+        <div className="workspaceMobileBar"><Link className="workspaceBrand" href="/"><img className="workspaceBrandLogo" src="/images/logo.webp" alt="Way to Success Standard Schools logo" /><strong>School Portal</strong></Link><button type="button" className="workspaceMenuButton" onClick={() => setNavOpen((current) => !current)} aria-expanded={navOpen} aria-controls="workspace-navigation">{navOpen ? "Close" : "Menu"}</button></div>
+        <header id="overview" className="workspaceTopbar"><div><p className="workspaceOverline">SCHOOL PORTAL</p><h1>{greeting}, {firstName(fullName)}.</h1><p className="workspaceTopbarIntro">Your school dashboard brings together your identity, My Work and authorised school functions.</p></div><button className="workspaceRefreshButton" type="button" onClick={() => void refresh()} disabled={checking}><span aria-hidden="true">↻</span>{checking ? "Refreshing…" : "Refresh view"}</button></header>
 
         <section className="workspaceIdentityCard" id="identity" aria-labelledby="identity-heading">
           <div className="workspaceIdentityPhoto">{person?.photo_url ? <img src={person.photo_url} alt={`${fullName} staff photograph`} /> : <span aria-label="No approved staff photograph">{initials(fullName)}</span>}</div>
@@ -604,10 +604,10 @@ export function WorkspaceClient() {
           <div className="workspaceIdentityFacts"><div><span>Staff number</span><strong>{person?.staff_number || "Not assigned"}</strong></div><div><span>Employment</span><strong>{formatLabel(person?.employment_status)}</strong></div><div><span>Session</span><strong>{context?.session || "Not available"}</strong></div><div><span>Term</span><strong>{context?.term || "Not available"}</strong></div></div>
         </section>
 
-        <section className="workspaceMetricGrid" aria-label="Staff Portal summary"><Metric label="Available services" value={formatCount(access.assignedModules)} tone="mint" /><Metric label="Class-teacher assignments" value={formatCount(classTeacherAssignments.length)} tone="gold" /><Metric label="Subject assignments" value={formatCount(assignments.length)} tone="blue" /><Metric label="Current context" value={`${context?.session || "—"} · ${context?.term || "—"}`} tone="mint" /></section>
-        <section className="workspaceContextBanner" aria-label="Official academic context"><div><p className="workspaceCardKicker">OFFICIAL ACADEMIC CONTEXT</p><h2>{context?.session || "Session unavailable"}<span> · </span>{context?.term || "Term unavailable"}</h2></div><p>Managed in Central Registry. This context is read-only in Workspace.</p></section>
+        <section className="workspaceMetricGrid" aria-label="School Portal summary"><Metric label="Available services" value={formatCount(access.assignedModules)} tone="mint" /><Metric label="Class-teacher assignments" value={formatCount(classTeacherAssignments.length)} tone="gold" /><Metric label="Subject assignments" value={formatCount(assignments.length)} tone="blue" /><Metric label="Current context" value={`${context?.session || "—"} · ${context?.term || "—"}`} tone="mint" /></section>
+        <section className="workspaceContextBanner" aria-label="Official academic context"><div><p className="workspaceCardKicker">OFFICIAL ACADEMIC CONTEXT</p><h2>{context?.session || "Session unavailable"}<span> · </span>{context?.term || "Term unavailable"}</h2></div><p>Managed in Central Registry. This context is read-only in the School Portal.</p></section>
 
-        <section id="responsibilities" className="workspaceSection" aria-labelledby="responsibilities-heading"><div className="workspaceSectionHeading"><div><p className="workspaceOverline">YOUR RESPONSIBILITIES</p><h2 id="responsibilities-heading">Only the work connected to you.</h2></div><p>Assignments are filtered by the active access held by your signed-in account. No unrelated classes or school-wide figures are added here.</p></div>
+        <section id="responsibilities" className="workspaceSection" aria-labelledby="responsibilities-heading"><div className="workspaceSectionHeading"><div><p className="workspaceOverline">MY WORK</p><h2 id="responsibilities-heading">Only the work connected to you.</h2></div><p>Assignments are filtered by the active access held by your signed-in account. No unrelated classes or school-wide figures are added here.</p></div>
           {showClassTeacherSection ? <div className="workspaceRoleSection"><div className="workspaceRoleHeading"><div><p className="workspaceCardKicker">CLASS-TEACHER VIEW</p><h3>Class overview</h3></div><span className="workspaceRoleBadge">{classTeacherAssignments.length ? `${classTeacherAssignments.length} active class${classTeacherAssignments.length === 1 ? "" : "es"}` : "No active assignment"}</span></div>{classTeacherAssignments.length ? <div className="workspaceClassGrid">{classTeacherAssignments.map((overview) => <ClassOverviewCard key={overview.class_key} overview={overview} launchHref={resultPortalUrl} showResults={grantedModules.results} showAttendance={grantedModules.attendance} showRegistry={grantedModules.centralRegistry} showNotifications={grantedModules.notifications} />)}</div> : <EmptyState>{classTeacher?.message || "No class-teacher assignment is currently active."}</EmptyState>}</div> : null}
           {showSubjectSection ? <div className="workspaceRoleSection"><div className="workspaceRoleHeading"><div><p className="workspaceCardKicker">SUBJECT-TEACHER VIEW</p><h3>Subject responsibilities</h3></div><span className="workspaceRoleBadge">{assignments.length ? `${assignments.length} assignment${assignments.length === 1 ? "" : "s"}` : "No current subjects"}</span></div>{assignments.length ? <div className="workspaceAssignmentGrid">{assignments.map((assignment) => <SubjectAssignmentCard key={`${assignment.class_key}-${assignment.subject_index}`} assignment={assignment} />)}</div> : <EmptyState>{subjectTeacher?.message || "No subject assignment has been recorded for this term."}</EmptyState>}</div> : null}
           {grantedModules.attendance ? <PersonalAttendanceCard attendance={summary?.staff_attendance} /> : null}
@@ -621,7 +621,7 @@ export function WorkspaceClient() {
         </div></section> : null}
 
         {grantedModules.notifications ? <section id="notifications" className="workspaceNoticeBand"><div><p className="workspaceCardKicker">NOTIFICATIONS</p><h3>School messages</h3></div><EmptyState>{moduleSummary("notifications", "Notification summaries are not yet available.")}</EmptyState></section> : null}
-        <footer className="workspaceFooter"><span>Way to Success Staff Portal</span><span>Read-only summaries · {context?.session || "current session"} · {context?.term || "current term"}</span><button type="button" onClick={() => void signOut()}>Sign out</button></footer>
+        <footer className="workspaceFooter"><span>Way to Success School Portal</span><span>Read-only summaries · {context?.session || "current session"} · {context?.term || "current term"}</span><button type="button" onClick={() => void signOut()}>Sign out</button></footer>
       </section>
     </div>
   </main>;
