@@ -271,9 +271,12 @@ function safeWorkspaceReturnTo(value: string | null) {
 export function PortalSignIn() {
   const [login, setLogin] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [pendingChange, setPendingChange] = useState(false);
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [message, setMessage] = useState("");
   const [messageTone, setMessageTone] = useState<"error" | "success" | "info">("error");
   const [busy, setBusy] = useState(false);
@@ -320,6 +323,8 @@ export function PortalSignIn() {
       setPassword("");
       setNewPassword("");
       setConfirmPassword("");
+      setShowNewPassword(false);
+      setShowConfirmPassword(false);
       setPendingChange(false);
       setMessage("Password changed. Sign in again with your new password.");
       setMessageTone("success");
@@ -332,32 +337,53 @@ export function PortalSignIn() {
   }
 
   return (
-    <main id="main-content" className="portalSignInPage">
-      <section className="portalSignInCard" aria-labelledby="portal-sign-in-title">
+    <main id="main-content" className="portalSignInPage portalEntryPage">
+      <section className="portalSignInCard portalEntryCard" aria-labelledby="portal-sign-in-title">
         <Link className="portalBackLink" href="/portal">← Way to Success Standard Schools</Link>
         <p className="eyebrow">STAFF PORTAL</p>
         <h1 id="portal-sign-in-title">Welcome back.</h1>
         <p>Sign in with your school account. Your portal will show only the current information and services authorised for you.</p>
         {!pendingChange ? <form className="portalAuthForm" onSubmit={submitLogin}>
-          <label>Staff number or official registered email<input autoComplete="username" required value={login} onChange={(event) => setLogin(event.target.value)} /></label>
-          <label>Password<input autoComplete="current-password" type="password" required value={password} onChange={(event) => setPassword(event.target.value)} /></label>
+          <label>Staff number or official registered email
+            <input autoComplete="username" required value={login} onChange={(event) => setLogin(event.target.value)} />
+          </label>
+          <label>Password
+            <span className="portalPasswordControl">
+              <input autoComplete="current-password" type={showPassword ? "text" : "password"} required value={password} onChange={(event) => setPassword(event.target.value)} />
+              <button className="portalPasswordToggle" type="button" aria-pressed={showPassword} onClick={() => setShowPassword((value) => !value)}>{showPassword ? "Hide password" : "Show password"}</button>
+            </span>
+          </label>
           <button className="primaryButton" disabled={busy} type="submit">{busy ? "Checking access…" : "Open Staff Portal"}</button>
         </form> : <form className="portalAuthForm" onSubmit={submitPasswordChange}>
-          <label>New password<input autoComplete="new-password" type="password" required value={newPassword} onChange={(event) => setNewPassword(event.target.value)} /></label>
-          <label>Confirm new password<input autoComplete="new-password" type="password" required value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} /></label>
+          <label>New password
+            <span className="portalPasswordControl">
+              <input autoComplete="new-password" type={showNewPassword ? "text" : "password"} required value={newPassword} onChange={(event) => setNewPassword(event.target.value)} />
+              <button className="portalPasswordToggle" type="button" aria-pressed={showNewPassword} onClick={() => setShowNewPassword((value) => !value)}>{showNewPassword ? "Hide password" : "Show password"}</button>
+            </span>
+          </label>
+          <label>Confirm new password
+            <span className="portalPasswordControl">
+              <input autoComplete="new-password" type={showConfirmPassword ? "text" : "password"} required value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} />
+              <button className="portalPasswordToggle" type="button" aria-pressed={showConfirmPassword} onClick={() => setShowConfirmPassword((value) => !value)}>{showConfirmPassword ? "Hide password" : "Show password"}</button>
+            </span>
+          </label>
           <button className="primaryButton" disabled={busy} type="submit">{busy ? "Updating password…" : "Create new password"}</button>
         </form>}
-        <p className={`portalAuthMessage ${message ? "isVisible" : ""} portalAuthMessage--${messageTone}`} role="status">{message}</p>
+        <p className={"portalAuthMessage " + (message ? "isVisible " : "") + "portalAuthMessage--" + messageTone} role="status" aria-live="polite">{message}</p>
+        <div className="portalEntryActions" aria-label="Account help">
+          <Link href="/portal/account-recovery?mode=reset">Forgot Password</Link>
+          <Link href="/portal/account-recovery?mode=activation">Activate Existing Account</Link>
+          <Link href="/portal/register">New Staff Registration</Link>
+          <Link href="/portal/help">Need Help Signing In?</Link>
+        </div>
         <ul className="portalAuthNotes">
-          <li>Your portal is assembled from the active identity and access held by the school.</li>
-          <li>Specialist modules remain responsible for operational changes.</li>
-          <li>Contact authorised school management when access recovery is required.</li>
+          <li>Use the same school account for the School Portal and its authorised services.</li>
+          <li>Account recovery and activation use the verified details already held by the school.</li>
         </ul>
       </section>
     </main>
   );
 }
-
 function EmptyState({ children }: { children: ReactNode }) {
   return <p className="workspaceEmptyState">{children}</p>;
 }
