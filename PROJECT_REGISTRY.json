@@ -1,0 +1,160 @@
+{
+  "schema_version": 1,
+  "registry_status": "authoritative",
+  "integration_status": "production_verified_and_frozen",
+  "institution": "Way to Success Standard Schools",
+  "last_verified_at": "2026-08-14",
+  "source_of_truth": {
+    "project_registry": "PROJECT_REGISTRY.json",
+    "runtime_module_registry": "data/portal-config.ts",
+    "production_contract": "docs/UNIVERSAL-PORTAL-PRODUCTION-CONTRACT.md",
+    "verification_record": "docs/SSO-PRODUCTION-VERIFICATION.md"
+  },
+  "change_control": {
+    "allowed_without_integration_reauthorization": [
+      "UI/UX presentation changes that preserve all authentication, SSO, session, callback and launcher contracts",
+      "Module-internal feature development that does not change central identity, SSO clients, shared session contracts or cross-module authorization"
+    ],
+    "requires_explicit_owner_authorization": [
+      "Central login or session changes",
+      "SSO client, audience, scope, PKCE, callback, redirect URI or cookie changes",
+      "Supabase identity, employment, authority, grant, authorization-code or session contract changes",
+      "Vercel project replacement, origin changes or new portal deployments",
+      "Creation of another portal, login system, identity store or shared database"
+    ]
+  },
+  "shared_services": {
+    "supabase": {
+      "project_ref": "wuftzyeajmsxdrbwaawl",
+      "classification": "production",
+      "role": "shared institutional identity, authorization and session authority"
+    },
+    "vercel": {
+      "team_id": "team_30tfKk9qB6CGy8jBfZVObIQt",
+      "classification": "production"
+    }
+  },
+  "projects": [
+    {
+      "project_id": "wts-school-platform",
+      "role": "universal_school_portal",
+      "repository": "alabykhan-lang/WTS-School-Platform",
+      "branch": "main",
+      "production_origin": "https://wts-school-platform.vercel.app",
+      "vercel_project_id": "prj_LEkpsO2w74yqxUXhb7xxlJlyHdY1",
+      "integration_baseline_commit": "a8263e7b34c267836db1007a3c205b68981ca400",
+      "status": "operational_owner_verified"
+    },
+    {
+      "project_id": "wts-result-system",
+      "role": "results_specialist",
+      "repository": "alabykhan-lang/wts-result-system",
+      "branch": "main",
+      "production_origin": "https://wts-result-system.vercel.app",
+      "vercel_project_id": "prj_JfUqs1ibycxf78ZyhoTsymKGvXqt",
+      "integration_baseline_commit": "7be6ad0ae038ecb0289fce9a2ea7088a281527c4",
+      "status": "operational_owner_verified"
+    },
+    {
+      "project_id": "wts-attendance-system",
+      "role": "attendance_specialist",
+      "repository": "alabykhan-lang/WTS--ATTENDANCE-SYSTEM-",
+      "branch": "main",
+      "production_origin": "https://wts-attendance-system.vercel.app",
+      "vercel_project_id": "prj_QWXNcPHMXdF72gEjumYz1TQoHV2W",
+      "integration_baseline_commit": "3dd0313a29ba505bc0480505557d6d4654b88dce",
+      "status": "operational_owner_verified"
+    },
+    {
+      "project_id": "wts-central-registry",
+      "role": "institutional_administration_authority",
+      "repository": "alabykhan-lang/WTS-Central-Registry-",
+      "branch": "main",
+      "production_origin": "https://wts-central-registry.vercel.app",
+      "vercel_project_id": "prj_dHpeGYedvxa6EUAo6ywAqmVKXDTP",
+      "integration_baseline_commit": "64bb274d10740eb068f85030cd241245f1f1421e",
+      "status": "operational_owner_verified"
+    },
+    {
+      "project_id": "wts-notification-system",
+      "role": "notifications_specialist",
+      "repository": "alabykhan-lang/WTS-Notification-System",
+      "branch": "main",
+      "production_origin": "https://wts-notification-system.vercel.app",
+      "vercel_project_id": "prj_MRSBhU6cgDXfePFUT5IBGKQzawNs",
+      "integration_baseline_commit": "2f5dbe287c8a7bf6ea574f28dd0c8109b3a39a2d",
+      "status": "operational_owner_verified"
+    }
+  ],
+  "portal": {
+    "public_entry": "https://wts-school-platform.vercel.app",
+    "sign_in_route": "/portal/sign-in",
+    "authenticated_dashboard_route": "/workspace",
+    "central_authorize_endpoint": "https://wts-school-platform.vercel.app/api/sso/authorize",
+    "normal_user_experience": "one central login, one School Portal dashboard, authorized specialist modules"
+  },
+  "sso": {
+    "protocol": "authorization_code_pkce",
+    "code_challenge_method": "S256",
+    "state_required": true,
+    "nonce_required": true,
+    "authorization_code_single_use": true,
+    "authorization_code_lifetime_seconds": 300,
+    "specialist_session_lifetime_seconds": 28800,
+    "session_invariant": "The central School Portal session remains valid while each specialist creates its own host session.",
+    "clients": [
+      {
+        "client_id": "result_portal",
+        "target_app_code": "results",
+        "scope": "results",
+        "redirect_uri": "https://wts-result-system.vercel.app/portal_core.html",
+        "launch_uri": "https://wts-result-system.vercel.app/portal_core.html?sso=1",
+        "exchange_endpoint": "https://wts-result-system.vercel.app/api/result-sso-token"
+      },
+      {
+        "client_id": "attendance",
+        "target_app_code": "attendance",
+        "scope": "attendance",
+        "redirect_uri": "https://wts-attendance-system.vercel.app/",
+        "launch_uri": "https://wts-attendance-system.vercel.app/?sso=1",
+        "exchange_endpoint": "https://wts-attendance-system.vercel.app/api/sso-token"
+      },
+      {
+        "client_id": "central_registry",
+        "target_app_code": "central_registry",
+        "scope": "central_registry",
+        "redirect_uri": "https://wts-central-registry.vercel.app/",
+        "launch_uri": "https://wts-central-registry.vercel.app/?sso=1",
+        "exchange_endpoint": "https://wts-central-registry.vercel.app/api/registry-session",
+        "exchange_action": "sso_exchange",
+        "user_facing_name": "Administration"
+      },
+      {
+        "client_id": "notifications",
+        "target_app_code": "notifications",
+        "scope": "notifications",
+        "redirect_uri": "https://wts-notification-system.vercel.app/",
+        "launch_uri": "https://wts-notification-system.vercel.app/?sso=1",
+        "exchange_endpoint": "https://wts-notification-system.vercel.app/api/sso-token"
+      }
+    ]
+  },
+  "authority": {
+    "source": "server-derived Central Registry institutional authority",
+    "owner_behavior": "Protected owner/proprietor authority is recognized automatically without repetitive ordinary module grants.",
+    "browser_role_values_authoritative": false
+  },
+  "custom_domains": {
+    "configured": false,
+    "blocking": false,
+    "future_origins": [
+      "https://waytosuccessschools.com",
+      "https://portal.waytosuccessschools.com"
+    ],
+    "rule": "Introduce only through approved configuration and registered redirect updates after domain ownership."
+  },
+  "resources_module": {
+    "production_application_confirmed": false,
+    "launcher_status": "omitted_until_real_application_exists"
+  }
+}
