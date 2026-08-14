@@ -1,4 +1,4 @@
-import { timingSafeEqual } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 
 const SUPABASE_URL = process.env.WTS_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "https://wuftzyeajmsxdrbwaawl.supabase.co";
 const SUPABASE_KEY = process.env.WTS_SUPABASE_PUBLISHABLE_KEY
@@ -13,11 +13,14 @@ export class IdentityApiError extends Error {
   status: number;
   code: string;
 
-  constructor(code: string, status = 400) {
+  referenceId: string;
+
+  constructor(code: string, status = 400, referenceId = randomUUID()) {
     super(code);
     this.name = "IdentityApiError";
     this.code = code;
     this.status = status;
+    this.referenceId = referenceId;
   }
 }
 
@@ -56,6 +59,15 @@ export function constantTimeEqual(left: string, right: string) {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
+function rpcFailureCategory(status: number, payload: unknown) {
+  const value = payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
+  const upstreamCode = typeof value.code === "string" ? value.code : "";
+  if (upstreamCode === "23514" || upstreamCode.startsWith("23")) return "database_constraint";
+  if (upstreamCode.startsWith("42") || upstreamCode.startsWith("PGRST")) return "database_contract";
+  if (status === 401 || status === 403) return "configuration_or_permission";
+  return "database_or_rpc";
+}
+
 export async function callPrivilegedRpc<T>(name: string, body: Record<string, unknown>): Promise<T> {
   const key = serviceKey();
   let response: Response;
@@ -71,17 +83,50 @@ export async function callPrivilegedRpc<T>(name: string, body: Record<string, un
       cache: "no-store",
     });
   } catch {
-    throw new IdentityApiError("IDENTITY_SERVICE_UNAVAILABLE", 503);
+    const referenceId = randomUUID();
+    console.error(JSON.stringify({
+      event: "identity_rpc_failure",
+      referenceId,
+      rpc: name,
+      category: "network_or_configuration",
+    }));
+    throw new IdentityApiError("IDENTITY_SERVICE_UNAVAILABLE", 503, referenceId);
   }
 
   const payload = await response.json().catch(() => null);
-  if (!response.ok) throw new IdentityApiError("IDENTITY_SERVICE_UNAVAILABLE", 503);
+  if (!response.ok) {
+    const value = payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
+    const referenceId = randomUUID();
+    console.error(JSON.stringify({
+      event: "identity_rpc_failure",
+      referenceId,
+      rpc: name,
+      category: rpcFailureCategory(response.status, payload),
+      upstreamStatus: response.status,
+      upstreamCode: typeof value.code === "string" ? value.code : undefined,
+      upstreamMessage: typeof value.message === "string" ? value.message : undefined,
+      upstreamHint: typeof value.hint === "string" ? value.hint : undefined,
+    }));
+    throw new IdentityApiError("IDENTITY_SERVICE_UNAVAILABLE", 503, referenceId);
+  }
   return payload as T;
 }
 
 export function resultErrorResponse(error: unknown) {
   if (error instanceof IdentityApiError) {
-    return Response.json({ ok: false, code: error.code }, { status: error.status, headers: noStoreHeaders() });
+    return Response.json(
+      { ok: false, code: error.code, reference_id: error.referenceId },
+      { status: error.status, headers: noStoreHeaders() },
+    );
   }
-  return Response.json({ ok: false, code: "IDENTITY_SERVICE_UNAVAILABLE" }, { status: 503, headers: noStoreHeaders() });
+  const referenceId = randomUUID();
+  console.error(JSON.stringify({
+    event: "identity_api_unexpected_failure",
+    referenceId,
+    category: "unexpected_server_error",
+  }));
+  return Response.json(
+    { ok: false, code: "IDENTITY_SERVICE_UNAVAILABLE", reference_id: referenceId },
+    { status: 503, headers: noStoreHeaders() },
+  );
 }
