@@ -42,6 +42,13 @@ export type PortalModuleDefinition = {
   callbackRoute: string | null;
   logoutReturnRoute: string | null;
   launchable: boolean;
+  /**
+   * Whether the module is part of the ordinary staff experience. A module can
+   * remain registered for SSO and developer testing while staying invisible
+   * to staff until it is ready for release.
+   */
+  visibleToStaff?: boolean;
+  developerOnly?: boolean;
 };
 
 export type PortalSsoClientDefinition = {
@@ -162,6 +169,7 @@ const unsortedPortalModuleRegistry: PortalModuleDefinition[] = [
     callbackRoute: "/",
     logoutReturnRoute: "/workspace",
     launchable: true,
+    visibleToStaff: true,
   },
   {
     key: "results",
@@ -180,6 +188,7 @@ const unsortedPortalModuleRegistry: PortalModuleDefinition[] = [
     callbackRoute: "/portal_core.html",
     logoutReturnRoute: "/workspace",
     launchable: true,
+    visibleToStaff: true,
   },
   {
     key: "attendance",
@@ -191,13 +200,14 @@ const unsortedPortalModuleRegistry: PortalModuleDefinition[] = [
     launchRoute: "/?sso=1",
     ssoMethod: "pkce",
     requiredCentralModuleGrant: "attendance",
-    operationalStatus: "operational",
+    operationalStatus: "under-development",
     visibilityRule: "grant",
     displayOrder: 30,
     summaryContract: { source: "workspace-summary", key: "attendance", access: "read-only" },
     callbackRoute: "/",
     logoutReturnRoute: "/workspace",
     launchable: true,
+    developerOnly: true,
   },
   {
     key: "notifications",
@@ -209,13 +219,14 @@ const unsortedPortalModuleRegistry: PortalModuleDefinition[] = [
     launchRoute: "/?sso=1",
     ssoMethod: "pkce",
     requiredCentralModuleGrant: "notifications",
-    operationalStatus: "operational",
+    operationalStatus: "under-development",
     visibilityRule: "grant",
     displayOrder: 40,
     summaryContract: { source: "workspace-summary", key: "notifications", access: "read-only" },
     callbackRoute: "/",
     logoutReturnRoute: "/workspace",
     launchable: true,
+    developerOnly: true,
   },
   {
     key: "resources",

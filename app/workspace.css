@@ -258,6 +258,123 @@ body:has(.workspaceLivePage) { background: #edf2ee; }
   .publicWorkspaceBoundary, .publicWorkspaceReturn { padding: 58px 7vw; }
 }
 
+/* Simple Staff Portal home. Specialist services keep their own workspaces;
+   this surface is the calm, single entry point for staff. */
+.staffPortalPage { min-height: 100vh; background: #f1f6f2; color: #102c4c; }
+.staffPortalShell { width: min(1220px, 90vw); margin: 0 auto; }
+.staffPortalHeader { display: flex; align-items: center; justify-content: space-between; gap: 28px; min-height: 88px; border-bottom: 1px solid #dce8e0; }
+.staffPortalBrand { display: inline-flex; align-items: center; gap: 12px; color: var(--navy); }
+.staffPortalBrand:hover { color: var(--green); }
+.staffPortalBrand img { width: 43px; height: 43px; object-fit: contain; }
+.staffPortalBrand span { display: grid; gap: 3px; }
+.staffPortalBrand strong { font-family: Georgia, serif; font-size: 19px; font-weight: 500; }
+.staffPortalBrand small { color: #6a7a86; font-size: 10px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
+.staffPortalNav { display: flex; align-items: center; gap: 24px; }
+.staffPortalNav a, .staffPortalNav button { padding: 8px 0; border: 0; background: transparent; color: #526779; cursor: pointer; font: inherit; font-size: 12px; font-weight: 800; }
+.staffPortalNav a:hover, .staffPortalNav a:focus-visible, .staffPortalNav button:hover, .staffPortalNav button:focus-visible { color: var(--green); }
+.staffPortalNav button { color: #0f7c5c; }
+.staffPortalMenuButton { display: none; padding: 9px 14px; border: 1px solid #c9d9cf; border-radius: 999px; background: white; color: var(--navy); cursor: pointer; font-size: 11px; font-weight: 850; }
+.staffPortalWelcome { display: grid; grid-template-columns: minmax(0, 1.12fr) minmax(330px, .88fr); gap: clamp(32px, 6vw, 92px); align-items: center; padding: 82px 0 48px; }
+.staffPortalWelcomeCopy { max-width: 690px; }
+.staffPortalWelcome h1 { margin: 17px 0 0; color: var(--navy); font-family: Georgia, serif; font-size: clamp(48px, 7vw, 82px); font-weight: 500; line-height: .95; letter-spacing: -.06em; }
+.staffPortalLead { max-width: 640px; margin: 28px 0 0; color: #536779; font-size: 17px; line-height: 1.72; }
+.staffPortalContext { display: inline-flex; flex-direction: column; gap: 6px; margin-top: 28px; padding: 14px 17px; border-left: 4px solid var(--gold); background: #fffaf0; }
+.staffPortalContext span, .staffPortalKicker, .staffPortalProfileFacts dt { color: #39765e; font-size: 9px; font-weight: 900; letter-spacing: .14em; text-transform: uppercase; }
+.staffPortalContext strong { color: var(--navy); font-size: 13px; }
+.staffPortalProfileCard { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 18px; padding: 25px; border: 1px solid #dce9e1; border-top: 5px solid var(--gold); border-radius: 20px; background: white; box-shadow: 0 18px 42px rgba(13,53,80,.07); }
+.staffPortalAvatar { width: 84px; height: 84px; overflow: hidden; border-radius: 50%; background: #dcefe3; color: var(--green); }
+.staffPortalAvatar img { width: 100%; height: 100%; object-fit: cover; }
+.staffPortalAvatar span { display: grid; width: 100%; height: 100%; place-items: center; font-family: Georgia, serif; font-size: 25px; }
+.staffPortalProfileMain { min-width: 0; align-self: center; }
+.staffPortalProfileMain h2 { margin: 8px 0 0; color: var(--navy); font-family: Georgia, serif; font-size: 27px; font-weight: 500; line-height: 1.08; overflow-wrap: anywhere; }
+.staffPortalProfileMain p:last-child { margin: 7px 0 0; color: #5b7180; font-size: 12px; line-height: 1.45; }
+.staffPortalProfileFacts { display: grid; grid-column: 1 / -1; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; margin: 0; }
+.staffPortalProfileFacts div { min-width: 0; padding: 11px 12px; border: 1px solid #e1eee6; border-radius: 11px; background: #f8fbf9; }
+.staffPortalProfileFacts dt { letter-spacing: .08em; }
+.staffPortalProfileFacts dd { margin: 7px 0 0; color: #314e62; font-size: 11px; font-weight: 800; line-height: 1.35; overflow-wrap: anywhere; }
+.staffPortalSection { padding: 47px 0 0; }
+.staffPortalSectionHeading { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, .75fr); gap: 40px; align-items: end; margin-bottom: 24px; }
+.staffPortalSectionHeading h2 { margin: 10px 0 0; color: var(--navy); font-family: Georgia, serif; font-size: clamp(34px, 4.3vw, 55px); font-weight: 500; line-height: 1; letter-spacing: -.05em; }
+.staffPortalSectionHeading > p { max-width: 470px; margin: 0; color: #647783; font-size: 13px; line-height: 1.65; }
+.staffPortalDutyGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 13px; }
+.staffPortalDutyCard { min-width: 0; min-height: 210px; padding: 22px; border: 1px solid #dfeae3; border-radius: 17px; background: white; box-shadow: 0 12px 25px rgba(13,53,80,.04); }
+.staffPortalDutyCard--portfolio { background: linear-gradient(145deg, #0b2f4c, #155e4c); color: white; }
+.staffPortalDutyCard--portfolio .staffPortalKicker, .staffPortalDutyCard--portfolio h3, .staffPortalDutyCard--portfolio > p:last-child { color: white; }
+.staffPortalDutyIcon { display: inline-grid; width: 37px; height: 37px; place-items: center; border-radius: 12px; background: #e6f4ea; color: var(--green); font-family: Georgia, serif; font-size: 17px; }
+.staffPortalDutyCard--portfolio .staffPortalDutyIcon { background: rgba(255,255,255,.16); color: #c4eed4; }
+.staffPortalDutyCard .staffPortalKicker { margin: 23px 0 0; }
+.staffPortalDutyCard h3 { margin: 10px 0 0; color: var(--navy); font-family: Georgia, serif; font-size: 26px; font-weight: 500; line-height: 1.08; overflow-wrap: anywhere; }
+.staffPortalDutyCard > p:last-child { margin: 10px 0 0; color: #617582; font-size: 12px; line-height: 1.55; }
+.staffPortalDutyCard ul { display: grid; gap: 7px; margin: 12px 0 0; padding: 0; list-style: none; }
+.staffPortalDutyCard li { padding-left: 15px; color: #536979; font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
+.staffPortalDutyCard li::before { display: inline-block; width: 7px; height: 7px; margin: 0 8px 1px -15px; border-radius: 50%; background: #b9dcc5; content: ""; }
+.staffPortalDutyCard li small { color: #7a8c96; font-size: 10px; }
+.staffPortalDutyEmpty { max-width: 240px; }
+.staffPortalActionsSection { padding-bottom: 34px; }
+.staffPortalActionGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; }
+.staffPortalAction { display: grid; grid-template-columns: 48px minmax(0, 1fr) 22px; gap: 14px; align-items: center; min-width: 0; padding: 20px; border: 1px solid #dceae2; border-radius: 16px; background: white; color: var(--navy); box-shadow: 0 12px 24px rgba(13,53,80,.04); transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease; }
+.staffPortalAction:hover, .staffPortalAction:focus-visible { border-color: #98cfac; box-shadow: 0 16px 30px rgba(13,53,80,.09); color: var(--navy); transform: translateY(-2px); }
+.staffPortalActionIcon { display: grid; width: 48px; height: 48px; place-items: center; border-radius: 14px; background: #e3f3e8; color: var(--green); font-family: Georgia, serif; font-size: 23px; }
+.staffPortalAction strong, .staffPortalAction small { display: block; }
+.staffPortalAction strong { font-size: 15px; line-height: 1.25; }
+.staffPortalAction small { margin-top: 5px; color: #657986; font-size: 11px; line-height: 1.45; }
+.staffPortalActionArrow { color: var(--green); font-size: 20px; }
+.staffPortalEmptyAction, .staffPortalProfileReminder { margin: 0; padding: 16px 18px; border-radius: 13px; background: #fff9eb; color: #735f39; font-size: 12px; line-height: 1.6; }
+.staffPortalProfileReminder { display: flex; align-items: flex-start; gap: 11px; margin-top: 14px; border: 1px solid #f0dfb9; background: #fffdf7; color: #6b6870; }
+.staffPortalProfileReminder > span { display: grid; flex: 0 0 20px; width: 20px; height: 20px; place-items: center; border-radius: 50%; background: #f4dfac; color: #795717; font-weight: 900; }
+.staffPortalProfileReminder p { margin: 0; }
+.staffPortalProfileReminder strong { color: #5e4d2e; }
+.staffPortalDeveloperSection { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-top: 25px; padding: 18px 20px; border: 1px dashed #b6c9bd; border-radius: 15px; background: #edf5ef; }
+.staffPortalDeveloperSection h2 { margin: 6px 0 0; color: var(--navy); font-family: Georgia, serif; font-size: 25px; font-weight: 500; }
+.staffPortalDeveloperSection p:last-child { max-width: 550px; margin: 7px 0 0; color: #5f7480; font-size: 11px; line-height: 1.5; }
+.staffPortalDeveloperLinks { display: flex; gap: 9px; flex-wrap: wrap; }
+.staffPortalDeveloperLinks a { padding: 9px 12px; border-radius: 999px; background: #dbeee1; color: #27634d; font-size: 11px; font-weight: 850; }
+.staffPortalDeveloperLinks a:hover { background: #c5e6d1; color: var(--navy); }
+.staffPortalDeveloperLinks span { margin-left: 4px; }
+.staffPortalFooter { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-top: 50px; padding: 20px 0 28px; border-top: 1px solid #dce8e0; color: #70818a; font-size: 10px; }
+.staffPortalFooter span:first-child { color: #27634d; font-weight: 850; }
+.staffPortalFooter button { padding: 0; border: 0; background: transparent; color: #0f7c5c; cursor: pointer; font: inherit; font-weight: 850; }
+.staffPortalGate { display: grid; min-height: 100vh; place-items: center; padding: 30px 5vw; background: #f1f6f2; }
+.staffPortalGate > p { color: #4e6976; font-size: 13px; }
+.staffPortalGate section { width: min(540px, 100%); padding: 34px; border: 1px solid #dce9e1; border-top: 5px solid var(--gold); border-radius: 20px; background: white; box-shadow: 0 18px 42px rgba(13,53,80,.07); }
+.staffPortalGate h1 { margin: 15px 0 0; color: var(--navy); font-family: Georgia, serif; font-size: 45px; font-weight: 500; line-height: 1; letter-spacing: -.05em; }
+.staffPortalGate section > p:not(.eyebrow) { margin: 18px 0 0; color: #627783; font-size: 14px; line-height: 1.65; }
+.staffPortalGateActions { display: flex; gap: 10px; margin-top: 24px; flex-wrap: wrap; }
+.staffPortalGateActions .primaryButton, .staffPortalGateActions .secondaryButton { margin-top: 0; }
+.staffPortalRetry { margin-top: 18px; padding: 0; border: 0; background: transparent; color: #0f7c5c; cursor: pointer; font-size: 12px; font-weight: 850; }
+
+@media (max-width: 900px) {
+  .staffPortalWelcome { grid-template-columns: 1fr; padding-top: 58px; }
+  .staffPortalDutyGrid { grid-template-columns: 1fr 1fr; }
+  .staffPortalDutyCard--portfolio { grid-column: 1 / -1; min-height: 0; }
+  .staffPortalDeveloperSection { align-items: flex-start; flex-direction: column; }
+}
+
+@media (max-width: 680px) {
+  .staffPortalShell { width: min(92vw, 520px); }
+  .staffPortalHeader { min-height: 75px; }
+  .staffPortalBrand small { display: none; }
+  .staffPortalMenuButton { display: block; }
+  .staffPortalNav { display: none; position: absolute; z-index: 30; top: 74px; right: 4vw; left: 4vw; padding: 14px 17px; flex-direction: column; align-items: stretch; gap: 7px; border: 1px solid #dbe8df; border-radius: 15px; background: white; box-shadow: 0 16px 30px rgba(13,53,80,.12); }
+  .staffPortalNav.isOpen { display: flex; }
+  .staffPortalNav a, .staffPortalNav button { padding: 10px 3px; text-align: left; }
+  .staffPortalWelcome { gap: 27px; padding-top: 47px; }
+  .staffPortalWelcome h1 { font-size: 51px; }
+  .staffPortalLead { font-size: 15px; }
+  .staffPortalProfileCard { grid-template-columns: 68px minmax(0, 1fr); gap: 13px; padding: 20px; }
+  .staffPortalAvatar { width: 68px; height: 68px; }
+  .staffPortalProfileMain h2 { font-size: 23px; }
+  .staffPortalProfileFacts { grid-template-columns: 1fr 1fr; }
+  .staffPortalProfileFacts div:last-child { grid-column: 1 / -1; }
+  .staffPortalSection { padding-top: 38px; }
+  .staffPortalSectionHeading { display: block; }
+  .staffPortalSectionHeading > p { margin-top: 15px; }
+  .staffPortalSectionHeading h2 { font-size: 39px; }
+  .staffPortalDutyGrid, .staffPortalActionGrid { grid-template-columns: 1fr; }
+  .staffPortalDutyCard--portfolio { grid-column: auto; }
+  .staffPortalFooter { align-items: flex-start; flex-direction: column; gap: 8px; }
+}
+
 /* The custom portal hostname is a focused application surface, not the
    public website shell. Keep the same institutional palette but give the
    staff experience its own quiet document canvas. */

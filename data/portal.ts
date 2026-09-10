@@ -26,45 +26,36 @@ export const portalServices: PortalService[] = [
     status: "available",
     icon: "∑",
   },
+];
+
+/**
+ * Kept as an internal catalogue so future modules can be restored deliberately
+ * when they are ready. This list is not rendered by the public portal.
+ */
+export const portalServicesNotYetPublished: PortalService[] = [
   {
     id: "attendance",
     title: "Attendance",
-    description: "A connected specialist service for pupil and staff attendance across the school day.",
-    benefit: "Supports accurate registers, absence awareness and stronger pastoral follow-up.",
-    status: "available",
+    description: "An unreleased attendance service.",
+    benefit: "Will support school-day registers when released.",
+    status: "in-development",
     icon: "A",
   },
   {
     id: "notifications",
     title: "Notifications",
-    description: "A developing communication service for clear, purposeful school updates.",
-    benefit: "Helps the school community receive important information in the right place.",
+    description: "An unreleased notification service.",
+    benefit: "Will support school communication when released.",
     status: "in-development",
     icon: "N",
   },
   {
     id: "resources",
     title: "Resources",
-    description: "A planned school resource service that will be connected when a real operational deployment is available.",
-    benefit: "Keeps future resources discoverable without presenting unavailable data as live.",
+    description: "A future school resource service.",
+    benefit: "Will be introduced when an operational deployment is ready.",
     status: "planned",
     icon: "◇",
-  },
-  {
-    id: "reports",
-    title: "Reports",
-    description: "A planned home for trusted summaries that help authorised leaders make informed decisions.",
-    benefit: "Turns connected school information into useful, responsible insight.",
-    status: "planned",
-    icon: "▤",
-  },
-  {
-    id: "future-modules",
-    title: "Future school services",
-    description: "Additional services will be introduced carefully as they become ready for the school community.",
-    benefit: "Creates room for the platform to grow without making access confusing.",
-    status: "planned",
-    icon: "+",
   },
 ];
 
