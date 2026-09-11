@@ -16,6 +16,21 @@ export async function GET(request: NextRequest) {
       p_session_secret: current.secret,
     });
     if (!result?.ok) return Response.json(result, { status: 401, headers: { ...noStoreHeaders(), "Set-Cookie": clearWorkspaceSessionCookie() } });
+    let portfolios: unknown[] = [];
+    try {
+      const portfolioResult = await callPrivilegedRpc<{ ok?: boolean; portfolios?: unknown[] }>("school_profile_portfolios_read", {
+        p_session_id: current.id,
+        p_session_secret: current.secret,
+        p_target_type: "staff",
+        p_class_key: null,
+        p_student_id: null,
+        p_academic_session: null,
+        p_term: null,
+      });
+      if (portfolioResult?.ok && Array.isArray(portfolioResult.portfolios)) portfolios = portfolioResult.portfolios;
+    } catch {
+      // Portfolio projection is read-only enrichment and must not block entry.
+    }
     // The session response is the authorization boundary. Summary is read-only enrichment;
     // an enrichment failure must not be presented as a failed sign-in.
     let summary: Record<string, unknown> | null = null;
@@ -28,7 +43,7 @@ export async function GET(request: NextRequest) {
       const errorCode = error instanceof IdentityApiError ? error.code : "";
       if (errorCode !== "IDENTITY_SERVICE_UNAVAILABLE") throw error;
       return Response.json(
-        { ...result, summary: null, summary_status: "unavailable" },
+        { ...result, person: { ...((result.person as Record<string, unknown>) || {}), portfolios }, portfolios, summary: null, summary_status: "unavailable" },
         { headers: noStoreHeaders() },
       );
     }
@@ -40,7 +55,18 @@ export async function GET(request: NextRequest) {
         headers: { ...noStoreHeaders(), ...(sessionFailure ? { "Set-Cookie": clearWorkspaceSessionCookie() } : {}) },
       });
     }
-    return Response.json({ ...result, summary: summary.summary ?? null }, { headers: noStoreHeaders() });
+    const summaryPayload = summary.summary && typeof summary.summary === "object"
+      ? summary.summary as Record<string, unknown>
+      : null;
+    const summaryPerson = summaryPayload?.person && typeof summaryPayload.person === "object"
+      ? summaryPayload.person as Record<string, unknown>
+      : {};
+    return Response.json({
+      ...result,
+      person: { ...((result.person as Record<string, unknown>) || {}), portfolios },
+      portfolios,
+      summary: summaryPayload ? { ...summaryPayload, person: { ...summaryPerson, portfolios } } : null,
+    }, { headers: noStoreHeaders() });
   } catch (error) {
     return resultErrorResponse(error);
   }

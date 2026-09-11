@@ -19,6 +19,17 @@ type WorkspacePerson = {
   employment_status?: string | null;
   registration_status?: string | null;
   photo_url?: string | null;
+  portfolios?: PortfolioAssignment[];
+};
+
+type PortfolioAssignment = {
+  assignment_id?: string;
+  portfolio_code?: string;
+  portfolio_name?: string | null;
+  name?: string | null;
+  office_name?: string | null;
+  assignment_status?: string;
+  access_template_code?: string | null;
 };
 
 type ClassAssignment = {
@@ -244,7 +255,9 @@ export function StaffPortalClient() {
   const context = summary?.academic_context;
   const classAssignments = summary?.class_teacher?.assignments || [];
   const subjectAssignments = summary?.subject_teacher?.assignments || summary?.subject_assignments || [];
-  const designation = person.designation || person.staff_category || access.roleNames[0] || "School staff";
+  const portfolios = (person.portfolios || workspace.person?.portfolios || []).filter((item) => !item.assignment_status || item.assignment_status === "active");
+  const portfolioNames = unique(portfolios.map((item) => item.name || item.office_name || item.portfolio_name || ""));
+  const designation = portfolioNames[0] || person.designation || person.staff_category || access.roleNames[0] || "School staff";
   const classTeacherVisible = classAssignments.length > 0;
   const subjectTeacherVisible = Boolean(summary?.subject_teacher?.available || subjectAssignments.length);
   const hasActions = Boolean((access.results && launchUrls.results) || (access.centralRegistry && launchUrls.centralRegistry));
@@ -304,7 +317,7 @@ export function StaffPortalClient() {
               <span className="staffPortalDutyIcon" aria-hidden="true">P</span>
               <p className="staffPortalKicker">PORTFOLIO</p>
               <h3>{designation}</h3>
-              <p>{access.roleNames.length ? access.roleNames.join(" · ") : "Your designated school duty"}</p>
+              {portfolioNames.length ? <ul>{portfolioNames.map((name) => <li key={name}>{name}</li>)}</ul> : <p>{access.roleNames.length ? access.roleNames.join(" · ") : "Your designated school duty"}</p>}
             </article>
             {classTeacherVisible ? <article className="staffPortalDutyCard">
               <span className="staffPortalDutyIcon" aria-hidden="true">C</span>

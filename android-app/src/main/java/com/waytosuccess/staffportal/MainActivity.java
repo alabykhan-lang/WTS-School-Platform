@@ -34,6 +34,7 @@ public class MainActivity extends Activity {
 
     private WebView webView;
     private View loadingView;
+    private ProgressBar navigationProgress;
     private ValueCallback<Uri[]> fileUploadCallback;
 
     @Override
@@ -49,6 +50,13 @@ public class MainActivity extends Activity {
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.MATCH_PARENT
         ));
+
+        navigationProgress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+        navigationProgress.setMax(100);
+        navigationProgress.setProgressTintList(android.content.res.ColorStateList.valueOf(Color.rgb(15, 124, 92)));
+        FrameLayout.LayoutParams progressParams = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, dp(3));
+        progressParams.gravity = Gravity.TOP;
+        root.addView(navigationProgress, progressParams);
 
         loadingView = createLoadingView();
         root.addView(loadingView, new FrameLayout.LayoutParams(
@@ -105,6 +113,12 @@ public class MainActivity extends Activity {
         });
 
         webView.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public void onProgressChanged(WebView view, int newProgress) {
+                navigationProgress.setProgress(newProgress);
+                navigationProgress.setVisibility(newProgress >= 100 ? View.GONE : View.VISIBLE);
+            }
+
             @Override
             public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
                 if (fileUploadCallback != null) fileUploadCallback.onReceiveValue(null);

@@ -23,11 +23,11 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Build installable APK
-        run: gradle :android-app:assembleDebug
+      - name: Build installable release APK
+        run: gradle :android-app:assembleRelease
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: WTS-Staff-Portal-Android-App
-          path: android-app/build/outputs/apk/debug/android-app-debug.apk
+          name: WTS-Staff-Portal-v2.0.0
+          path: android-app/build/outputs/apk/release/android-app-release.apk
