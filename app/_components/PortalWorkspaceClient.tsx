@@ -223,7 +223,7 @@ function isApprovedPortalOrigin(value: string) {
       && (
         host === "portal.waytosuccessschools.com"
         || host === "wts-school-platform.vercel.app"
-        || /^wts-school-platform-[a-z0-9-]+\\.vercel\\.app$/.test(host)
+        || /^wts-school-platform-[a-z0-9-]+\.vercel\.app$/.test(host)
       );
   } catch {
     return false;
