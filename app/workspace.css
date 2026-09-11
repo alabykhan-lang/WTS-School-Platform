@@ -392,6 +392,158 @@ body:has(.workspaceLivePage) { background: #edf2ee; }
   .staffPortalFooter { align-items: flex-start; flex-direction: column; gap: 8px; }
 }
 
+/* 2026 Staff Portal visual system: the secure workspace uses the school's
+   navy, emerald and gold identity over a calm academic horizon. Light
+   surfaces are reserved for information cards instead of filling the screen. */
+body.staffPortalHost {
+  color: #f8f3e7;
+  background: #071b33 url("/images/staff-portal-horizon.webp") center top / cover fixed no-repeat;
+}
+.staffPortalPage {
+  min-height: 100svh;
+  color: #f8f3e7;
+  background:
+    linear-gradient(180deg, rgba(5,20,40,.72) 0%, rgba(7,28,48,.88) 46%, rgba(7,31,43,.96) 100%),
+    url("/images/staff-portal-horizon.webp") center top / cover fixed no-repeat;
+}
+.staffPortalShell { position: relative; }
+.staffPortalHeader {
+  position: sticky;
+  z-index: 40;
+  top: 0;
+  min-height: 82px;
+  padding: 0 18px;
+  border: 1px solid rgba(157,220,188,.18);
+  border-top: 0;
+  border-radius: 0 0 20px 20px;
+  background: rgba(7,28,51,.78);
+  box-shadow: 0 14px 34px rgba(0,10,24,.18);
+  backdrop-filter: blur(18px);
+}
+.staffPortalBrand { color: #fffaf0; }
+.staffPortalBrand:hover { color: #9fe3c1; }
+.staffPortalBrand img {
+  width: 48px;
+  height: 48px;
+  padding: 3px;
+  border: 1px solid rgba(214,168,79,.55);
+  border-radius: 50%;
+  background: rgba(248,243,231,.96);
+}
+.staffPortalBrand strong { color: #fffaf0; }
+.staffPortalBrand small { color: #a9cbbb; }
+.staffPortalNav a, .staffPortalNav button { color: #c7ded4; }
+.staffPortalNav a:hover, .staffPortalNav a:focus-visible { color: #f2cb7a; }
+.staffPortalMenuButton {
+  border-color: rgba(150,221,184,.34);
+  background: rgba(143,221,187,.12);
+  color: #e9fff4;
+}
+.staffPortalWelcome {
+  min-height: min(680px, 74svh);
+  padding: 86px 12px 62px;
+}
+.staffPortalWelcomeCopy .eyebrow, .staffPortalKicker { color: #94e0ba; }
+.staffPortalWelcome h1 {
+  color: #fffaf0;
+  text-shadow: 0 5px 28px rgba(0,13,29,.32);
+}
+.staffPortalLead { color: #d4e2e2; }
+.staffPortalContext {
+  border: 1px solid rgba(214,168,79,.34);
+  border-left: 4px solid #d6a84f;
+  border-radius: 0 14px 14px 0;
+  background: rgba(5,27,45,.58);
+  box-shadow: 0 12px 30px rgba(0,12,28,.16);
+  backdrop-filter: blur(12px);
+}
+.staffPortalContext span { color: #e1bd70; }
+.staffPortalContext strong { color: #fffaf0; }
+.staffPortalProfileCard {
+  border-color: rgba(162,224,193,.3);
+  border-top-color: #d6a84f;
+  background: linear-gradient(145deg, rgba(248,243,231,.96), rgba(226,239,232,.94));
+  box-shadow: 0 28px 70px rgba(0,13,30,.34);
+  backdrop-filter: blur(14px);
+}
+.staffPortalAvatar { outline: 4px solid rgba(15,124,92,.12); }
+.staffPortalProfileFacts div { border-color: #cadbd2; background: rgba(255,255,255,.48); }
+.staffPortalSection {
+  margin-top: 22px;
+  padding: 42px clamp(18px, 4vw, 50px) 46px;
+  border: 1px solid rgba(160,220,191,.16);
+  border-radius: 28px;
+  background: linear-gradient(145deg, rgba(10,39,60,.86), rgba(9,53,55,.78));
+  box-shadow: 0 24px 60px rgba(0,12,28,.2);
+  backdrop-filter: blur(16px);
+}
+.staffPortalSectionHeading h2 { color: #fffaf0; }
+.staffPortalSectionHeading > p { color: #bfd1d1; }
+.staffPortalDutyCard, .staffPortalAction {
+  border-color: rgba(150,202,177,.38);
+  background: linear-gradient(145deg, #f7f3e9, #eaf2ed);
+  box-shadow: 0 15px 32px rgba(0,16,32,.2);
+}
+.staffPortalDutyCard--portfolio {
+  border-color: rgba(214,168,79,.5);
+  background: linear-gradient(145deg, #0d3853 0%, #0f6a56 100%);
+}
+.staffPortalDutyCard--portfolio li { color: #e2f3ea; }
+.staffPortalDutyCard--portfolio li small { color: #b5d9c7; }
+.staffPortalActionsSection { margin-bottom: 30px; }
+.staffPortalAction:hover, .staffPortalAction:focus-visible {
+  border-color: #d6a84f;
+  box-shadow: 0 19px 38px rgba(0,12,28,.27);
+}
+.staffPortalProfileReminder { border-color: rgba(214,168,79,.42); background: rgba(248,243,231,.92); }
+.staffPortalFooter {
+  margin-top: 22px;
+  border-top-color: rgba(160,220,191,.2);
+  color: #a9c2bf;
+}
+.staffPortalFooter span:first-child, .staffPortalFooter button { color: #9fe3c1; }
+.staffPortalLoading, .staffPortalGate, .portalEntryPage {
+  color: #f8f3e7;
+  background:
+    linear-gradient(135deg, rgba(5,20,40,.82), rgba(7,42,48,.82)),
+    url("/images/staff-portal-horizon.webp") center / cover fixed no-repeat;
+}
+.staffPortalLoadingCard {
+  min-width: min(360px, 88vw);
+  padding: 32px 26px;
+  border: 1px solid rgba(157,220,188,.24);
+  border-radius: 24px;
+  background: rgba(7,30,50,.72);
+  box-shadow: 0 28px 70px rgba(0,12,28,.3);
+  backdrop-filter: blur(16px);
+}
+.staffPortalLoadingCard img { padding: 7px; border-radius: 50%; background: rgba(248,243,231,.96); }
+.staffPortalLoadingCard strong { color: #fffaf0; }
+.staffPortalLoadingCard > span { color: #94e0ba; }
+.staffPortalLoadingCard p { color: #c7dad5; }
+.portalEntryCard, .staffPortalGate section {
+  border-color: rgba(157,220,188,.32);
+  border-top-color: #d6a84f;
+  background: linear-gradient(150deg, rgba(248,243,231,.97), rgba(232,241,235,.96));
+  box-shadow: 0 32px 76px rgba(0,12,28,.36);
+  backdrop-filter: blur(16px);
+}
+
+@media (max-width: 680px) {
+  body.staffPortalHost, .staffPortalPage, .staffPortalLoading, .staffPortalGate, .portalEntryPage { background-attachment: scroll; }
+  .staffPortalShell { width: min(94vw, 520px); }
+  .staffPortalHeader { min-height: 72px; padding: 0 13px; }
+  .staffPortalWelcome { min-height: auto; padding: 58px 8px 42px; }
+  .staffPortalWelcome h1 { font-size: clamp(45px, 14vw, 58px); }
+  .staffPortalSection { margin-top: 14px; padding: 32px 17px 35px; border-radius: 22px; }
+  .staffPortalNav {
+    border-right-color: rgba(157,220,188,.28);
+    background: linear-gradient(180deg, #092843, #0b453f);
+  }
+  .staffPortalNav a { border-color: rgba(157,220,188,.17); color: #e5f5ee; }
+  .staffPortalNav a:hover, .staffPortalNav a:focus-visible { color: #f2cb7a; background: rgba(143,221,187,.1); }
+}
+
 /* The custom portal hostname is a focused application surface, not the
    public website shell. Keep the same institutional palette but give the
    staff experience its own quiet document canvas. */

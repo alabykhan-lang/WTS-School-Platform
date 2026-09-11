@@ -42,7 +42,7 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
 
         FrameLayout root = new FrameLayout(this);
-        root.setBackgroundColor(Color.WHITE);
+        root.setBackgroundColor(Color.rgb(7, 27, 51));
 
         webView = new WebView(this);
         webView.setVisibility(View.INVISIBLE);
@@ -160,7 +160,7 @@ public class MainActivity extends Activity {
         loading.setOrientation(LinearLayout.VERTICAL);
         loading.setGravity(Gravity.CENTER);
         loading.setPadding(dp(28), dp(28), dp(28), dp(28));
-        loading.setBackgroundColor(Color.WHITE);
+        loading.setBackgroundColor(Color.rgb(7, 27, 51));
 
         ImageView logo = new ImageView(this);
         logo.setImageResource(R.drawable.wts_staff_portal_logo);
@@ -171,7 +171,7 @@ public class MainActivity extends Activity {
 
         TextView schoolName = new TextView(this);
         schoolName.setText("Way to Success Standard Schools");
-        schoolName.setTextColor(Color.rgb(9, 39, 70));
+        schoolName.setTextColor(Color.rgb(248, 243, 231));
         schoolName.setTextSize(22);
         schoolName.setGravity(Gravity.CENTER);
         schoolName.setTypeface(null, android.graphics.Typeface.BOLD);
@@ -182,7 +182,7 @@ public class MainActivity extends Activity {
 
         TextView portalName = new TextView(this);
         portalName.setText("STAFF PORTAL");
-        portalName.setTextColor(Color.rgb(15, 124, 92));
+        portalName.setTextColor(Color.rgb(143, 221, 187));
         portalName.setTextSize(11);
         portalName.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams portalParams = new LinearLayout.LayoutParams(
@@ -199,7 +199,7 @@ public class MainActivity extends Activity {
         status.addView(progress, new LinearLayout.LayoutParams(dp(22), dp(22)));
         TextView loadingLabel = new TextView(this);
         loadingLabel.setText("Loading…");
-        loadingLabel.setTextColor(Color.rgb(112, 129, 138));
+        loadingLabel.setTextColor(Color.rgb(199, 218, 213));
         loadingLabel.setTextSize(13);
         LinearLayout.LayoutParams labelParams = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT,

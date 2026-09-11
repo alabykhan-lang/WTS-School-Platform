@@ -29,5 +29,5 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: WTS-Staff-Portal-v2.0.0
+          name: WTS-Staff-Portal-v2.1.0
           path: android-app/build/outputs/apk/release/android-app-release.apk
