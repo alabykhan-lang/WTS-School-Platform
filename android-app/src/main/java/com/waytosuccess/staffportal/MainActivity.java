@@ -19,6 +19,8 @@ import android.webkit.JavascriptInterface;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceError;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -77,6 +79,8 @@ public class MainActivity extends Activity {
         settings.setAllowContentAccess(true);
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
         settings.setTextZoom(100);
+        settings.setSupportMultipleWindows(false);
+        settings.setJavaScriptCanOpenWindowsAutomatically(false);
 
         CookieManager cookieManager = CookieManager.getInstance();
         cookieManager.setAcceptCookie(true);
@@ -84,25 +88,70 @@ public class MainActivity extends Activity {
         webView.addJavascriptInterface(new PrintBridge(), "AndroidPrint");
 
         webView.setWebViewClient(new WebViewClient() {
-            @Override
-            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                Uri uri = request.getUrl();
+            private boolean keepInPortal(WebView view, String url) {
+                if (url == null || url.isEmpty()) return false;
+                Uri uri = Uri.parse(url);
                 String scheme = uri.getScheme();
                 if ("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme)) {
-                    // Keep the Staff Portal and every SSO module transition in this app.
+                    // Keep the Staff Portal, Central Registry, Results and
+                    // the SSO callback on this WebView. This legacy overload
+                    // is required by older Android WebView implementations;
+                    // without it a redirect may silently leave the APK.
+                    CookieManager.getInstance().flush();
                     return false;
                 }
                 try {
                     startActivity(new Intent(Intent.ACTION_VIEW, uri));
                 } catch (Exception ignored) {
-                    // The page remains usable when a device has no handler for a scheme.
+                    // The page remains usable when a device has no handler.
                 }
                 return true;
             }
 
             @Override
+            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                return keepInPortal(view, request.getUrl().toString());
+            }
+
+            @Override
+            @SuppressWarnings("deprecation")
+            public boolean shouldOverrideUrlLoading(WebView view, String url) {
+                return keepInPortal(view, url);
+            }
+
+            @Override
+            public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+                super.onPageStarted(view, url, favicon);
+                CookieManager.getInstance().flush();
+            }
+
+            @Override
+            public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+                super.onReceivedError(view, request, error);
+                if (request != null && request.isForMainFrame()) {
+                    showLoadError();
+                }
+            }
+
+            @Override
+            @SuppressWarnings("deprecation")
+            public void onReceivedError(WebView view, int errorCode, String description, String failingUrl) {
+                super.onReceivedError(view, errorCode, description, failingUrl);
+                showLoadError();
+            }
+
+            @Override
+            public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse errorResponse) {
+                super.onReceivedHttpError(view, request, errorResponse);
+                if (request != null && request.isForMainFrame() && errorResponse != null && errorResponse.getStatusCode() >= 500) {
+                    showLoadError();
+                }
+            }
+
+            @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
+                CookieManager.getInstance().flush();
                 view.setVisibility(View.VISIBLE);
                 if (loadingView != null) loadingView.setVisibility(View.GONE);
                 view.evaluateJavascript(
@@ -155,6 +204,17 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void showLoadError() {
+        if (loadingView == null) return;
+        loadingView.setVisibility(View.VISIBLE);
+        TextView label = loadingView.findViewWithTag("wts_loading_label");
+        if (label != null) label.setText("Connection interrupted · tap retry");
+        loadingView.setOnClickListener(view -> {
+            view.setOnClickListener(null);
+            if (webView != null) webView.reload();
+        });
+    }
+
     private View createLoadingView() {
         LinearLayout loading = new LinearLayout(this);
         loading.setOrientation(LinearLayout.VERTICAL);
@@ -199,6 +259,7 @@ public class MainActivity extends Activity {
         status.addView(progress, new LinearLayout.LayoutParams(dp(22), dp(22)));
         TextView loadingLabel = new TextView(this);
         loadingLabel.setText("Loading…");
+        loadingLabel.setTag("wts_loading_label");
         loadingLabel.setTextColor(Color.rgb(199, 218, 213));
         loadingLabel.setTextSize(13);
         LinearLayout.LayoutParams labelParams = new LinearLayout.LayoutParams(

@@ -107,6 +107,10 @@ function unique(values: string[]) {
   return [...new Set(values.filter(Boolean))];
 }
 
+function normalizedDutyValue(value: string | null | undefined) {
+  return String(value || "").trim().replace(/\s+/g, " ").toLocaleLowerCase();
+}
+
 function hasAny(values: Set<string>, ...items: string[]) {
   return items.some((item) => values.has(item));
 }
@@ -255,6 +259,11 @@ export function StaffPortalClient() {
   const context = summary?.academic_context;
   const classAssignments = summary?.class_teacher?.assignments || [];
   const subjectAssignments = summary?.subject_teacher?.assignments || summary?.subject_assignments || [];
+  // A scope row is one subject-to-class responsibility. The dashboard must
+  // distinguish the number of subjects from the number of class allocations:
+  // one subject can legitimately appear in more than one class.
+  const subjectCount = unique(subjectAssignments.map((assignment) => normalizedDutyValue(assignment.subject_name || assignment.display_name))).length;
+  const subjectClassCount = subjectAssignments.filter((assignment) => normalizedDutyValue(assignment.class_key || assignment.class_name || assignment.display_name)).length;
   const portfolios = (person.portfolios || workspace.person?.portfolios || []).filter((item) => !item.assignment_status || item.assignment_status === "active");
   const portfolioNames = unique(portfolios.map((item) => item.name || item.office_name || item.portfolio_name || ""));
   const designation = portfolioNames[0] || person.designation || person.staff_category || access.roleNames[0] || "School staff";
@@ -328,7 +337,7 @@ export function StaffPortalClient() {
             <article className="staffPortalDutyCard">
               <span className="staffPortalDutyIcon" aria-hidden="true">S</span>
               <p className="staffPortalKicker">SUBJECT TEACHER</p>
-              {subjectTeacherVisible ? <><h3>{subjectAssignments.length ? `${subjectAssignments.length} subject${subjectAssignments.length === 1 ? "" : "s"}` : "Assigned"}</h3><ul>{subjectAssignments.map((assignment, index) => <li key={`${assignment.class_key || "class"}-${assignment.subject_index || index}-${index}`}>{assignment.subject_name || assignment.display_name || "Subject"}{assignment.class_name || assignment.class_key ? <small> · {assignment.class_name || assignment.class_key}</small> : null}</li>)}</ul></> : <p className="staffPortalDutyEmpty">No subject-teacher assignment is currently recorded.</p>}
+              {subjectTeacherVisible ? <><h3>{subjectCount ? `${subjectCount} subject${subjectCount === 1 ? "" : "s"}` : "Assigned"}</h3><p className="staffPortalDutyMeta">{subjectClassCount ? `${subjectClassCount} class${subjectClassCount === 1 ? "" : "es"}` : "No class allocation recorded"}</p><ul>{subjectAssignments.map((assignment, index) => <li key={`${assignment.class_key || "class"}-${assignment.subject_index || index}-${index}`}>{assignment.subject_name || assignment.display_name || "Subject"}{assignment.class_name || assignment.class_key ? <small> · {assignment.class_name || assignment.class_key}</small> : null}</li>)}</ul></> : <p className="staffPortalDutyEmpty">No subject-teacher assignment is currently recorded.</p>}
             </article>
           </div>
         </section>

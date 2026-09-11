@@ -698,3 +698,43 @@ body:has(.portalEntryPage) { background: #eef4f1; }
   .portalFieldWide { grid-column: auto; }
   .portalEntryActions { grid-template-columns: 1fr; }
 }
+
+/* Final staff-duty contrast pass. Keep portfolio cards on the dark
+   institutional surface and use navy/slate text everywhere a card is pale;
+   the earlier mint kicker colour is intentionally not used on white cards. */
+.staffPortalDutyCard.staffPortalDutyCard--portfolio {
+  border-color: rgba(157,220,188,.34) !important;
+  background: linear-gradient(145deg, #092843 0%, #0b4a4a 100%) !important;
+  color: #f7fcf8 !important;
+}
+.staffPortalDutyCard.staffPortalDutyCard--portfolio .staffPortalDutyIcon {
+  background: rgba(157,220,188,.18) !important;
+  color: #c9f3d8 !important;
+}
+.staffPortalDutyCard.staffPortalDutyCard--portfolio .staffPortalKicker,
+.staffPortalDutyCard.staffPortalDutyCard--portfolio h3,
+.staffPortalDutyCard.staffPortalDutyCard--portfolio > p:last-child,
+.staffPortalDutyCard.staffPortalDutyCard--portfolio li { color: #f7fcf8 !important; }
+.staffPortalDutyCard:not(.staffPortalDutyCard--portfolio) .staffPortalKicker {
+  color: #23704f !important;
+}
+.staffPortalDutyCard:not(.staffPortalDutyCard--portfolio) .staffPortalDutyIcon {
+  background: #e2f2e8 !important;
+  color: #27634d !important;
+}
+.staffPortalDutyCard:not(.staffPortalDutyCard--portfolio) h3 {
+  color: #0b1f3a !important;
+}
+.staffPortalDutyCard:not(.staffPortalDutyCard--portfolio) > p:last-child,
+.staffPortalDutyCard:not(.staffPortalDutyCard--portfolio) li {
+  color: #42566a !important;
+}
+.staffPortalDutyCard:not(.staffPortalDutyCard--portfolio) li small {
+  color: #617582 !important;
+}
+.staffPortalDutyMeta {
+  margin: 7px 0 0;
+  color: #536979;
+  font-size: 13px;
+  font-weight: 750;
+}
