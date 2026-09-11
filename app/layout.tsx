@@ -80,14 +80,15 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
     .split(":")[0]
     .toLowerCase();
   const portalHost = isStaffPortalHost(host);
+  const protectedRoute = portalHost || requestHeaders.get("x-wts-protected-route") === "1";
 
   return (
     <html lang="en">
-      <body className={portalHost ? "staffPortalHost" : "publicSchoolHost"}>
+      <body className={protectedRoute ? "staffPortalHost" : "publicSchoolHost"}>
         <a className="skipLink" href="#main-content">Skip to main content</a>
-        {portalHost ? null : <SiteHeader />}
+        {protectedRoute ? null : <SiteHeader />}
         {children}
-        {portalHost ? null : <><SiteFooter /><FloatingWhatsApp /><script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(schoolStructuredData) }} /></>}
+        {protectedRoute ? null : <><SiteFooter /><FloatingWhatsApp /><script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(schoolStructuredData) }} /></>}
       </body>
     </html>
   );

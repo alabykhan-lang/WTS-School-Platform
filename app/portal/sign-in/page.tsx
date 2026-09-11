@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { PortalSignIn } from "../../_components/PortalWorkspaceClient";
+import { PortalSignIn } from "../../_components/PortalSignIn";
 import { createPageMetadata } from "../../_components/page-metadata";
 
 export const metadata: Metadata = {

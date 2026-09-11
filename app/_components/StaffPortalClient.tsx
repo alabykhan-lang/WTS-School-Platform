@@ -58,8 +58,6 @@ type Workspace = {
 
 const resultsUrl = getModuleLaunchUrl("results");
 const centralRegistryUrl = getModuleLaunchUrl("centralRegistry");
-const attendanceUrl = getModuleLaunchUrl("attendance");
-const notificationsUrl = getModuleLaunchUrl("notifications");
 
 function friendlyError(code?: string) {
   const messages: Record<string, string> = {
@@ -134,6 +132,7 @@ export function StaffPortalClient() {
   const [authenticated, setAuthenticated] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
   const [greeting, setGreeting] = useState("Welcome back");
+  const [portalOrigin, setPortalOrigin] = useState("");
 
   async function refresh() {
     setChecking(true);
@@ -153,6 +152,7 @@ export function StaffPortalClient() {
 
   useEffect(() => {
     void refresh();
+    setPortalOrigin(window.location.origin);
     const hour = new Date().getHours();
     setGreeting(hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening");
   }, []);
@@ -192,17 +192,31 @@ export function StaffPortalClient() {
       || hasAny(permissions, "access.manage", "central_registry.administer", "staff_management.administer", "system_administration.administer");
 
     return {
-      developer,
       results: developer || appCodes.has("results") || institutionalModules.results === true,
       centralRegistry: developer || appCodes.has("central_registry") || management,
-      attendance: developer || appCodes.has("attendance") || institutionalModules.attendance === true,
-      notifications: developer || appCodes.has("notifications") || institutionalModules.notifications === true,
       roleNames: unique(roleNames),
     };
   }, [workspace]);
 
+  const launchUrls = useMemo(() => {
+    const withPortalOrigin = (href?: string) => {
+      if (!href || !portalOrigin) return href;
+      try {
+        const destination = new URL(href);
+        destination.searchParams.set("portal_origin", portalOrigin);
+        return destination.toString();
+      } catch {
+        return href;
+      }
+    };
+    return {
+      results: withPortalOrigin(resultsUrl),
+      centralRegistry: withPortalOrigin(centralRegistryUrl),
+    };
+  }, [portalOrigin]);
+
   if (checking) {
-    return <main id="main-content" className="staffPortalGate"><p>Preparing your Staff Portal…</p></main>;
+    return <main id="main-content" className="staffPortalLoading" aria-busy="true"><div className="staffPortalLoadingCard" role="status" aria-live="polite"><img src="/images/logo.webp" alt="Way to Success Standard Schools logo" /><strong>Way to Success Standard Schools</strong><span>Staff Portal</span><p><i aria-hidden="true" />Loading…</p></div></main>;
   }
 
   if (!workspace || !authenticated) {
@@ -231,13 +245,13 @@ export function StaffPortalClient() {
   const designation = person.designation || person.staff_category || access.roleNames[0] || "School staff";
   const classTeacherVisible = Boolean(summary?.class_teacher?.available || classAssignments.length);
   const subjectTeacherVisible = Boolean(summary?.subject_teacher?.available || subjectAssignments.length);
-  const hasActions = Boolean((access.results && resultsUrl) || (access.centralRegistry && centralRegistryUrl));
+  const hasActions = Boolean((access.results && launchUrls.results) || (access.centralRegistry && launchUrls.centralRegistry));
 
   return (
     <main id="main-content" className="staffPortalPage">
       <div className="staffPortalShell">
         <header className="staffPortalHeader">
-          <Link className="staffPortalBrand" href="/">
+          <Link className="staffPortalBrand" href="/workspace">
             <img src="/images/logo.webp" alt="Way to Success Standard Schools logo" />
             <span><strong>Staff Portal</strong><small>Way to Success Standard Schools</small></span>
           </Link>
@@ -247,7 +261,9 @@ export function StaffPortalClient() {
           <nav id="staff-portal-navigation" className={`staffPortalNav ${navOpen ? "isOpen" : ""}`} aria-label="Staff Portal navigation">
             <a href="#overview" onClick={() => setNavOpen(false)}>Overview</a>
             <a href="#duties" onClick={() => setNavOpen(false)}>My duties</a>
-            <a href="#school-actions" onClick={() => setNavOpen(false)}>School actions</a>
+            <a href="#school-actions" onClick={() => setNavOpen(false)}>School modules</a>
+            {access.results && launchUrls.results ? <a href={launchUrls.results} onClick={() => setNavOpen(false)}>Results System</a> : null}
+            {access.centralRegistry && launchUrls.centralRegistry ? <a href={launchUrls.centralRegistry} onClick={() => setNavOpen(false)}>Central Registry</a> : null}
             <button type="button" onClick={() => void signOut()}>Sign out</button>
           </nav>
         </header>
@@ -303,23 +319,15 @@ export function StaffPortalClient() {
 
         <section id="school-actions" className="staffPortalSection staffPortalActionsSection" aria-labelledby="actions-heading">
           <div className="staffPortalSectionHeading">
-            <div><p className="staffPortalKicker">SCHOOL ACTIONS</p><h2 id="actions-heading">Choose where you need to work.</h2></div>
+            <div><p className="staffPortalKicker">SCHOOL MODULES</p><h2 id="actions-heading">Choose where you need to work.</h2></div>
             <p>Only services authorised for this account are shown. Every action below opens through the same Staff Portal session.</p>
           </div>
           {hasActions ? <div className="staffPortalActionGrid">
-            {access.results ? <ModuleAction href={resultsUrl} title="Results & academic performance" description="Enter, review and manage authorised academic results." icon="R" /> : null}
-            {access.centralRegistry ? <ModuleAction href={centralRegistryUrl} title="School records & staff details" description="Update authorised school records, admissions or profile details." icon="S" /> : null}
+            {access.results ? <ModuleAction href={launchUrls.results} title="Results System" description="Enter, review and manage authorised academic results." icon="R" /> : null}
+            {access.centralRegistry ? <ModuleAction href={launchUrls.centralRegistry} title="Central Registry" description="Use authorised student, staff, allocation and academic records." icon="C" /> : null}
           </div> : <p className="staffPortalEmptyAction">Your authorised school actions will appear here after management assigns them to your account.</p>}
           <div className="staffPortalProfileReminder"><span aria-hidden="true">i</span><p><strong>Need a profile change?</strong> Your Staff Portal profile is controlled from the school records. Use School Records when it is available, or contact authorised management.</p></div>
         </section>
-
-        {access.developer ? <section className="staffPortalDeveloperSection" aria-labelledby="developer-heading">
-          <div><p className="staffPortalKicker">DEVELOPER VIEW</p><h2 id="developer-heading">Unreleased services</h2><p>Visible only to protected developer or system-owner accounts while these services are being prepared.</p></div>
-          <div className="staffPortalDeveloperLinks">
-            {access.attendance && attendanceUrl ? <a href={attendanceUrl}>Attendance <span>↗</span></a> : null}
-            {access.notifications && notificationsUrl ? <a href={notificationsUrl}>Notifications <span>↗</span></a> : null}
-          </div>
-        </section> : null}
 
         <footer className="staffPortalFooter"><span>Way to Success Staff Portal</span><span>{context?.session || "Current session"} · {context?.term || "Current term"}</span><button type="button" onClick={() => void signOut()}>Sign out</button></footer>
       </div>

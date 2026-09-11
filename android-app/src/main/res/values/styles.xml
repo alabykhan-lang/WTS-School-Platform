@@ -3,6 +3,7 @@
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:statusBarColor">#092746</item>
         <item name="android:navigationBarColor">#092746</item>
+        <item name="android:colorAccent">#0f7c5c</item>
         <item name="android:windowNoTitle">true</item>
     </style>
 </resources>

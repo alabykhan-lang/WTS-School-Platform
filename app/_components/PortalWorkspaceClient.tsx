@@ -222,9 +222,7 @@ function friendlyError(code?: string) {
     ACCOUNT_NOT_ACTIVE: "This staff account is not active. Please contact authorised school management.",
     ACCOUNT_TEMPORARILY_LOCKED: "This account is temporarily locked. Please contact authorised school management for recovery.",
     RESULT_ACCESS_NOT_GRANTED: "This account does not currently have an active Results grant.",
-    ATTENDANCE_ACCESS_NOT_GRANTED: "This account does not currently have an active Attendance grant.",
     CENTRAL_REGISTRY_ACCESS_NOT_GRANTED: "This account does not currently have authorised Administration access.",
-    NOTIFICATIONS_ACCESS_NOT_GRANTED: "This account does not currently have an active Notifications grant.",
     PORTAL_ACCESS_NOT_GRANTED: "This account does not currently have access to the Staff Portal.",
     PORTAL_PERMISSION_SYNC_FAILED: "The account could not be matched to an active school access record. Please contact authorised school management.",
     STAFF_SESSION_NOT_ACTIVE: "Your session is no longer active. Please sign in again.",
@@ -339,7 +337,7 @@ export function PortalSignIn() {
   return (
     <main id="main-content" className="portalSignInPage portalEntryPage">
       <section className="portalSignInCard portalEntryCard" aria-labelledby="portal-sign-in-title">
-        <Link className="portalBackLink" href="/portal">← Way to Success Standard Schools</Link>
+        <div className="portalEntryBrand"><img src="/images/logo.webp" alt="Way to Success Standard Schools logo" /><span><strong>Way to Success Standard Schools</strong><small>Staff Portal</small></span></div>
         <p className="eyebrow">STAFF PORTAL</p>
         <h1 id="portal-sign-in-title">Welcome back.</h1>
         <p>Sign in with your school account. Your portal will show only the current information and services authorised for you.</p>

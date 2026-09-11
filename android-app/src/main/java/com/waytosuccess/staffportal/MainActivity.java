@@ -4,12 +4,15 @@ import android.app.Activity;
 import android.app.DownloadManager;
 import android.content.Context;
 import android.content.Intent;
+import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
 import android.print.PrintAttributes;
 import android.print.PrintDocumentAdapter;
 import android.print.PrintManager;
+import android.view.Gravity;
+import android.view.View;
 import android.webkit.CookieManager;
 import android.webkit.DownloadListener;
 import android.webkit.JavascriptInterface;
@@ -19,20 +22,40 @@ import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.FrameLayout;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
+import android.widget.ProgressBar;
+import android.widget.TextView;
 
 public class MainActivity extends Activity {
     private static final String STAFF_PORTAL_URL = "https://wts-school-platform.vercel.app/portal/sign-in";
     private static final int FILE_PICKER_REQUEST = 1001;
 
     private WebView webView;
+    private View loadingView;
     private ValueCallback<Uri[]> fileUploadCallback;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
+        FrameLayout root = new FrameLayout(this);
+        root.setBackgroundColor(Color.WHITE);
+
         webView = new WebView(this);
-        setContentView(webView);
+        webView.setVisibility(View.INVISIBLE);
+        root.addView(webView, new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.MATCH_PARENT
+        ));
+
+        loadingView = createLoadingView();
+        root.addView(loadingView, new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.MATCH_PARENT
+        ));
+        setContentView(root);
 
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
@@ -72,6 +95,8 @@ public class MainActivity extends Activity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
+                view.setVisibility(View.VISIBLE);
+                if (loadingView != null) loadingView.setVisibility(View.GONE);
                 view.evaluateJavascript(
                     "(function(){if(!window.__wtsAndroidPrint){window.__wtsAndroidPrint=true;window.print=function(){AndroidPrint.printPage();};}})();",
                     null
@@ -114,6 +139,72 @@ public class MainActivity extends Activity {
         } else {
             webView.restoreState(savedInstanceState);
         }
+    }
+
+    private View createLoadingView() {
+        LinearLayout loading = new LinearLayout(this);
+        loading.setOrientation(LinearLayout.VERTICAL);
+        loading.setGravity(Gravity.CENTER);
+        loading.setPadding(dp(28), dp(28), dp(28), dp(28));
+        loading.setBackgroundColor(Color.WHITE);
+
+        ImageView logo = new ImageView(this);
+        logo.setImageResource(R.drawable.wts_staff_portal_logo);
+        logo.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        LinearLayout.LayoutParams logoParams = new LinearLayout.LayoutParams(dp(154), dp(154));
+        logoParams.bottomMargin = dp(18);
+        loading.addView(logo, logoParams);
+
+        TextView schoolName = new TextView(this);
+        schoolName.setText("Way to Success Standard Schools");
+        schoolName.setTextColor(Color.rgb(9, 39, 70));
+        schoolName.setTextSize(22);
+        schoolName.setGravity(Gravity.CENTER);
+        schoolName.setTypeface(null, android.graphics.Typeface.BOLD);
+        loading.addView(schoolName, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ));
+
+        TextView portalName = new TextView(this);
+        portalName.setText("STAFF PORTAL");
+        portalName.setTextColor(Color.rgb(15, 124, 92));
+        portalName.setTextSize(11);
+        portalName.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams portalParams = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        portalParams.topMargin = dp(7);
+        loading.addView(portalName, portalParams);
+
+        LinearLayout status = new LinearLayout(this);
+        status.setGravity(Gravity.CENTER_VERTICAL);
+        ProgressBar progress = new ProgressBar(this);
+        progress.setIndeterminate(true);
+        status.addView(progress, new LinearLayout.LayoutParams(dp(22), dp(22)));
+        TextView loadingLabel = new TextView(this);
+        loadingLabel.setText("Loading…");
+        loadingLabel.setTextColor(Color.rgb(112, 129, 138));
+        loadingLabel.setTextSize(13);
+        LinearLayout.LayoutParams labelParams = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        labelParams.leftMargin = dp(9);
+        status.addView(loadingLabel, labelParams);
+        LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        statusParams.topMargin = dp(22);
+        loading.addView(status, statusParams);
+
+        return loading;
+    }
+
+    private int dp(int value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
     }
 
     @Override
