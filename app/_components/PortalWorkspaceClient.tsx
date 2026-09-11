@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
+import { FormEvent, type MouseEvent, type ReactNode, useEffect, useMemo, useState } from "react";
 import { staffPortalModules } from "../../data/staff-portal-modules";
 import { getModuleLaunchUrl } from "../../data/portal-config";
 
@@ -214,6 +214,42 @@ type WorkspaceModuleStatus = "operational" | "under-development" | "protected" |
 const resultPortalUrl = getModuleLaunchUrl("results");
 const centralRegistryUrl = getModuleLaunchUrl("centralRegistry");
 const attendanceUrl = getModuleLaunchUrl("attendance");
+
+function isApprovedPortalOrigin(value: string) {
+  try {
+    const parsed = new URL(value);
+    const host = parsed.hostname.toLowerCase();
+    return parsed.protocol === "https:"
+      && (
+        host === "portal.waytosuccessschools.com"
+        || host === "wts-school-platform.vercel.app"
+        || /^wts-school-platform-[a-z0-9-]+\\.vercel\\.app$/.test(host)
+      );
+  } catch {
+    return false;
+  }
+}
+
+function handleResultPortalLaunch(event: MouseEvent<HTMLAnchorElement>) {
+  if (
+    typeof window === "undefined"
+    || event.button !== 0
+    || event.metaKey
+    || event.ctrlKey
+    || event.shiftKey
+    || event.altKey
+    || !isApprovedPortalOrigin(window.location.origin)
+  ) return;
+
+  try {
+    const target = new URL(event.currentTarget.href);
+    target.searchParams.set("portal_origin", window.location.origin);
+    event.preventDefault();
+    window.location.assign(target.toString());
+  } catch {
+    // Keep the canonical href as the safe fallback if URL rewriting fails.
+  }
+}
 
 function friendlyError(code?: string) {
   const messages: Record<string, string> = {
@@ -449,7 +485,7 @@ function ModuleCard({
     <div className="workspaceModuleCardTop"><span className="workspaceModuleIcon" aria-hidden="true">{icon}</span><ModuleStatus status={status} /></div>
     <h3>{title}</h3>
     <p>{summary || description}</p>
-    {href ? <a className="workspaceLaunchButton" href={href}>Open {title}<span aria-hidden="true">↗</span></a> : <span className="workspaceMutedNote">{unavailableMessage}</span>}
+    {href ? <a className="workspaceLaunchButton" href={href} onClick={id === "results" ? handleResultPortalLaunch : undefined}>Open {title}<span aria-hidden="true">↗</span></a> : <span className="workspaceMutedNote">{unavailableMessage}</span>}
   </article>;
 }
 
@@ -486,7 +522,7 @@ function ClassOverviewCard({
       {showNotifications ? <div><span>Class announcements</span><strong>{overview.announcements?.available ? "Available" : overview.announcements?.message || "No class announcement summary is currently connected."}</strong></div> : null}
     </div>
     {(showResults || showAttendance || showRegistry) ? <div className="workspaceCardActions">
-      {showResults && launchHref ? <a className="workspaceLaunchButton" href={launchHref}>Open Results<span aria-hidden="true">↗</span></a> : null}
+      {showResults && launchHref ? <a className="workspaceLaunchButton" href={launchHref} onClick={handleResultPortalLaunch}>Open Results<span aria-hidden="true">↗</span></a> : null}
       {showAttendance && attendanceUrl ? <a className="workspaceTextLink" href={attendanceUrl}>Open Attendance ↗</a> : null}
       {showRegistry && centralRegistryUrl ? <a className="workspaceTextLink" href={centralRegistryUrl}>Open Administration ↗</a> : null}
     </div> : null}
@@ -498,7 +534,7 @@ function SubjectAssignmentCard({ assignment }: { assignment: SubjectAssignment }
     <div className="workspaceCardHeader"><div><p className="workspaceCardKicker">SUBJECT RESPONSIBILITY</p><h3>{assignment.subject_name || `Subject ${assignment.subject_index}`}</h3><p>{assignment.class_name || assignment.class_key}</p></div><span className="workspaceAssignmentStatus">{formatLabel(assignment.score_entry_status)}</span></div>
     <div className="workspaceAssignmentProgress"><div><span>Score-entry progress</span><strong>{assignment.recorded_score_count === null || assignment.recorded_score_count === undefined || assignment.pupil_count === null || assignment.pupil_count === undefined ? "Not available" : `${formatCount(assignment.recorded_score_count)} of ${formatCount(assignment.pupil_count)}`}</strong></div><ProgressBar value={assignment.recorded_score_count} total={assignment.pupil_count} /></div>
     <div className="workspaceMiniMetrics workspaceMiniMetrics--compact"><div><span>Missing scores</span><strong>{formatCount(assignment.missing_score_count)}</strong></div><div><span>Submission</span><strong>{assignment.submission_status?.available ? "Available" : "Not connected"}</strong></div><div><span>Publication</span><strong>{formatLabel(assignment.publication_status)}</strong></div></div>
-    {resultPortalUrl ? <a className="workspaceLaunchButton" href={resultPortalUrl}>Open Results<span aria-hidden="true">↗</span></a> : <EmptyState>Results is not connected.</EmptyState>}
+    {resultPortalUrl ? <a className="workspaceLaunchButton" href={resultPortalUrl} onClick={handleResultPortalLaunch}>Open Results<span aria-hidden="true">↗</span></a> : <EmptyState>Results is not connected.</EmptyState>}
   </article>;
 }
 
