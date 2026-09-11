@@ -409,6 +409,54 @@ body.staffPortalHost .skipLink { z-index: 100; }
   .workspaceModuleCard:hover { transform: none; }
 }
 
+/* Staff workspace refinement: quiet slate canvas, two authorised modules,
+   and a left-side module drawer on small screens. */
+.staffPortalPage {
+  background:
+    radial-gradient(circle at 88% 8%, rgba(255,255,255,.42), transparent 26%),
+    linear-gradient(145deg, #dce6e3 0%, #e8ece8 52%, #d6e1de 100%);
+}
+.staffPortalHeader { border-bottom-color: #cbd8d3; }
+.staffPortalProfileCard, .staffPortalDutyCard, .staffPortalAction { background: #f8faf8; }
+.staffPortalProfileCard { border-color: #cbd9d4; box-shadow: 0 18px 42px rgba(22,45,58,.09); }
+.staffPortalProfileFacts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.staffPortalProfileFacts div { border-color: #d2dfda; background: #edf2ef; }
+.staffPortalDutyGrid { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.staffPortalDutyCard { border-color: #d0ddd8; box-shadow: 0 12px 25px rgba(22,45,58,.06); }
+.staffPortalAction { border-color: #d0ddd8; box-shadow: 0 12px 24px rgba(22,45,58,.06); }
+.staffPortalProfileReminder { border-color: #ded7c4; background: #f3f0e7; }
+.staffPortalGate { background: linear-gradient(145deg, #dce6e3 0%, #e8ece8 52%, #d6e1de 100%); }
+body.staffPortalHost { background: #dce6e3; }
+.staffPortalLaunchOverlay { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; padding: 24px; background: rgba(7,29,56,.48); backdrop-filter: blur(8px); }
+.staffPortalLaunchOverlay > div { display: grid; justify-items: center; gap: 9px; width: min(340px, 100%); padding: 26px 22px; border: 1px solid rgba(255,255,255,.48); border-radius: 18px; background: #f8faf8; box-shadow: 0 24px 60px rgba(7,29,56,.24); text-align: center; }
+.staffPortalLaunchOverlay i { width: 21px; height: 21px; border: 3px solid #b8cbc2; border-top-color: var(--green); border-radius: 50%; animation: staffPortalSpin .8s linear infinite; }
+.staffPortalLaunchOverlay strong { color: var(--navy); font-family: Georgia, serif; font-size: 24px; font-weight: 500; }
+.staffPortalLaunchOverlay span { color: #657783; font-size: 11px; }
+
+@media (max-width: 680px) {
+  .staffPortalProfileFacts div:last-child { grid-column: auto; }
+  .staffPortalNav {
+    display: none;
+    position: fixed;
+    z-index: 100;
+    inset: 0 auto 0 0;
+    width: min(300px, 84vw);
+    padding: 96px 24px 28px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+    border: 0;
+    border-right: 1px solid #cbd9d4;
+    border-radius: 0 22px 22px 0;
+    background: #f5f7f4;
+    box-shadow: 18px 0 48px rgba(7,29,56,.2);
+  }
+  .staffPortalNav.isOpen { display: flex; }
+  .staffPortalNav a { padding: 14px 12px; border-bottom: 1px solid #dbe4df; color: var(--navy); font-size: 13px; text-align: left; }
+  .staffPortalNav a:first-child { border-top: 1px solid #dbe4df; }
+  .staffPortalNav a:hover, .staffPortalNav a:focus-visible { color: var(--green); background: #e7efea; }
+}
+
 
 /* Staff Portal account entry */
 body:has(.portalEntryPage) { background: #eef4f1; }
