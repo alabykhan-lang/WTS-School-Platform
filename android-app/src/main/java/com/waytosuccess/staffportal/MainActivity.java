@@ -43,28 +43,54 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        FrameLayout root = new FrameLayout(this);
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(Color.rgb(7, 27, 51));
+        root.setFitsSystemWindows(true);
 
         webView = new WebView(this);
         webView.setVisibility(View.INVISIBLE);
-        root.addView(webView, new FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT,
-            FrameLayout.LayoutParams.MATCH_PARENT
-        ));
+        root.addView(webView, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1.0f));
 
         navigationProgress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
         navigationProgress.setMax(100);
         navigationProgress.setProgressTintList(android.content.res.ColorStateList.valueOf(Color.rgb(15, 124, 92)));
-        FrameLayout.LayoutParams progressParams = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, dp(3));
+        LinearLayout.LayoutParams progressParams = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(3));
         progressParams.gravity = Gravity.TOP;
         root.addView(navigationProgress, progressParams);
 
         loadingView = createLoadingView();
-        root.addView(loadingView, new FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT,
-            FrameLayout.LayoutParams.MATCH_PARENT
-        ));
+        root.addView(loadingView, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1.0f));
+        LinearLayout bottomBar = new LinearLayout(this);
+        bottomBar.setOrientation(LinearLayout.HORIZONTAL);
+        bottomBar.setBackgroundColor(Color.rgb(7, 27, 51));
+        bottomBar.setPadding(0, dp(8), 0, dp(8));
+        
+        android.widget.Button btnDashboard = new android.widget.Button(this);
+        btnDashboard.setText("Dashboard");
+        btnDashboard.setTextColor(Color.WHITE);
+        btnDashboard.setBackgroundColor(Color.TRANSPARENT);
+        btnDashboard.setOnClickListener(v -> webView.loadUrl("https://wts-school-platform.vercel.app/portal/sign-in"));
+        
+        android.widget.Button btnRegistry = new android.widget.Button(this);
+        btnRegistry.setText("Registry");
+        btnRegistry.setTextColor(Color.WHITE);
+        btnRegistry.setBackgroundColor(Color.TRANSPARENT);
+        btnRegistry.setOnClickListener(v -> webView.loadUrl("https://wts-central-registry.vercel.app"));
+        
+        android.widget.Button btnResults = new android.widget.Button(this);
+        btnResults.setText("Results");
+        btnResults.setTextColor(Color.WHITE);
+        btnResults.setBackgroundColor(Color.TRANSPARENT);
+        btnResults.setOnClickListener(v -> webView.loadUrl("https://wts-result-system.vercel.app"));
+        
+        LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f);
+        bottomBar.addView(btnDashboard, btnParams);
+        bottomBar.addView(btnRegistry, btnParams);
+        bottomBar.addView(btnResults, btnParams);
+        
+        root.addView(bottomBar, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        
         setContentView(root);
 
         WebSettings settings = webView.getSettings();
