@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -233,12 +233,7 @@ export function StaffPortalClient() {
   }, [portalOrigin]);
 
   if (checking) {
-    return <main id="main-content" className="staffPortalLoading" aria-busy="true"><div className="staffPortalLoadingCard" role="status" aria-live="polite"><img src="/images/logo.webp" alt="Way to Success Standard Schools logo" /><strong>Way to Success Standard Schools</strong><span>Staff Portal</span><p><i aria-hidden="true" />Loading…</p></div>      <nav className="wts-global-portal-nav">
-        <a href="https://wts-school-platform.vercel.app/portal/sign-in">Dashboard</a>
-        <a href="https://wts-central-registry.vercel.app">Registry</a>
-        <a href="https://wts-result-system.vercel.app">Results</a>
-      </nav>
-    </main>;
+    return <main id="main-content" className="staffPortalLoading" aria-busy="true"><div className="staffPortalLoadingCard" role="status" aria-live="polite"><img src="/images/logo.webp" alt="Way to Success Standard Schools logo" /><strong>Way to Success Standard Schools</strong><span>Staff Portal</span><p><i aria-hidden="true" />Loading…</p></div></main>;
   }
 
   if (!workspace || !authenticated) {

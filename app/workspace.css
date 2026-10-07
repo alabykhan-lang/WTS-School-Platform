@@ -804,3 +804,21 @@ body {
 .staffPortalDutyCard li small {
   color: rgba(255, 255, 255, 0.7) !important;
 }
+.staffPortalDutyCard, .staffPortalDutyCard:not(.staffPortalDutyCard--portfolio) {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border-color: rgba(255, 255, 255, 0.15) !important;
+}
+.staffPortalDutyCard h3, .staffPortalDutyCard:not(.staffPortalDutyCard--portfolio) h3,
+.staffPortalDutyCard > p, .staffPortalDutyCard:not(.staffPortalDutyCard--portfolio) > p,
+.staffPortalDutyCard li, .staffPortalDutyCard:not(.staffPortalDutyCard--portfolio) li,
+.staffPortalDutyCard .staffPortalKicker, .staffPortalDutyCard:not(.staffPortalDutyCard--portfolio) .staffPortalKicker,
+.staffPortalDutyMeta {
+  color: #fff !important;
+}
+.staffPortalDutyCard .staffPortalDutyIcon, .staffPortalDutyCard:not(.staffPortalDutyCard--portfolio) .staffPortalDutyIcon {
+  background: rgba(255, 255, 255, 0.15) !important;
+  color: #fff !important;
+}
+.staffPortalDutyCard li small, .staffPortalDutyCard:not(.staffPortalDutyCard--portfolio) li small {
+  color: rgba(255, 255, 255, 0.7) !important;
+}

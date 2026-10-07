@@ -1,4 +1,4 @@
-package com.waytosuccess.staffportal;
+﻿package com.waytosuccess.staffportal;
 
 import android.app.Activity;
 import android.app.DownloadManager;
@@ -45,6 +45,15 @@ public class MainActivity extends Activity {
 
         FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(Color.rgb(7, 27, 51));
+        root.setOnApplyWindowInsetsListener((v, insets) -> {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                android.graphics.Insets systemBars = insets.getInsets(android.view.WindowInsets.Type.systemBars());
+                v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom);
+            } else {
+                v.setPadding(0, insets.getSystemWindowInsetTop(), 0, insets.getSystemWindowInsetBottom());
+            }
+            return insets;
+        });
 
         webView = new WebView(this);
         webView.setVisibility(View.INVISIBLE);
