@@ -1,4 +1,4 @@
-﻿package com.waytosuccess.staffportal;
+package com.waytosuccess.staffportal;
 
 import android.app.Activity;
 import android.app.DownloadManager;
