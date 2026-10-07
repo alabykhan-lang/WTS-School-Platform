@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { FormEvent, type MouseEvent, type ReactNode, useEffect, useMemo, useState } from "react";
@@ -618,8 +618,18 @@ export function WorkspaceClient() {
     return { permissions, moduleAccess, roleNames, roleCodes, protectedAuthority, assignedModules: Object.entries(moduleAccess).filter(([key, value]) => key !== "profile" && value).length };
   }, [workspace]);
 
-  if (checking) return <main id="main-content" className="workspaceGate"><p>Preparing your School Portal…</p></main>;
-  if (!workspace || !authenticated) return <main id="main-content" className="workspaceGate"><section><p className="eyebrow">WAY TO SUCCESS SCHOOL PORTAL</p><h1>Sign in is required.</h1><p>{error || "This portal does not display school records until an active staff identity is verified."}</p><Link className="primaryButton" href="/portal/sign-in">Sign in to Staff Portal</Link></section></main>;
+  if (checking) return <main id="main-content" className="workspaceGate"><p>Preparing your School Portal…</p>        <nav className="wts-global-portal-nav">
+          <a href="https://wts-school-platform.vercel.app/portal/sign-in">Dashboard</a>
+          <a href="https://wts-central-registry.vercel.app">Registry</a>
+          <a href="https://wts-result-system.vercel.app">Results</a>
+        </nav>
+  </main>;
+  if (!workspace || !authenticated) return <main id="main-content" className="workspaceGate"><section><p className="eyebrow">WAY TO SUCCESS SCHOOL PORTAL</p><h1>Sign in is required.</h1><p>{error || "This portal does not display school records until an active staff identity is verified."}</p><Link className="primaryButton" href="/portal/sign-in">Sign in to Staff Portal</Link></section>        <nav className="wts-global-portal-nav">
+          <a href="https://wts-school-platform.vercel.app/portal/sign-in">Dashboard</a>
+          <a href="https://wts-central-registry.vercel.app">Registry</a>
+          <a href="https://wts-result-system.vercel.app">Results</a>
+        </nav>
+  </main>;
 
   const summary = workspace.summary;
   const person = summary?.person || workspace.person;
@@ -684,6 +694,11 @@ export function WorkspaceClient() {
         <footer className="workspaceFooter"><span>Way to Success School Portal</span><span>Read-only summaries · {context?.session || "current session"} · {context?.term || "current term"}</span><button type="button" onClick={() => void signOut()}>Sign out</button></footer>
       </section>
     </div>
+          <nav className="wts-global-portal-nav">
+          <a href="https://wts-school-platform.vercel.app/portal/sign-in">Dashboard</a>
+          <a href="https://wts-central-registry.vercel.app">Registry</a>
+          <a href="https://wts-result-system.vercel.app">Results</a>
+        </nav>
   </main>;
 }
 

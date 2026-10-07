@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { type FormEvent, useEffect, useState } from "react";
@@ -155,9 +155,9 @@ export function PortalSignIn() {
         <p className={"portalAuthMessage " + (message ? "isVisible " : "") + "portalAuthMessage--" + messageTone} role="status" aria-live="polite">{message}</p>
         <div className="portalEntryActions" aria-label="Account help">
           <Link href="/portal/account-recovery?mode=reset">Forgot Password</Link>
-          <Link href="/portal/account-recovery?mode=activation">Activate Existing Account</Link>
+          
           <Link href="/portal/register">New Staff Registration</Link>
-          <Link href="/portal/help">Need Help Signing In?</Link>
+          
         </div>
         <ul className="portalAuthNotes">
           <li>Use the same school account for the Staff Portal and its authorised systems.</li>
