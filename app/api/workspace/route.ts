@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { callPrivilegedRpc, IdentityApiError, isSameOrigin, noStoreHeaders, resultErrorResponse } from "../identity/_lib";
-import { clearWorkspaceSessionCookie, workspaceSessionFromRequest } from "../workspace-session/_lib";
+import { clearWorkspaceSessionCookie, workspaceSessionCookie, workspaceSessionFromRequest } from "../workspace-session/_lib";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
       if (errorCode !== "IDENTITY_SERVICE_UNAVAILABLE") throw error;
       return Response.json(
         { ...result, person: { ...((result.person as Record<string, unknown>) || {}), portfolios }, portfolios, summary: null, summary_status: "unavailable" },
-        { headers: noStoreHeaders() },
+        { headers: { ...noStoreHeaders(), "Set-Cookie": workspaceSessionCookie(current.id, current.secret) } },
       );
     }
     if (!summary?.ok) {
@@ -66,7 +66,7 @@ export async function GET(request: NextRequest) {
       person: { ...((result.person as Record<string, unknown>) || {}), portfolios },
       portfolios,
       summary: summaryPayload ? { ...summaryPayload, person: { ...summaryPerson, portfolios } } : null,
-    }, { headers: noStoreHeaders() });
+    }, { headers: { ...noStoreHeaders(), "Set-Cookie": workspaceSessionCookie(current.id, current.secret) } });
   } catch (error) {
     return resultErrorResponse(error);
   }

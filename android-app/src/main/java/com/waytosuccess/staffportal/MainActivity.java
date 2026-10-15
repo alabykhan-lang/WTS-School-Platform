@@ -31,7 +31,7 @@ import android.widget.ProgressBar;
 import android.widget.TextView;
 
 public class MainActivity extends Activity {
-    private static final String STAFF_PORTAL_URL = "https://wts-school-platform.vercel.app/portal/sign-in";
+    private static final String STAFF_PORTAL_URL = "https://wts-school-platform.vercel.app/portal";
     private static final int FILE_PICKER_REQUEST = 1001;
 
     private WebView webView;
@@ -289,6 +289,30 @@ public class MainActivity extends Activity {
 
     private int dp(int value) {
         return Math.round(value * getResources().getDisplayMetrics().density);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        CookieManager.getInstance().flush();
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        CookieManager.getInstance().flush();
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        CookieManager.getInstance().flush();
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        CookieManager.getInstance().flush();
     }
 
     @Override

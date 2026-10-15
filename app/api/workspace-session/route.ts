@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
       p_target_app_code: "staff_self_service",
     });
     if (!result?.ok) return response(result, 401, clearWorkspaceSessionCookie());
-    return response(result);
+    return response(result, 200, workspaceSessionCookie(current.id, current.secret));
   } catch (error) {
     return resultErrorResponse(error);
   }

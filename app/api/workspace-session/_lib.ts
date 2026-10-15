@@ -20,8 +20,10 @@ export function workspaceSessionFromRequest(request: Request) {
   return { id, secret };
 }
 
+export const WORKSPACE_SESSION_MAX_AGE = 30 * 24 * 60 * 60; // 30 days
+
 export function workspaceSessionCookie(sessionId: string, sessionSecret: string) {
-  return `${WORKSPACE_SESSION_COOKIE}=${encodeURIComponent(`${sessionId}.${sessionSecret}`)}; Path=/; Max-Age=${8 * 60 * 60}; HttpOnly; Secure; SameSite=Lax`;
+  return `${WORKSPACE_SESSION_COOKIE}=${encodeURIComponent(`${sessionId}.${sessionSecret}`)}; Path=/; Max-Age=${WORKSPACE_SESSION_MAX_AGE}; HttpOnly; Secure; SameSite=Lax`;
 }
 
 export function clearWorkspaceSessionCookie() {

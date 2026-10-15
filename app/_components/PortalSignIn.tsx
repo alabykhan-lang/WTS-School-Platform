@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { type FormEvent, useEffect, useState } from "react";
@@ -64,10 +64,45 @@ export function PortalSignIn() {
   const [messageTone, setMessageTone] = useState<"error" | "success" | "info">("error");
   const [busy, setBusy] = useState(false);
   const [returnTo, setReturnTo] = useState("/workspace");
+  const [checkingExisting, setCheckingExisting] = useState(true);
 
   useEffect(() => {
     const query = new URLSearchParams(window.location.search);
-    setReturnTo(safeWorkspaceReturnTo(query.get("return_to")));
+    const target = safeWorkspaceReturnTo(query.get("return_to"));
+    setReturnTo(target);
+
+    let active = true;
+    const timeout = setTimeout(() => {
+      if (active) setCheckingExisting(false);
+    }, 2000);
+
+    fetch("/api/workspace-session", {
+      method: "GET",
+      credentials: "same-origin",
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!active) return;
+        clearTimeout(timeout);
+        if (data?.ok) {
+          window.location.replace(target);
+          return;
+        }
+        setCheckingExisting(false);
+      })
+      .catch(() => {
+        if (active) {
+          clearTimeout(timeout);
+          setCheckingExisting(false);
+        }
+      });
+
+    return () => {
+      active = false;
+      clearTimeout(timeout);
+    };
   }, []);
 
   async function submitLogin(event: FormEvent<HTMLFormElement>) {
@@ -125,8 +160,12 @@ export function PortalSignIn() {
         <div className="portalEntryBrand"><img src="/images/logo.webp" alt="Way to Success Standard Schools logo" /><span><strong>Way to Success Standard Schools</strong><small>Staff Portal</small></span></div>
         <p className="eyebrow">STAFF PORTAL</p>
         <h1 id="portal-sign-in-title">Welcome back.</h1>
-        <p>Sign in with your school account. Your portal will show only the current information and services authorised for you.</p>
-        {!pendingChange ? <form className="portalAuthForm" onSubmit={submitLogin}>
+        {checkingExisting ? (
+          <div style={{ textAlign: "center", padding: "2.5rem 1rem" }}>
+            <p style={{ color: "#8fddbb", fontSize: "0.95rem", margin: 0 }}>Recognizing existing session…</p>
+          </div>
+        ) : !pendingChange ? (
+          <form className="portalAuthForm" onSubmit={submitLogin}>
           <label>Staff number or official registered email
             <input autoComplete="username" required value={login} onChange={(event) => setLogin(event.target.value)} />
           </label>
