@@ -1,9 +1,8 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { FormEvent, type MouseEvent, type ReactNode, useEffect, useMemo, useState } from "react";
-import { staffPortalModules } from "../../data/staff-portal-modules";
-import { getModuleLaunchUrl } from "../../data/portal-config";
+import { getModuleLaunchUrl, portalOrigins } from "../../data/portal-config";
 
 export type WorkspaceSession = {
   ok: boolean;
@@ -619,15 +618,15 @@ export function WorkspaceClient() {
   }, [workspace]);
 
   if (checking) return <main id="main-content" className="workspaceGate"><p>Preparing your School Portal…</p>        <nav className="wts-global-portal-nav">
-          <a href="https://wts-school-platform.vercel.app/portal/sign-in">Dashboard</a>
-          <a href="https://wts-central-registry.vercel.app">Registry</a>
-          <a href="https://wts-result-system.vercel.app">Results</a>
+          <a href="/portal/sign-in">Dashboard</a>
+          <a href={centralRegistryUrl || portalOrigins.centralRegistry}>Registry</a>
+          <a href={resultPortalUrl || portalOrigins.results}>Results</a>
         </nav>
   </main>;
   if (!workspace || !authenticated) return <main id="main-content" className="workspaceGate"><section><p className="eyebrow">WAY TO SUCCESS SCHOOL PORTAL</p><h1>Sign in is required.</h1><p>{error || "This portal does not display school records until an active staff identity is verified."}</p><Link className="primaryButton" href="/portal/sign-in">Sign in to Staff Portal</Link></section>        <nav className="wts-global-portal-nav">
-          <a href="https://wts-school-platform.vercel.app/portal/sign-in">Dashboard</a>
-          <a href="https://wts-central-registry.vercel.app">Registry</a>
-          <a href="https://wts-result-system.vercel.app">Results</a>
+          <a href="/portal/sign-in">Dashboard</a>
+          <a href={centralRegistryUrl || portalOrigins.centralRegistry}>Registry</a>
+          <a href={resultPortalUrl || portalOrigins.results}>Results</a>
         </nav>
   </main>;
 
@@ -695,9 +694,9 @@ export function WorkspaceClient() {
       </section>
     </div>
           <nav className="wts-global-portal-nav">
-          <a href="https://wts-school-platform.vercel.app/portal/sign-in">Dashboard</a>
-          <a href="https://wts-central-registry.vercel.app">Registry</a>
-          <a href="https://wts-result-system.vercel.app">Results</a>
+          <a href="/portal/sign-in">Dashboard</a>
+          <a href={centralRegistryUrl || portalOrigins.centralRegistry}>Registry</a>
+          <a href={resultPortalUrl || portalOrigins.results}>Results</a>
         </nav>
   </main>;
 }

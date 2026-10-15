@@ -94,20 +94,17 @@ export async function GET(request: NextRequest) {
       const fallbackCode = client.target === "attendance"
         ? "ATTENDANCE_ACCESS_NOT_GRANTED"
         : client.target === "central_registry"
-          ? "CENTRAL_REGISTRY_ACCESS_NOT_GRANTED"
+          ? "REGISTRY_ACCESS_NOT_GRANTED"
           : client.target === "notifications"
             ? "NOTIFICATIONS_ACCESS_NOT_GRANTED"
             : "RESULT_ACCESS_NOT_GRANTED";
       const code = typeof issued?.code === "string" ? issued.code : fallbackCode;
-      const denied = [
-        "RESULT_ACCESS_NOT_GRANTED",
-        "ATTENDANCE_ACCESS_NOT_GRANTED",
-        "CENTRAL_REGISTRY_ACCESS_NOT_GRANTED",
-        "NOTIFICATIONS_ACCESS_NOT_GRANTED",
-      ].includes(code);
-      const status = denied ? 403 : code === "WTS_SESSION_NOT_ACTIVE" ? 401 : 400;
-      if (status === 401) return loginRedirect(request);
-      return errorResponse(code, status);
+      if (code === "WTS_SESSION_NOT_ACTIVE") return loginRedirect(request);
+
+      const callback = new URL(client.redirectUri);
+      callback.searchParams.set("error", code);
+      if (state) callback.searchParams.set("state", state);
+      return redirectResponse(callback.toString());
     }
 
     const callback = new URL(client.redirectUri);
