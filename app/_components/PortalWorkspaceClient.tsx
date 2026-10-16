@@ -618,13 +618,13 @@ export function WorkspaceClient() {
   }, [workspace]);
 
   if (checking) return <main id="main-content" className="workspaceGate"><p>Preparing your School Portal…</p>        <nav className="wts-global-portal-nav">
-          <a href="/portal/sign-in">Dashboard</a>
+          <a href="/portal">Dashboard</a>
           <a href={centralRegistryUrl || portalOrigins.centralRegistry}>Registry</a>
           <a href={resultPortalUrl || portalOrigins.results}>Results</a>
         </nav>
   </main>;
   if (!workspace || !authenticated) return <main id="main-content" className="workspaceGate"><section><p className="eyebrow">WAY TO SUCCESS SCHOOL PORTAL</p><h1>Sign in is required.</h1><p>{error || "This portal does not display school records until an active staff identity is verified."}</p><Link className="primaryButton" href="/portal/sign-in">Sign in to Staff Portal</Link></section>        <nav className="wts-global-portal-nav">
-          <a href="/portal/sign-in">Dashboard</a>
+          <a href="/portal">Dashboard</a>
           <a href={centralRegistryUrl || portalOrigins.centralRegistry}>Registry</a>
           <a href={resultPortalUrl || portalOrigins.results}>Results</a>
         </nav>
@@ -694,7 +694,7 @@ export function WorkspaceClient() {
       </section>
     </div>
           <nav className="wts-global-portal-nav">
-          <a href="/portal/sign-in">Dashboard</a>
+          <a href="/portal">Dashboard</a>
           <a href={centralRegistryUrl || portalOrigins.centralRegistry}>Registry</a>
           <a href={resultPortalUrl || portalOrigins.results}>Results</a>
         </nav>

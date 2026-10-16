@@ -360,9 +360,9 @@ export function StaffPortalClient() {
       {launching ? <div className="staffPortalLaunchOverlay" role="status" aria-live="assertive"><div><i aria-hidden="true" /><strong>{launching}</strong><span>Connecting your Staff Portal session…</span></div></div> : null}
     </main>
     <nav className="wts-global-portal-nav">
-      <a href="https://wts-school-platform.vercel.app/portal/sign-in">Dashboard</a>
-      <a href="https://wts-central-registry.vercel.app">Registry</a>
-      <a href="https://wts-result-system.vercel.app">Results</a>
+      <a href="https://wts-school-platform.vercel.app/portal">Dashboard</a>
+      <a href="https://wts-central-registry.vercel.app/?sso=1&handoff=20260911c">Registry</a>
+      <a href="https://wts-result-system.vercel.app/portal_core.html?sso=1&handoff=20260911c">Results</a>
     </nav>
     </>
   );
