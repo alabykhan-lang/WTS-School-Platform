@@ -484,7 +484,7 @@ function ModuleCard({
     <div className="workspaceModuleCardTop"><span className="workspaceModuleIcon" aria-hidden="true">{icon}</span><ModuleStatus status={status} /></div>
     <h3>{title}</h3>
     <p>{summary || description}</p>
-    {href ? <a className="workspaceLaunchButton" href={href} onClick={id === "results" ? handleResultPortalLaunch : undefined}>Open {title}<span aria-hidden="true">↗</span></a> : <span className="workspaceMutedNote">{unavailableMessage}</span>}
+    {href ? <a className="workspaceLaunchButton" href={href} onClick={id === "results" || id === "centralRegistry" ? handleResultPortalLaunch : undefined}>Open {title}<span aria-hidden="true">↗</span></a> : <span className="workspaceMutedNote">{unavailableMessage}</span>}
   </article>;
 }
 
@@ -523,7 +523,7 @@ function ClassOverviewCard({
     {(showResults || showAttendance || showRegistry) ? <div className="workspaceCardActions">
       {showResults && launchHref ? <a className="workspaceLaunchButton" href={launchHref} onClick={handleResultPortalLaunch}>Open Results<span aria-hidden="true">↗</span></a> : null}
       {showAttendance && attendanceUrl ? <a className="workspaceTextLink" href={attendanceUrl}>Open Attendance ↗</a> : null}
-      {showRegistry && centralRegistryUrl ? <a className="workspaceTextLink" href={centralRegistryUrl}>Open Administration ↗</a> : null}
+      {showRegistry && centralRegistryUrl ? <a className="workspaceTextLink" href={centralRegistryUrl} onClick={handleResultPortalLaunch}>Open Administration ↗</a> : null}
     </div> : null}
   </article>;
 }
@@ -695,8 +695,8 @@ export function WorkspaceClient() {
     </div>
           <nav className="wts-global-portal-nav">
           <a href="/portal">Dashboard</a>
-          <a href={centralRegistryUrl || portalOrigins.centralRegistry}>Registry</a>
-          <a href={resultPortalUrl || portalOrigins.results}>Results</a>
+          <a href={centralRegistryUrl || portalOrigins.centralRegistry} onClick={handleResultPortalLaunch}>Registry</a>
+          <a href={resultPortalUrl || portalOrigins.results} onClick={handleResultPortalLaunch}>Results</a>
         </nav>
   </main>;
 }
