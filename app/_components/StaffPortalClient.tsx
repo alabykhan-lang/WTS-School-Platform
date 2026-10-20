@@ -210,7 +210,7 @@ export function StaffPortalClient() {
 
     return {
       results: developer || appCodes.has("results") || institutionalModules.results === true,
-      centralRegistry: developer || appCodes.has("central_registry") || management,
+      centralRegistry: true,
       roleNames: unique(roleNames),
     };
   }, [workspace]);
@@ -272,8 +272,10 @@ export function StaffPortalClient() {
   const hasActions = Boolean((access.results && launchUrls.results) || (access.centralRegistry && launchUrls.centralRegistry));
 
   function launchModule(label: string) {
-    setLaunching(`Opening ${label}…`);
     setNavOpen(false);
+    setTimeout(() => {
+      setLaunching(`Opening ${label}\u2026`);
+    }, 50);
   }
 
   return (
