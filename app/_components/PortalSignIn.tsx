@@ -176,7 +176,9 @@ export function PortalSignIn() {
             </span>
           </label>
           <button className="primaryButton" disabled={busy} type="submit">{busy ? "Checking access…" : "Open Staff Portal"}</button>
-        </form> : <form className="portalAuthForm" onSubmit={submitPasswordChange}>
+        </form>
+        ) : (
+        <form className="portalAuthForm" onSubmit={submitPasswordChange}>
           <label>New password
             <span className="portalPasswordControl">
               <input autoComplete="new-password" type={showNewPassword ? "text" : "password"} required value={newPassword} onChange={(event) => setNewPassword(event.target.value)} />
@@ -190,7 +192,8 @@ export function PortalSignIn() {
             </span>
           </label>
           <button className="primaryButton" disabled={busy} type="submit">{busy ? "Updating password…" : "Create new password"}</button>
-        </form>}
+        </form>
+        )}
         <p className={"portalAuthMessage " + (message ? "isVisible " : "") + "portalAuthMessage--" + messageTone} role="status" aria-live="polite">{message}</p>
         <div className="portalEntryActions" aria-label="Account help">
           <Link href="/portal/account-recovery?mode=reset">Forgot Password</Link>

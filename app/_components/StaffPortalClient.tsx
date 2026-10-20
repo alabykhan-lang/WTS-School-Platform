@@ -363,8 +363,8 @@ export function StaffPortalClient() {
     </main>
     <nav className="wts-global-portal-nav">
       <a href="/portal">Dashboard</a>
-      <a href={launchUrls.centralRegistry || centralRegistryUrl || "https://wts-central-registry.vercel.app/?sso=1&handoff=20260911c"} onClick={() => launchModule("Central Registry")}>Registry</a>
-      <a href={launchUrls.results || resultsUrl || "https://wts-result-system.vercel.app/portal_core.html?sso=1&handoff=20260911c"} onClick={() => launchModule("Results System")}>Results</a>
+      <a href={launchUrls.centralRegistry || centralRegistryUrl || "https://wts-central-registry.vercel.app/?sso=1&handoff=20261020a"} onClick={() => launchModule("Central Registry")}>Registry</a>
+      <a href={launchUrls.results || resultsUrl || "https://wts-result-system.vercel.app/portal_core.html?sso=1&handoff=20261020a"} onClick={() => launchModule("Results System")}>Results</a>
     </nav>
     </>
   );

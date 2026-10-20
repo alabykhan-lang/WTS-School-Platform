@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { FormEvent, type MouseEvent, type ReactNode, useEffect, useMemo, useState } from "react";
+import { staffPortalModules } from "../../data/staff-portal-modules";
 import { getModuleLaunchUrl, portalOrigins } from "../../data/portal-config";
 
 export type WorkspaceSession = {
