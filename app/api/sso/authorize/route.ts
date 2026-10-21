@@ -41,10 +41,25 @@ function loginRedirect(request: NextRequest) {
   return redirectResponse(signIn.toString());
 }
 
+function isAllowedClientOrigin(origin: string | null, request: Request): boolean {
+  if (!origin || isSameOrigin(request)) return true;
+  try {
+    const originUrl = new URL(origin);
+    const approvedOrigins = new Set(
+      Object.values(APPROVED_CLIENTS).map((client) => {
+        try { return new URL(client.redirectUri).origin; } catch { return ""; }
+      }).filter(Boolean)
+    );
+    return approvedOrigins.has(originUrl.origin);
+  } catch {
+    return false;
+  }
+}
+
 export async function GET(request: NextRequest) {
   try {
     const origin = request.headers.get("origin");
-    if (origin && !isSameOrigin(request)) throw new IdentityApiError("ORIGIN_NOT_ALLOWED", 403);
+    if (!isAllowedClientOrigin(origin, request)) throw new IdentityApiError("ORIGIN_NOT_ALLOWED", 403);
 
     const requestUrl = new URL(request.url);
     const responseType = requestUrl.searchParams.get("response_type") || "";
