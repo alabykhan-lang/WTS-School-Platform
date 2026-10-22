@@ -8,8 +8,8 @@ type MessageTone = "error" | "success" | "info";
 
 function friendlyMessage(code: string) {
   const messages: Record<string, string> = {
-    SHARED_TEACHER_CODE_REQUIRED: "Enter your Staff Number and the shared WTS teacher code.",
-    SHARED_TEACHER_CODE_INVALID: "That Staff Number and teacher code did not match an active teacher record.",
+    SHARED_TEACHER_CODE_REQUIRED: "Enter your staff email and the shared WTS teacher code.",
+    SHARED_TEACHER_CODE_INVALID: "That email and teacher code did not match an active teacher record.",
     PASSWORD_CONFIRMATION_REQUIRED: "Enter the new password twice, matching.",
     PASSWORD_REQUIREMENTS_NOT_MET: "Use at least 10 characters with uppercase, lowercase and a number.",
     RECOVERY_SERVICE_UNAVAILABLE: "The password service is unavailable. Please try again shortly.",
@@ -58,7 +58,7 @@ export default function AccountRecoveryPage() {
     try {
       const body = token
         ? { action: "complete", token, password, confirmPassword }
-        : { action: "shared_code", login: login.trim(), code: code.trim(), password, confirmPassword };
+        : { action: "shared_code", email: login.trim(), code: code.trim(), password, confirmPassword };
       const response = await fetch("/api/account-recovery", {
         method: "POST",
         credentials: "same-origin",
@@ -93,13 +93,13 @@ export default function AccountRecoveryPage() {
         <p>
           {tokenFlow
             ? "Choose a new password to continue using the School Portal."
-            : "Staff sign in normally with the password they already have. Use this page only when you have forgotten it: enter your Staff Number and the shared WTS teacher code, then choose a new password."}
+            : "Staff sign in normally with the password they already have. Use this page only when you have forgotten it: enter your staff email and the shared WTS teacher code, then choose a new password."}
         </p>
         {!ready ? <p className="portalEntryNotice">Preparing the secure form…</p> : null}
 
         {ready && !completed ? <form className="portalAuthForm" onSubmit={submit}>
-          {!tokenFlow ? <label>Staff Number
-            <input autoComplete="username" type="text" required maxLength={64} value={login} onChange={(event) => setLogin(event.target.value)} placeholder="WTS/STF/000001" />
+          {!tokenFlow ? <label>Staff email
+            <input autoComplete="email" type="email" required maxLength={254} value={login} onChange={(event) => setLogin(event.target.value)} placeholder="name@waytosuccessschools.com" />
           </label> : null}
           {!tokenFlow ? <label>Shared WTS teacher code
             <input autoComplete="off" spellCheck={false} type="text" required maxLength={64} value={code} onChange={(event) => setCode(event.target.value)} placeholder="WTS…" />

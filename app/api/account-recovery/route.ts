@@ -28,17 +28,17 @@ export async function POST(request: NextRequest) {
   let payload: Record<string, unknown>;
 
   if (action === "shared_code") {
-    const login = textValue((input as Record<string, unknown>).login, 64);
+    const email = textValue((input as Record<string, unknown>).email ?? (input as Record<string, unknown>).login, 254);
     const code = textValue((input as Record<string, unknown>).code, 64);
     const passwordValue = (input as Record<string, unknown>).password;
     const confirmPasswordValue = (input as Record<string, unknown>).confirmPassword;
     const password: string = typeof passwordValue === "string" ? passwordValue : "";
     const confirmPassword: string = typeof confirmPasswordValue === "string" ? confirmPasswordValue : "";
-    if (!login || !code) return json({ ok: false, code: "SHARED_TEACHER_CODE_REQUIRED" }, 400);
+    if (!email || !code) return json({ ok: false, code: "SHARED_TEACHER_CODE_REQUIRED" }, 400);
     if (!password || password !== confirmPassword || password.length > 512) {
       return json({ ok: false, code: "PASSWORD_CONFIRMATION_REQUIRED" }, 400);
     }
-    payload = { action: "shared_code", login, code, password, confirmPassword };
+    payload = { action: "shared_code", email, code, password, confirmPassword };
   } else if (action === "request") {
     const purpose = (input as Record<string, unknown>).purpose === "activation" ? "activation" : "password_reset";
     const login = textValue((input as Record<string, unknown>).login, 254);
