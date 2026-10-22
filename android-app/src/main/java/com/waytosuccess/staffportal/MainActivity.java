@@ -33,6 +33,26 @@ import android.widget.TextView;
 public class MainActivity extends Activity {
     private static final String STAFF_PORTAL_URL = "https://wts-school-platform.vercel.app/portal";
     private static final int FILE_PICKER_REQUEST = 1001;
+    // Only these hosts load inside the app; everything else opens in the browser.
+    private static final String[] ALLOWED_HOSTS = {
+        "wts-school-platform.vercel.app",
+        "wts-result-system.vercel.app",
+        "wts-central-registry.vercel.app",
+        "portal.waytosuccessschools.com"
+    };
+
+    private static boolean isTrusted(String url) {
+        if (url == null) return false;
+        try {
+            String host = Uri.parse(url).getHost();
+            if (host == null) return false;
+            host = host.toLowerCase();
+            for (String allowed : ALLOWED_HOSTS) {
+                if (host.equals(allowed) || host.endsWith("." + allowed)) return true;
+            }
+        } catch (Exception ignored) { }
+        return false;
+    }
 
     private WebView webView;
     private View loadingView;
@@ -84,7 +104,7 @@ public class MainActivity extends Activity {
         settings.setUseWideViewPort(false);
         settings.setBuiltInZoomControls(false);
         settings.setDisplayZoomControls(false);
-        settings.setAllowFileAccess(true);
+        settings.setAllowFileAccess(false);
         settings.setAllowContentAccess(true);
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
         settings.setTextZoom(100);
@@ -102,12 +122,16 @@ public class MainActivity extends Activity {
                 Uri uri = Uri.parse(url);
                 String scheme = uri.getScheme();
                 if ("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme)) {
-                    // Keep the Staff Portal, Central Registry, Results and
-                    // the SSO callback on this WebView. This legacy overload
-                    // is required by older Android WebView implementations;
-                    // without it a redirect may silently leave the APK.
-                    CookieManager.getInstance().flush();
-                    return false;
+                    if (isTrusted(url)) {
+                        // Staff Portal, Central Registry, Results and the SSO
+                        // callback stay in this WebView.
+                        CookieManager.getInstance().flush();
+                        return false;
+                    }
+                    try {
+                        startActivity(new Intent(Intent.ACTION_VIEW, uri));
+                    } catch (Exception ignored) { }
+                    return true;
                 }
                 try {
                     startActivity(new Intent(Intent.ACTION_VIEW, uri));
@@ -200,7 +224,13 @@ public class MainActivity extends Activity {
                 request.addRequestHeader("User-Agent", userAgent);
                 request.addRequestHeader("Cookie", CookieManager.getInstance().getCookie(url));
                 request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
-                request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "wts-staff-portal-download");
+                String suffix = ".bin";
+                if (mimeType != null && mimeType.contains("pdf")) suffix = ".pdf";
+                else if (mimeType != null && mimeType.contains("csv")) suffix = ".csv";
+                else if (mimeType != null && mimeType.contains("png")) suffix = ".png";
+                else if (mimeType != null && (mimeType.contains("jpeg") || mimeType.contains("jpg"))) suffix = ".jpg";
+                String fileName = "wts-portal-" + new java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US).format(new java.util.Date()) + suffix;
+                request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName);
                 DownloadManager manager = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
                 manager.enqueue(request);
             }
@@ -359,14 +389,20 @@ public class MainActivity extends Activity {
         printManager.print(jobName, adapter, builder.build());
     }
 
+    private boolean bridgeAllowed() {
+        return webView != null && isTrusted(webView.getUrl());
+    }
+
     private class PrintBridge {
         @JavascriptInterface
         public void printPage() {
+            if (!bridgeAllowed()) return;
             printPage("portrait");
         }
 
         @JavascriptInterface
         public void printPage(final String orientation) {
+            if (!bridgeAllowed()) return;
             runOnUiThread(new Runnable() {
                 @Override
                 public void run() {
@@ -378,11 +414,13 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public void printPortrait() {
+            if (!bridgeAllowed()) return;
             printPage("portrait");
         }
 
         @JavascriptInterface
         public void printLandscape() {
+            if (!bridgeAllowed()) return;
             printPage("landscape");
         }
     }
