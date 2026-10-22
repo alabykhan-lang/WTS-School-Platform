@@ -158,8 +158,7 @@ export default function StaffRegistrationPage() {
 
         <p className={"portalAuthMessage " + (message ? "isVisible " : "") + "portalAuthMessage--" + tone} role="status" aria-live="polite">{message}</p>
         <div className="portalEntryActions">
-          <Link href="/portal/account-recovery?mode=reset">Forgot Password</Link>
-          <Link href="/portal/account-recovery?mode=activation">Activate Existing Account</Link>
+          <Link href="/portal/account-recovery">Forgot Password</Link>
           <Link href="/portal/help">Need Help Signing In?</Link>
         </div>
       </section>

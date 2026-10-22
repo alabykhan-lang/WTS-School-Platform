@@ -405,8 +405,7 @@ export function PortalSignIn() {
         </form>}
         <p className={"portalAuthMessage " + (message ? "isVisible " : "") + "portalAuthMessage--" + messageTone} role="status" aria-live="polite">{message}</p>
         <div className="portalEntryActions" aria-label="Account help">
-          <Link href="/portal/account-recovery?mode=reset">Forgot Password</Link>
-          <Link href="/portal/account-recovery?mode=activation">Activate Existing Account</Link>
+          <Link href="/portal/account-recovery">Forgot Password</Link>
           <Link href="/portal/register">New Staff Registration</Link>
           <Link href="/portal/help">Need Help Signing In?</Link>
         </div>
