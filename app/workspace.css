@@ -748,7 +748,7 @@ body:has(.portalEntryPage) { background: #eef4f1; }
   background-color: #071b33;
   display: flex;
   justify-content: space-around;
-  padding: 12px 0 calc(12px + env(safe-area-inset-bottom, 0px));
+  padding: 12px 0 12px;
   z-index: 9999;
   box-shadow: 0 -2px 10px rgba(0,0,0,0.2);
 }
@@ -756,7 +756,7 @@ body:has(.portalEntryPage) { background: #eef4f1; }
    bottom — otherwise it sits on top of the footer on every page. */
 body:has(.wts-global-bottom-nav),
 body:has(.wts-global-portal-nav) {
-  padding-bottom: calc(58px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: 58px;
 }
 .wts-global-bottom-nav a {
   color: #fff;

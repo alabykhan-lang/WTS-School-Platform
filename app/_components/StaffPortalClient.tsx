@@ -319,6 +319,18 @@ export function StaffPortalClient() {
           </aside>
         </section>
 
+        <section id="school-actions" className="staffPortalSection staffPortalActionsSection" aria-labelledby="actions-heading">
+          <div className="staffPortalSectionHeading">
+            <div><p className="staffPortalKicker">SCHOOL MODULES</p><h2 id="actions-heading">Choose where you need to work.</h2></div>
+            <p>Only services authorised for this account are shown. Every action below opens through the same Staff Portal session.</p>
+          </div>
+          {hasActions ? <div className="staffPortalActionGrid">
+            {access.results ? <ModuleAction href={launchUrls.results} title="Results System" description="Enter, review and manage authorised academic results." icon="R" onLaunch={() => launchModule("Results System")} /> : null}
+            {access.centralRegistry ? <ModuleAction href={launchUrls.centralRegistry} title="Central Registry" description="Use authorised student, staff, allocation and academic records." icon="C" onLaunch={() => launchModule("Central Registry")} /> : null}
+          </div> : <p className="staffPortalEmptyAction">Your authorised school actions will appear here after management assigns them to your account.</p>}
+          <div className="staffPortalProfileReminder"><span aria-hidden="true">i</span><p><strong>Need a profile change?</strong> Your Staff Portal profile is controlled by authorised school management.</p></div>
+        </section>
+
         <section id="duties" className="staffPortalSection" aria-labelledby="duties-heading">
           <div className="staffPortalSectionHeading">
             <div><p className="staffPortalKicker">YOUR CURRENT DUTIES</p><h2 id="duties-heading">What you are responsible for.</h2></div>
@@ -343,18 +355,6 @@ export function StaffPortalClient() {
               {subjectTeacherVisible ? <><h3>{subjectCount ? `${subjectCount} subject${subjectCount === 1 ? "" : "s"}` : "Assigned"}</h3><p className="staffPortalDutyMeta">{subjectClassCount ? `${subjectClassCount} class${subjectClassCount === 1 ? "" : "es"}` : "No class allocation recorded"}</p><ul>{subjectAssignments.map((assignment, index) => <li key={`${assignment.class_key || "class"}-${assignment.subject_index || index}-${index}`}>{assignment.subject_name || assignment.display_name || "Subject"}{assignment.class_name || assignment.class_key ? <small> · {assignment.class_name || assignment.class_key}</small> : null}</li>)}</ul></> : <p className="staffPortalDutyEmpty">No subject-teacher assignment is currently recorded.</p>}
             </article>
           </div>
-        </section>
-
-        <section id="school-actions" className="staffPortalSection staffPortalActionsSection" aria-labelledby="actions-heading">
-          <div className="staffPortalSectionHeading">
-            <div><p className="staffPortalKicker">SCHOOL MODULES</p><h2 id="actions-heading">Choose where you need to work.</h2></div>
-            <p>Only services authorised for this account are shown. Every action below opens through the same Staff Portal session.</p>
-          </div>
-          {hasActions ? <div className="staffPortalActionGrid">
-            {access.results ? <ModuleAction href={launchUrls.results} title="Results System" description="Enter, review and manage authorised academic results." icon="R" onLaunch={() => launchModule("Results System")} /> : null}
-            {access.centralRegistry ? <ModuleAction href={launchUrls.centralRegistry} title="Central Registry" description="Use authorised student, staff, allocation and academic records." icon="C" onLaunch={() => launchModule("Central Registry")} /> : null}
-          </div> : <p className="staffPortalEmptyAction">Your authorised school actions will appear here after management assigns them to your account.</p>}
-          <div className="staffPortalProfileReminder"><span aria-hidden="true">i</span><p><strong>Need a profile change?</strong> Your Staff Portal profile is controlled by authorised school management.</p></div>
         </section>
 
         <footer className="staffPortalFooter"><span>Way to Success Staff Portal</span><span>{context?.session || "Current session"} · {context?.term || "Current term"}</span><button type="button" onClick={() => void signOut()}>Sign out</button></footer>
