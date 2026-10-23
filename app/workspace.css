@@ -475,8 +475,10 @@ body.staffPortalHost {
   color: #e9fff4;
 }
 .staffPortalWelcome {
-  min-height: min(680px, 74svh);
-  padding: 86px 12px 62px;
+  /* Keep the greeting impressive but short enough that the two module cards
+     begin on the first screen, which is what staff actually came for. */
+  min-height: min(430px, 46svh);
+  padding: 46px 12px 34px;
 }
 .staffPortalWelcomeCopy .eyebrow, .staffPortalKicker { color: #94e0ba; }
 .staffPortalWelcome h1 {
@@ -746,9 +748,15 @@ body:has(.portalEntryPage) { background: #eef4f1; }
   background-color: #071b33;
   display: flex;
   justify-content: space-around;
-  padding: 12px 0;
+  padding: 12px 0 calc(12px + env(safe-area-inset-bottom, 0px));
   z-index: 9999;
   box-shadow: 0 -2px 10px rgba(0,0,0,0.2);
+}
+/* The bar is fixed, so page content needs the same space kept clear at the
+   bottom — otherwise it sits on top of the footer on every page. */
+body:has(.wts-global-bottom-nav),
+body:has(.wts-global-portal-nav) {
+  padding-bottom: calc(58px + env(safe-area-inset-bottom, 0px));
 }
 .wts-global-bottom-nav a {
   color: #fff;
