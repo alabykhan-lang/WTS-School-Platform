@@ -745,18 +745,20 @@ body:has(.portalEntryPage) { background: #eef4f1; }
   bottom: 0;
   left: 0;
   right: 0;
+  height: var(--wts-bar-h, 46px);
+  box-sizing: border-box;
+  align-items: center;
   background-color: #071b33;
   display: flex;
   justify-content: space-around;
-  padding: 12px 0 12px;
+  padding: 0;
   z-index: 9999;
   box-shadow: 0 -2px 10px rgba(0,0,0,0.2);
 }
-/* The bar is fixed, so page content needs the same space kept clear at the
-   bottom — otherwise it sits on top of the footer on every page. */
+/* One value drives the bar and every gap that has to clear it. */
 body:has(.wts-global-bottom-nav),
 body:has(.wts-global-portal-nav) {
-  padding-bottom: 58px;
+  padding-bottom: calc(var(--wts-bar-h, 46px) + 12px);
 }
 .wts-global-bottom-nav a {
   color: #fff;
@@ -793,8 +795,8 @@ body:has(.wts-global-portal-nav) {
   font-family: Arial, sans-serif;
 }
 body {
-  /* Keeps the fixed bottom bar (≈46px tall) from covering the footer. */
-  padding-bottom: 58px !important;
+  /* Same source as the bar height, so the two can never drift apart. */
+  padding-bottom: calc(var(--wts-bar-h, 46px) + 12px) !important;
 }
 .staffPortalDutyCard {
   background: rgba(255, 255, 255, 0.08) !important;
