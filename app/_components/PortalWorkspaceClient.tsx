@@ -4,6 +4,7 @@ import Link from "next/link";
 import { FormEvent, type MouseEvent, type ReactNode, useEffect, useMemo, useState } from "react";
 import { staffPortalModules } from "../../data/staff-portal-modules";
 import { getModuleLaunchUrl, portalOrigins } from "../../data/portal-config";
+import { PortalIntro } from "./PortalIntro";
 
 export type WorkspaceSession = {
   ok: boolean;
@@ -372,6 +373,7 @@ export function PortalSignIn() {
 
   return (
     <main id="main-content" className="portalSignInPage portalEntryPage">
+      <PortalIntro />
       <section className="portalSignInCard portalEntryCard" aria-labelledby="portal-sign-in-title">
         <div className="portalEntryBrand"><img src="/images/logo.webp" alt="Way to Success Standard Schools logo" /><span><strong>Way to Success Standard Schools</strong><small>Staff Portal</small></span></div>
         <p className="eyebrow">STAFF PORTAL</p>
