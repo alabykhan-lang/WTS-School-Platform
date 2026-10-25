@@ -12,13 +12,6 @@ export function PortalIntro() {
   const [phase, setPhase] = useState<"play" | "leaving" | "done">("play");
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      if (reduced) {
-        setPhase("done");
-        return;
-      }
-    }
     const timers = [
       window.setTimeout(() => setPhase("leaving"), 4600),
       window.setTimeout(() => setPhase("done"), 5500),
