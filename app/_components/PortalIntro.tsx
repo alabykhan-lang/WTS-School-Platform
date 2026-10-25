@@ -67,7 +67,7 @@ export function PortalIntro() {
       if (badge) {
         badge.style.opacity = String(Math.min(1, inT * 2.2));
         badge.style.transform =
-          `rotateY(${(1 - ease(inT)) * 540}deg) scale(${0.55 + 0.45 * ease(inT)})` +
+          `rotateY(${(1 - ease(inT)) * 360}deg) scale(${0.55 + 0.45 * ease(inT)})` +
           (t >= 0.5 ? ` rotateZ(${b * 3}deg) rotateY(${b * 12}deg)` : "");
       }
       if (scene) scene.style.transform = `scale(${0.7 + 0.3 * ease(Math.min(t / 0.7, 1))})`;
