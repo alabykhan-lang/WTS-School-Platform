@@ -36,6 +36,7 @@ img{display:block;max-width:100%}
 
 
 /* ---------- Portal 3D intro (sign-in) ---------- */
+html:has(.portalIntro){overflow:hidden}
 .portalIntro{position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1.4rem;background:radial-gradient(120% 90% at 50% 20%,#0d2a4d 0%,#071527 55%,#030b16 100%);cursor:pointer;perspective:1100px;overflow:hidden;animation:portalIntroBg 4.6s ease-out forwards}
 .portalIntro--leaving{animation:portalIntroOut .9s ease forwards;pointer-events:none}
 .portalIntro__scene{position:relative;width:190px;height:190px;transform-style:preserve-3d;animation:portalIntroOrbit 4.2s cubic-bezier(.35,.9,.4,1) forwards}
