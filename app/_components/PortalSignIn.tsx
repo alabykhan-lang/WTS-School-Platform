@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { type FormEvent, useEffect, useState } from "react";
+import { PortalIntro } from "./PortalIntro";
 
 type LoginResponse = {
   ok: boolean;
@@ -156,6 +157,7 @@ export function PortalSignIn() {
 
   return (
     <main id="main-content" className="portalSignInPage portalEntryPage">
+      <PortalIntro />
       <section className="portalSignInCard portalEntryCard" aria-labelledby="portal-sign-in-title">
         <div className="portalEntryBrand"><img src="/images/logo.webp" alt="Way to Success Standard Schools logo" /><span><strong>Way to Success Standard Schools</strong><small>Staff Portal</small></span></div>
         <p className="eyebrow">STAFF PORTAL</p>
