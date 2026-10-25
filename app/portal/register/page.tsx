@@ -11,6 +11,7 @@ type RegistrationForm = {
   whatsappNumber: string;
   address: string;
   emergencyContact: string;
+  password: string;
   photo: string;
 };
 
