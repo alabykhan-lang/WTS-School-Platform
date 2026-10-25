@@ -58,6 +58,7 @@ function friendlyMessage(code: string) {
     PHONE_REQUIRED: "Enter a phone number.",
     WHATSAPP_NUMBER_INVALID: "Check the WhatsApp number.",
     PHOTOGRAPH_INVALID: "Choose a smaller, valid photograph.",
+    PASSWORD_REQUIREMENTS_NOT_MET: "Use a password of at least 10 characters with uppercase, lowercase and a number.",
     STAFF_REGISTRATION_ALREADY_ON_FILE: "A registration or staff identity is already on file for these details. Do not register again.",
     STAFF_REGISTRATION_SERVICE_UNAVAILABLE: "Registration is temporarily unavailable. Please try again later.",
     STAFF_REGISTRATION_FAILED: "Registration could not be submitted. Please try again.",
@@ -73,6 +74,7 @@ export default function StaffRegistrationPage() {
     whatsappNumber: "",
     address: "",
     emergencyContact: "",
+    password: "",
     photo: "",
   });
   const [photoBusy, setPhotoBusy] = useState(false);
@@ -122,7 +124,7 @@ export default function StaffRegistrationPage() {
       }
       setSubmitted(true);
       setTone("success");
-      setMessage("Registration received.");
+      setMessage("Registration complete. You can sign in now with your email and password.");
     } catch (error) {
       const code = error && typeof error === "object" && "code" in error ? String(error.code) : "STAFF_REGISTRATION_FAILED";
       setTone("error");
@@ -139,9 +141,9 @@ export default function StaffRegistrationPage() {
         <p className="eyebrow">STAFF PORTAL</p>
         <h1 id="registration-title">{submitted ? "Registration received." : "New Staff Registration"}</h1>
         {!submitted ? <>
-          <p>Share the approved staff details below. Management reviews every registration before an identity or portal access is activated.</p>
-          <div className="portalEntryNotice"><strong>After submission: Pending Management Approval.</strong><span>Portal and module access become available only after approval and self-service activation.</span></div>
-        </> : <p>Your registration is on file as <strong>Pending Management Approval</strong>. No password, assignment or module access has been created.</p>}
+          <p>Register with your details and a password. Your account is activated immediately, and management assigns your classes, subjects and duties afterwards.</p>
+          <div className="portalEntryNotice"><strong>After registration you can sign in right away.</strong><span>You will see your profile first. Class and result access appear once management assigns your duties.</span></div>
+        </> : <p>Your staff account is <strong>active</strong>. Sign in with your email and password. Management assigns classes, subjects and duties separately.</p>}
 
         {!submitted ? <form className="portalAuthForm portalRegistrationForm" onSubmit={submit}>
           <label>Full Name<input name="fullName" autoComplete="name" required maxLength={160} value={form.fullName} onChange={(event) => updateField("fullName", event.target.value)} /></label>
@@ -150,9 +152,10 @@ export default function StaffRegistrationPage() {
           <label>WhatsApp Number<input name="whatsappNumber" type="tel" autoComplete="tel" maxLength={40} value={form.whatsappNumber} onChange={(event) => updateField("whatsappNumber", event.target.value)} /></label>
           <label className="portalFieldWide">Address<textarea name="address" rows={3} maxLength={500} value={form.address} onChange={(event) => updateField("address", event.target.value)} /></label>
           <label className="portalFieldWide">Emergency Contact<input name="emergencyContact" maxLength={240} placeholder="Name and phone number" value={form.emergencyContact} onChange={(event) => updateField("emergencyContact", event.target.value)} /></label>
+          <label>Create Password<input name="password" type="password" autoComplete="new-password" required minLength={10} maxLength={512} placeholder="At least 10 characters, one CAPITAL, one small letter, one number" value={form.password} onChange={(event) => updateField("password", event.target.value)} /></label>
           <label className="portalFieldWide">Photograph<input type="file" accept="image/*" capture="environment" onChange={choosePhoto} /></label>
           {form.photo ? <div className="portalPhotoPreviewWrap portalFieldWide"><img className="portalPhotoPreview" src={form.photo} alt="Selected staff photograph preview" /><button className="portalSecondaryButton" type="button" onClick={() => updateField("photo", "")}>Remove photograph</button></div> : null}
-          <p className="portalFormHelp portalFieldWide">{photoBusy ? "Preparing photograph…" : "The photograph is resized before submission. Documents and passwords are not requested."}</p>
+          <p className="portalFormHelp portalFieldWide">{photoBusy ? "Preparing photograph…" : "The photograph is resized before submission."}</p>
           <button className="primaryButton portalFieldWide" disabled={busy || photoBusy} type="submit">{busy ? "Submitting securely…" : "Submit Registration"}</button>
         </form> : null}
 

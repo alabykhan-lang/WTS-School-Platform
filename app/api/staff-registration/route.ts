@@ -37,6 +37,10 @@ export async function POST(request: NextRequest) {
   const address = optionalText(body, "address", 500);
   const emergencyContact = optionalText(body, "emergencyContact", 240);
   const photo = optionalText(body, "photo", 300000);
+  const password = typeof body.password === "string" ? body.password : "";
+  if (password.length < 10 || password.length > 512 || !/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password)) {
+    return json({ ok: false, code: "PASSWORD_REQUIREMENTS_NOT_MET" }, 400);
+  }
 
   if (fullName.length < 2) return json({ ok: false, code: "FULL_NAME_REQUIRED" }, 400);
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json({ ok: false, code: "VALID_EMAIL_REQUIRED" }, 400);
@@ -44,7 +48,7 @@ export async function POST(request: NextRequest) {
   if (whatsappNumber && whatsappNumber.length < 7) return json({ ok: false, code: "WHATSAPP_NUMBER_INVALID" }, 400);
   if (photo && !photo.startsWith("data:image/")) return json({ ok: false, code: "PHOTOGRAPH_INVALID" }, 400);
 
-  const payload = { fullName, email, phone, whatsappNumber, address, emergencyContact, photo };
+  const payload = { fullName, email, phone, whatsappNumber, address, emergencyContact, photo, password };
 
   try {
     const response = await fetch(new URL("/api/staff-registration", portalOrigins.centralRegistry + "/"), {
