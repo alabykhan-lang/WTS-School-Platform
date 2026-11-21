@@ -1,5 +1,15 @@
 export const WORKSPACE_SESSION_COOKIE = "wts_school_workspace_session";
 
+// A server-side agent holds the session in an Authorization header instead of
+// a cookie: "Bearer <session id>.<session secret>". The browser keeps the
+// HttpOnly cookie and never sees a header.
+const BEARER_SESSION = /^Bearer\s+([0-9a-fA-F-]{36})\.([A-Za-z0-9._~-]{16,})$/;
+
+function bearerSession(request: Request) {
+  const match = BEARER_SESSION.exec(String(request.headers.get("authorization") || "").trim());
+  return match ? { id: match[1], secret: match[2] } : null;
+}
+
 export function workspaceSessionFromRequest(request: Request) {
   const cookieHeader = request.headers.get("cookie") || "";
   let value = "";
@@ -12,6 +22,7 @@ export function workspaceSessionFromRequest(request: Request) {
       value = "";
     }
   }
+  if (!value) return bearerSession(request);
   const separator = value.indexOf(".");
   if (separator <= 0 || separator === value.length - 1) return null;
   const id = value.slice(0, separator);
