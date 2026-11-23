@@ -7,9 +7,10 @@ import { portalOrigins } from "../../../data/portal-config";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const GATEWAY_URL = process.env.AI_GATEWAY_URL?.trim() || "https://ai-gateway.vercel.sh/v1/chat/completions";
 const GATEWAY_KEY = process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_AI_GATEWAY_API_KEY || "";
-const DEFAULT_MODEL = process.env.WTS_ASSISTANT_DEFAULT_MODEL?.trim() || "openai/gpt-4.1";
+const DEEPSEEK_KEY = process.env.DEEPSEEK_API_KEY || "";
+const GATEWAY_URL = process.env.AI_GATEWAY_URL?.trim() || (GATEWAY_KEY ? "https://ai-gateway.vercel.sh/v1/chat/completions" : "https://api.deepseek.com/chat/completions");
+const DEFAULT_MODEL = process.env.WTS_ASSISTANT_DEFAULT_MODEL?.trim() || (DEEPSEEK_KEY && !GATEWAY_KEY ? "deepseek-chat" : "openai/gpt-4.1");
 
 type ModelOption = { id: string; label: string; description: string };
 type AppSession = { session_id: string; session_secret: string };
@@ -17,7 +18,9 @@ type CurrentSession = { id: string; secret: string; context: Record<string, unkn
 
 function modelOptions(): ModelOption[] {
   const configured = process.env.WTS_ASSISTANT_MODELS?.split(",").map((entry) => entry.trim()).filter(Boolean) || [];
-  const ids = configured.length ? configured : ["openai/gpt-4.1", "anthropic/claude-sonnet-4", "google/gemini-2.5-pro"];
+  const ids = configured.length ? configured : GATEWAY_KEY
+    ? ["openai/gpt-4.1", "anthropic/claude-sonnet-4", "google/gemini-2.5-pro"]
+    : ["deepseek-chat", "deepseek-reasoner"];
   return ids.map((entry) => {
     const [id, label, description] = entry.split("|").map((part) => part.trim());
     return { id, label: label || id, description: description || "Available through the school assistant model gateway." };
@@ -185,14 +188,15 @@ async function executeTool(name: string, args: Record<string, unknown>, current:
 }
 
 async function gateway(messages: unknown[], model: string, current: CurrentSession) {
-  if (!GATEWAY_KEY) throw new IdentityApiError("ASSISTANT_MODEL_GATEWAY_NOT_CONFIGURED", 503);
+  const providerKey = GATEWAY_KEY || DEEPSEEK_KEY;
+  if (!providerKey) throw new IdentityApiError("ASSISTANT_MODEL_GATEWAY_NOT_CONFIGURED", 503);
   const allowed = new Set(modelOptions().map((option) => option.id));
   if (!allowed.has(model)) throw new IdentityApiError("ASSISTANT_MODEL_NOT_AVAILABLE", 400);
   const transcript = [{ role: "system", content: SYSTEM_PROMPT }, ...messages].slice(-24);
   for (let step = 0; step < 6; step += 1) {
     const response = await fetch(GATEWAY_URL, {
       method: "POST",
-      headers: { Authorization: `Bearer ${GATEWAY_KEY}`, "Content-Type": "application/json" },
+      headers: { Authorization: `Bearer ${providerKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({ model, messages: transcript, tools, tool_choice: "auto", temperature: 0.2 }),
       cache: "no-store",
     });
@@ -234,7 +238,7 @@ export async function GET(request: NextRequest) {
     if (!sameOriginOrMissing(request)) return error("ORIGIN_NOT_ALLOWED", 403);
     const current = await currentSession(request);
     const person = current.context.person && typeof current.context.person === "object" ? current.context.person as Record<string, unknown> : {};
-    return Response.json({ ok: true, configured: Boolean(GATEWAY_KEY), models: modelOptions(), default_model: DEFAULT_MODEL, person: { full_name: person.full_name || "Proprietor" } }, { headers: noStoreHeaders() });
+    return Response.json({ ok: true, configured: Boolean(GATEWAY_KEY || DEEPSEEK_KEY), models: modelOptions(), default_model: DEFAULT_MODEL, person: { full_name: person.full_name || "Proprietor" } }, { headers: noStoreHeaders() });
   } catch (caught) {
     return resultErrorResponse(caught);
   }
