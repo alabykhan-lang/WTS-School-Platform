@@ -45,7 +45,7 @@ function safeWorkspaceReturnTo(value: string | null) {
   if (!value) return "/workspace";
   try {
     const parsed = new URL(value, window.location.origin);
-    if (parsed.origin !== window.location.origin || parsed.pathname !== "/api/sso/authorize") return "/workspace";
+    if (parsed.origin !== window.location.origin || (parsed.pathname !== "/api/sso/authorize" && parsed.pathname !== "/assistant")) return "/workspace";
     return `${parsed.pathname}${parsed.search}`;
   } catch {
     return "/workspace";

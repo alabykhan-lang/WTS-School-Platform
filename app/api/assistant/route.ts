@@ -187,14 +187,15 @@ async function executeTool(name: string, args: Record<string, unknown>, current:
   }
 }
 
-async function gateway(messages: unknown[], model: string, current: CurrentSession) {
-  const providerKey = GATEWAY_KEY || DEEPSEEK_KEY;
+async function gateway(messages: unknown[], model: string, current: CurrentSession, suppliedKey?: string, suppliedUrl?: string) {
+  const providerKey = suppliedKey || GATEWAY_KEY || DEEPSEEK_KEY;
   if (!providerKey) throw new IdentityApiError("ASSISTANT_MODEL_GATEWAY_NOT_CONFIGURED", 503);
   const allowed = new Set(modelOptions().map((option) => option.id));
-  if (!allowed.has(model)) throw new IdentityApiError("ASSISTANT_MODEL_NOT_AVAILABLE", 400);
+  const endpoint = suppliedUrl || GATEWAY_URL;
+  if (!allowed.has(model) && !suppliedUrl) throw new IdentityApiError("ASSISTANT_MODEL_NOT_AVAILABLE", 400);
   const transcript = [{ role: "system", content: SYSTEM_PROMPT }, ...messages].slice(-24);
   for (let step = 0; step < 6; step += 1) {
-    const response = await fetch(GATEWAY_URL, {
+    const response = await fetch(endpoint, {
       method: "POST",
       headers: { Authorization: `Bearer ${providerKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({ model, messages: transcript, tools, tool_choice: "auto", temperature: 0.2 }),
@@ -238,7 +239,9 @@ export async function GET(request: NextRequest) {
     if (!sameOriginOrMissing(request)) return error("ORIGIN_NOT_ALLOWED", 403);
     const current = await currentSession(request);
     const person = current.context.person && typeof current.context.person === "object" ? current.context.person as Record<string, unknown> : {};
-    return Response.json({ ok: true, configured: Boolean(GATEWAY_KEY || DEEPSEEK_KEY), models: modelOptions(), default_model: DEFAULT_MODEL, person: { full_name: person.full_name || "Proprietor" } }, { headers: noStoreHeaders() });
+    const roleText = (Array.isArray(current.context.roles) ? current.context.roles : []).map((role) => typeof role === "object" && role ? `${(role as Record<string, unknown>).role_code || ""} ${(role as Record<string, unknown>).role_name || ""}` : "").join(" ").toLowerCase();
+    const isAdmin = /developer/.test(roleText);
+    return Response.json({ ok: true, configured: Boolean(GATEWAY_KEY || DEEPSEEK_KEY), models: modelOptions(), default_model: DEFAULT_MODEL, is_admin: isAdmin, person: { id: person.staff_id || person.person_id || current.id, full_name: person.full_name || "Proprietor" } }, { headers: noStoreHeaders() });
   } catch (caught) {
     return resultErrorResponse(caught);
   }
@@ -257,7 +260,19 @@ export async function POST(request: NextRequest) {
     const messages = Array.isArray(body.messages) ? body.messages.filter((message) => message && typeof message === "object").slice(-20) : [];
     if (!messages.length) return error("ASSISTANT_MESSAGE_REQUIRED");
     const selected = typeof body.model === "string" ? body.model : DEFAULT_MODEL;
-    const result = await gateway(messages, selected, current);
+    const providerKey = typeof body.provider_key === "string" ? body.provider_key.trim() : "";
+    const providerUrl = typeof body.provider_url === "string" ? body.provider_url.trim() : "";
+    const roleText = (Array.isArray(current.context.roles) ? current.context.roles : []).map((role) => typeof role === "object" && role ? `${(role as Record<string, unknown>).role_code || ""} ${(role as Record<string, unknown>).role_name || ""}` : "").join(" ").toLowerCase();
+    const authority = (current.context.institutional_authority || {}) as Record<string, unknown>;
+    const isAdmin = /developer/.test(roleText);
+    if ((providerKey || providerUrl) && !isAdmin) throw new IdentityApiError("ASSISTANT_ADMIN_REQUIRED", 403);
+    if (providerKey && providerKey.length > 500) throw new IdentityApiError("ASSISTANT_PROVIDER_KEY_INVALID", 400);
+    if (providerUrl) {
+      let parsed: URL;
+      try { parsed = new URL(providerUrl); } catch { throw new IdentityApiError("ASSISTANT_PROVIDER_URL_INVALID", 400); }
+      if (parsed.protocol !== "https:" || !parsed.pathname.endsWith("/chat/completions")) throw new IdentityApiError("ASSISTANT_PROVIDER_URL_INVALID", 400);
+    }
+    const result = await gateway(messages, selected, current, providerKey || undefined, providerUrl || undefined);
     return Response.json({ ok: true, model: selected, ...result }, { headers: noStoreHeaders() });
   } catch (caught) {
     return resultErrorResponse(caught);

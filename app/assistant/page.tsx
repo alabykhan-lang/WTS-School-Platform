@@ -1,4 +1,7 @@
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+import { WORKSPACE_SESSION_COOKIE } from "../api/workspace-session/_lib";
 import { ProprietorAssistant } from "../_components/ProprietorAssistant";
 
 export const metadata: Metadata = {
@@ -7,6 +10,8 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-export default function AssistantPage() {
+export default async function AssistantPage() {
+  const cookieStore = await cookies();
+  if (!cookieStore.has(WORKSPACE_SESSION_COOKIE)) redirect("/portal/sign-in?return_to=%2Fassistant");
   return <ProprietorAssistant />;
 }
