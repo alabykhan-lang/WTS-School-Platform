@@ -1,4 +1,4 @@
-package com.waytosuccess.staffportal;
+package com.waytosuccess.proprietorassistant;
 
 import android.app.Activity;
 import android.app.DownloadManager;
@@ -31,7 +31,7 @@ import android.widget.ProgressBar;
 import android.widget.TextView;
 
 public class MainActivity extends Activity {
-    private static final String STAFF_PORTAL_URL = "https://wts-school-platform.vercel.app/portal";
+    private static final String STAFF_PORTAL_URL = "https://wts-school-platform.vercel.app/assistant";
     private static final int FILE_PICKER_REQUEST = 1001;
     // Only these hosts load inside the app; everything else opens in the browser.
     private static final String[] ALLOWED_HOSTS = {
@@ -123,8 +123,8 @@ public class MainActivity extends Activity {
                 String scheme = uri.getScheme();
                 if ("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme)) {
                     if (isTrusted(url)) {
-                        // Staff Portal, Central Registry, Results and the SSO
-                        // callback stay in this WebView.
+                        // The assistant, Staff Portal, Central Registry, Results
+                        // and SSO callbacks stay in this WebView.
                         CookieManager.getInstance().flush();
                         return false;
                     }
@@ -280,7 +280,7 @@ public class MainActivity extends Activity {
         ));
 
         TextView portalName = new TextView(this);
-        portalName.setText("STAFF PORTAL");
+        portalName.setText("PROPRIETOR ASSISTANT");
         portalName.setTextColor(Color.rgb(143, 221, 187));
         portalName.setTextSize(11);
         portalName.setGravity(Gravity.CENTER);
@@ -377,7 +377,7 @@ public class MainActivity extends Activity {
     private void printCurrentPage(boolean isLandscape) {
         if (webView == null) return;
         PrintManager printManager = (PrintManager) getSystemService(Context.PRINT_SERVICE);
-        String jobName = getString(com.waytosuccess.staffportal.R.string.app_name) + " Print";
+        String jobName = getString(com.waytosuccess.proprietorassistant.R.string.app_name) + " Print";
         PrintDocumentAdapter adapter = webView.createPrintDocumentAdapter(jobName);
         PrintAttributes.Builder builder = new PrintAttributes.Builder()
             .setColorMode(PrintAttributes.COLOR_MODE_COLOR);

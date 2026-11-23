@@ -3,7 +3,7 @@ plugins {
 }
 
 android {
-    namespace "com.waytosuccess.staffportal"
+    namespace "com.waytosuccess.proprietorassistant"
     compileSdk 35
 
     compileOptions {
@@ -12,11 +12,11 @@ android {
     }
 
     defaultConfig {
-        applicationId "com.waytosuccess.staffportal"
+        applicationId "com.waytosuccess.proprietorassistant"
         minSdk 23
         targetSdk 35
-        versionCode 7
-        versionName "2.3.4"
+        versionCode 1
+        versionName "1.0.0"
     }
 
     buildTypes {

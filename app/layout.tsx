@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import "./globals.css";
 import "./public-pass.css";
 import "./workspace.css";
+import "./assistant.css";
 import { FloatingWhatsApp } from "./_components/FloatingWhatsApp";
 import { SiteFooter } from "./_components/SiteFooter";
 import { SiteHeader } from "./_components/SiteHeader";

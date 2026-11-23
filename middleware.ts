@@ -15,7 +15,9 @@ function isProtectedRoute(pathname: string) {
   return pathname === "/workspace"
     || pathname.startsWith("/workspace/")
     || pathname === "/portal"
-    || pathname.startsWith("/portal/");
+    || pathname.startsWith("/portal/")
+    || pathname === "/assistant"
+    || pathname.startsWith("/assistant/");
 }
 
 /**
