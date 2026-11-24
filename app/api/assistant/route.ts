@@ -246,7 +246,7 @@ async function executeTool(name: string, args: Record<string, unknown>, current:
 }
 
 type GatewayFailure = { ok: false; status: number; code: string; detail: string };
-type GatewaySuccess = { ok: true; text: string; usage: unknown; approval?: Record<string, unknown> };
+type GatewaySuccess = { ok: true; text: string; usage: unknown; approval?: Record<string, unknown>; steps?: string[] };
 type ModelSettings = { key: string; url: string; model: string; label: string };
 
 function providerFailure(status: number, detail: string): GatewayFailure {
@@ -281,6 +281,7 @@ async function askProvider(settings: ModelSettings, body: Record<string, unknown
 async function gateway(messages: unknown[], settings: ModelSettings, current: CurrentSession): Promise<GatewaySuccess | GatewayFailure> {
   if (!settings.key) return { ok: false, status: 503, code: "ASSISTANT_MODEL_GATEWAY_NOT_CONFIGURED", detail: "No model API key is saved for this account." };
   const transcript = [{ role: "system", content: SYSTEM_PROMPT }, ...messages].slice(-24);
+  const used: string[] = [];
   for (let step = 0; step < 12; step += 1) {
     const answer = await askProvider(settings, { messages: transcript, tools, tool_choice: "auto" });
     if (answer.failure) return answer.failure;
@@ -289,22 +290,23 @@ async function gateway(messages: unknown[], settings: ModelSettings, current: Cu
     const message = choices[0] && typeof choices[0] === "object" ? (choices[0] as Record<string, unknown>).message as Record<string, unknown> : null;
     if (!message) return { ok: false, status: 502, code: "ASSISTANT_MODEL_INVALID_RESPONSE", detail: "The provider returned no message." };
     const calls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
-    if (!calls.length) return { ok: true, text: typeof message.content === "string" ? message.content : "I could not produce a response.", usage: payload.usage || null };
+    if (!calls.length) return { ok: true, text: typeof message.content === "string" ? message.content : "I could not produce a response.", usage: payload.usage || null, steps: used };
     transcript.push(message);
     for (const call of calls) {
       const item = call as Record<string, unknown>;
       const fn = item.function as Record<string, unknown>;
       const name = String(fn?.name || "");
+      used.push(name);
       let args: Record<string, unknown> = {};
       try { args = JSON.parse(String(fn?.arguments || "{}")); } catch { args = {}; }
       const result = await executeTool(name, args, current);
       if ((result as Record<string, unknown>).requires_confirmation === true) {
-        return { ok: true, text: (result as Record<string, unknown>).summary as string, usage: null, approval: result as Record<string, unknown> };
+        return { ok: true, text: (result as Record<string, unknown>).summary as string, usage: null, approval: result as Record<string, unknown>, steps: used };
       }
       transcript.push({ role: "tool", tool_call_id: String(item.id || ""), content: JSON.stringify(result).slice(0, 50000) });
     }
   }
-  return { ok: true, text: "I reached the safe tool limit for this request. Please ask me to continue from here.", usage: null };
+  return { ok: true, text: "I reached the safe tool limit for this request. Please ask me to continue from here.", usage: null, steps: used };
 }
 
 async function testConnection(settings: ModelSettings): Promise<Response> {
@@ -387,7 +389,7 @@ export async function POST(request: NextRequest) {
     if (!result.ok) {
       return Response.json({ ok: false, code: result.code, detail: result.detail, model: settings.model }, { status: 200, headers: noStoreHeaders() });
     }
-    return Response.json({ ok: true, model: settings.model, text: result.text, usage: result.usage, approval: result.approval }, { headers: noStoreHeaders() });
+    return Response.json({ ok: true, model: settings.model, text: result.text, usage: result.usage, approval: result.approval, steps: result.steps }, { headers: noStoreHeaders() });
   } catch (caught) {
     return resultErrorResponse(caught);
   }
