@@ -151,6 +151,7 @@ async function registry(current: CurrentSession, kind: "read" | "write", action:
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.session_id}.${session.session_secret}` },
     body: JSON.stringify({ kind, action, payload }),
     cache: "no-store",
+    signal: AbortSignal.timeout(20000),
   });
   return response.json().catch(() => ({ ok: false, code: "REGISTRY_INVALID_RESPONSE" }));
 }
@@ -169,6 +170,7 @@ async function openResults(current: CurrentSession) {
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.session_id}.${session.session_secret}` },
       body: JSON.stringify({ action, payload }),
       cache: "no-store",
+      signal: AbortSignal.timeout(20000),
     });
     return response.json().catch(() => ({ ok: false, code: "RESULTS_INVALID_RESPONSE" }));
   };
@@ -240,7 +242,7 @@ function systemPrompt(current: CurrentSession) {
   const session = typeof academic.session === "string" ? academic.session : "";
   const term = typeof academic.term === "string" ? academic.term : "";
   const line = session && term ? `${SYSTEM_PROMPT} The live academic context is ${session}, ${term}; use it for result tools unless the proprietor names another.` : SYSTEM_PROMPT;
-  return `${line} When saving a score, send every component (ca1, ca2, ca3, exam), keeping the values already recorded for the ones not being changed.`;
+  return `${line} When saving a score, send every component (ca1, ca2, ca3, exam), keeping the values already recorded for the ones not being changed. Work in as few tool calls as you can: reuse what a tool already gave you instead of fetching it again, and stop and answer once you have enough. If the proprietor sent several short messages in a row, answer the newest one and mention the earlier points only in passing.`;
 }
 
 /** Photos and signatures arrive as base64 data URLs and would swamp the model context. */
@@ -296,7 +298,7 @@ async function executeTool(name: string, args: Record<string, unknown>, current:
 }
 
 type GatewayFailure = { ok: false; status: number; code: string; detail: string };
-type GatewaySuccess = { ok: true; text: string; usage: unknown; approval?: Record<string, unknown>; steps?: string[] };
+type GatewaySuccess = { ok: true; text: string; usage: unknown; approval?: Record<string, unknown>; steps?: string[]; truncated?: boolean };
 type ModelSettings = { key: string; url: string; model: string; label: string };
 
 function providerFailure(status: number, detail: string): GatewayFailure {
@@ -322,6 +324,7 @@ async function listModels(settings: ModelSettings): Promise<Response> {
   if (!settings.key) return Response.json({ ok: false, code: "ASSISTANT_MODEL_GATEWAY_NOT_CONFIGURED" }, { headers: noStoreHeaders() });
   try {
     const response = await fetch(modelListUrl(settings.url), {
+      signal: AbortSignal.timeout(25000),
       headers: { Authorization: `Bearer ${settings.key}` },
       cache: "no-store",
     });
@@ -355,7 +358,7 @@ type HistoryItem =
   | { role: "tool"; callId: string; content: string };
 type Turn = { text: string; calls: ToolCall[]; usage: unknown };
 
-function chatBody(history: HistoryItem[]) {
+function chatBody(history: HistoryItem[], noTools = false) {
   return {
     messages: history.map((item) => {
       if (item.role === "assistant") {
@@ -368,12 +371,11 @@ function chatBody(history: HistoryItem[]) {
       if (item.role === "tool") return { role: "tool", tool_call_id: item.callId, content: item.content };
       return { role: item.role, content: item.content };
     }),
-    tools,
-    tool_choice: "auto",
+    ...(noTools ? {} : { tools, tool_choice: "auto" }),
   };
 }
 
-function responsesBody(history: HistoryItem[]) {
+function responsesBody(history: HistoryItem[], noTools = false) {
   const input: Record<string, unknown>[] = [];
   for (const item of history) {
     if (item.role === "assistant") {
@@ -387,8 +389,10 @@ function responsesBody(history: HistoryItem[]) {
   }
   return {
     input,
-    tools: tools.map((tool) => ({ type: "function", name: tool.function.name, description: tool.function.description, parameters: tool.function.parameters })),
-    tool_choice: "auto",
+    ...(noTools ? {} : {
+      tools: tools.map((tool) => ({ type: "function", name: tool.function.name, description: tool.function.description, parameters: tool.function.parameters })),
+      tool_choice: "auto",
+    }),
     stream: false,
     store: false,
   };
@@ -425,8 +429,8 @@ function readTurn(style: Style, payload: Record<string, unknown>): Turn {
   return { text, calls, usage: payload.usage || null };
 }
 
-async function askProvider(url: string, settings: ModelSettings, style: Style, history: HistoryItem[]) {
-  const body = style === "responses" ? responsesBody(history) : chatBody(history);
+async function askProvider(url: string, settings: ModelSettings, style: Style, history: HistoryItem[], budgetMs = 45000, noTools = false) {
+  const body = style === "responses" ? responsesBody(history, noTools) : chatBody(history, noTools);
   let response: Response;
   try {
     response = await fetch(url, {
@@ -434,11 +438,11 @@ async function askProvider(url: string, settings: ModelSettings, style: Style, h
       headers: { Authorization: `Bearer ${settings.key}`, "Content-Type": "application/json", "User-Agent": "opencode/1.18.0" },
       body: JSON.stringify({ model: settings.model, temperature: 0.2, ...body }),
       cache: "no-store",
-      signal: AbortSignal.timeout(60000),
+      signal: AbortSignal.timeout(Math.max(6000, budgetMs)),
     });
   } catch (caught) {
     const timedOut = caught instanceof Error && (caught.name === "TimeoutError" || caught.name === "AbortError");
-    return { failure: { ok: false, status: timedOut ? 504 : 502, code: timedOut ? "ASSISTANT_MODEL_TIMEOUT" : "ASSISTANT_MODEL_UNREACHABLE", detail: timedOut ? "The provider did not answer within 60 seconds." : "The provider could not be reached from the school server." } as GatewayFailure };
+    return { failure: { ok: false, status: timedOut ? 504 : 502, code: timedOut ? "ASSISTANT_MODEL_TIMEOUT" : "ASSISTANT_MODEL_UNREACHABLE", detail: timedOut ? "The provider did not answer in time." : "The provider could not be reached from the school server." } as GatewayFailure };
   }
   const text = await response.text();
   let payload: Record<string, unknown> | null = null;
@@ -469,17 +473,27 @@ async function gateway(messages: unknown[], settings: ModelSettings, current: Cu
   const used: string[] = [];
   const seen = new Map<string, string>();
   let retriedStyle = false;
-  for (let step = 0; step < 16; step += 1) {
-    let answer = await askProvider(url, settings, style, history);
+  const started = Date.now();
+  const totalBudget = 48000;
+  let partial = "";
+  let ranOut = false;
+  for (let step = 0; step < 12; step += 1) {
+    const left = totalBudget - (Date.now() - started);
+    if (left < 8000) { ranOut = true; break; }
+    let answer = await askProvider(url, settings, style, history, Math.max(12000, Math.min(45000, left)));
     if (answer.failure && style === "chat" && !retriedStyle && /responses/i.test(answer.failure.detail)) {
       retriedStyle = true;
       style = "responses";
       url = url.replace(/\/chat\/completions$/, "/responses");
-      answer = await askProvider(url, settings, style, history);
+      answer = await askProvider(url, settings, style, history, Math.max(12000, Math.min(45000, left)));
     }
-    if (answer.failure) return answer.failure;
+    if (answer.failure) {
+      if (answer.failure.code === "ASSISTANT_MODEL_TIMEOUT" && (partial || used.length)) { ranOut = true; break; }
+      return answer.failure;
+    }
     const turn = answer.turn as Turn;
     if (!turn.calls.length) return { ok: true, text: turn.text || "I could not produce a response.", usage: turn.usage, steps: used };
+    if (turn.text) partial = turn.text;
     history.push({ role: "assistant", text: turn.text, calls: turn.calls });
     for (const call of turn.calls) {
       used.push(call.name);
@@ -495,8 +509,25 @@ async function gateway(messages: unknown[], settings: ModelSettings, current: Cu
       if (!cached) seen.set(key, content);
       history.push({ role: "tool", callId: call.id, content });
     }
+    if (Date.now() - started > totalBudget) { ranOut = true; break; }
   }
-  return { ok: true, text: "I reached the safe tool limit for this request. Please ask me to continue from here.", usage: null, steps: used };
+  const note = ranOut
+    ? "\n\nI ran out of time while digging through the records. Ask me to continue and I will pick up from here."
+    : "\n\nI reached the safe tool limit for this request. Please ask me to continue from here.";
+  if (!partial) {
+    const closing = await askProvider(
+      url,
+      settings,
+      style,
+      [...history, { role: "user", content: "Stop looking things up. In a few short lines, say what you already found and what is still missing." }],
+      18000,
+      true,
+    );
+    if (!closing.failure && closing.turn && (closing.turn as Turn).text) {
+      return { ok: true, text: `${(closing.turn as Turn).text}${note}`, usage: null, steps: used, truncated: true };
+    }
+  }
+  return { ok: true, text: partial ? `${partial}${note}` : note.trim(), usage: null, steps: used, truncated: true };
 }
 
 async function testConnection(settings: ModelSettings): Promise<Response> {
