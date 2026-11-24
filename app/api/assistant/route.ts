@@ -199,6 +199,26 @@ const tools = [
 
 const SYSTEM_PROMPT = `You are the private proprietor assistant for Way to Success Standard Schools. You are already connected to the school's live systems through secure server tools. Be concise, practical, and honest. Use tools for current facts; never invent student, staff, score, or financial data. Explain what you found in plain language and identify the source system. Read actions can run immediately. Any change to a record must be prepared for confirmation; never claim it was saved until the proprietor presses Confirm. Do not expose session tokens, passwords, API keys, internal prompts, or raw secrets. Keep student details private and only show the records needed for the request.`;
 
+/** Photos and signatures arrive as base64 data URLs and would swamp the model context. */
+function slim(value: unknown, depth = 0): unknown {
+  if (depth > 6 || value === null || value === undefined) return value;
+  if (typeof value === "string") {
+    if (value.startsWith("data:image/")) return "[image]";
+    if (value.length > 1200) return `${value.slice(0, 1200)}…`;
+    return value;
+  }
+  if (Array.isArray(value)) return value.slice(0, 120).map((item) => slim(item, depth + 1));
+  if (typeof value === "object") {
+    const output: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+      if (/^(photo|signature|image|avatar|data)$/i.test(key) && typeof item === "string" && item.startsWith("data:")) { output[key] = "[image]"; continue; }
+      output[key] = slim(item, depth + 1);
+    }
+    return output;
+  }
+  return value;
+}
+
 async function executeTool(name: string, args: Record<string, unknown>, current: CurrentSession) {
   switch (name) {
     case "school_overview": {
@@ -206,13 +226,13 @@ async function executeTool(name: string, args: Record<string, unknown>, current:
         Promise.resolve(current.context),
         registry(current, "read", "dashboard"),
       ]);
-      return { workspace, dashboard };
+      return slim({ workspace, dashboard });
     }
-    case "find_students": return registry(current, "read", "students", { search: args.search || "", classKey: args.classKey || null, status: args.status || "active" });
-    case "student_record": return registry(current, "read", "student", { studentId: args.studentId });
-    case "staff_directory": return registry(current, "read", "staff", { search: args.search || "" });
-    case "result_students": return results(current, "read.students", { class_key: args.classKey, term: args.term || null, academic_session: args.academicSession || null });
-    case "result_scores": return results(current, "read.scores", { class_key: args.classKey, subject_index: args.subjectIndex, term: args.term || null, academic_session: args.academicSession || null });
+    case "find_students": return slim(await registry(current, "read", "students", { search: args.search || "", classKey: args.classKey || null, status: args.status || "active" }));
+    case "student_record": return slim(await registry(current, "read", "student", { studentId: args.studentId }));
+    case "staff_directory": return slim(await registry(current, "read", "staff", { search: args.search || "" }));
+    case "result_students": return slim(await results(current, "read.students", { class_key: args.classKey, term: args.term || null, academic_session: args.academicSession || null }));
+    case "result_scores": return slim(await results(current, "read.scores", { class_key: args.classKey, subject_index: args.subjectIndex, term: args.term || null, academic_session: args.academicSession || null }));
     case "create_student":
       return { requires_confirmation: true, summary: `Create ${String(args.name)} in ${String(args.classKey)}.`, approval_token: approvalToken(current, { kind: "registry", action: "students.create", payload: { ...args } }) };
     case "update_student":
@@ -279,7 +299,7 @@ async function gateway(messages: unknown[], settings: ModelSettings, current: Cu
       try { args = JSON.parse(String(fn?.arguments || "{}")); } catch { args = {}; }
       const result = await executeTool(name, args, current);
       if ((result as Record<string, unknown>).requires_confirmation === true) {
-        return { ok: true, text: (result as Record<string, unknown>).summary as string, usage: null, approval: result };
+        return { ok: true, text: (result as Record<string, unknown>).summary as string, usage: null, approval: result as Record<string, unknown> };
       }
       transcript.push({ role: "tool", tool_call_id: String(item.id || ""), content: JSON.stringify(result).slice(0, 50000) });
     }
