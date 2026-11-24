@@ -281,7 +281,7 @@ async function askProvider(settings: ModelSettings, body: Record<string, unknown
 async function gateway(messages: unknown[], settings: ModelSettings, current: CurrentSession): Promise<GatewaySuccess | GatewayFailure> {
   if (!settings.key) return { ok: false, status: 503, code: "ASSISTANT_MODEL_GATEWAY_NOT_CONFIGURED", detail: "No model API key is saved for this account." };
   const transcript = [{ role: "system", content: SYSTEM_PROMPT }, ...messages].slice(-24);
-  for (let step = 0; step < 6; step += 1) {
+  for (let step = 0; step < 12; step += 1) {
     const answer = await askProvider(settings, { messages: transcript, tools, tool_choice: "auto" });
     if (answer.failure) return answer.failure;
     const payload = answer.payload || {};
@@ -304,7 +304,7 @@ async function gateway(messages: unknown[], settings: ModelSettings, current: Cu
       transcript.push({ role: "tool", tool_call_id: String(item.id || ""), content: JSON.stringify(result).slice(0, 50000) });
     }
   }
-  return { ok: true, text: "I reached the safe tool limit for this request. Please ask me to continue.", usage: null };
+  return { ok: true, text: "I reached the safe tool limit for this request. Please ask me to continue from here.", usage: null };
 }
 
 async function testConnection(settings: ModelSettings): Promise<Response> {
