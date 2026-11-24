@@ -514,7 +514,7 @@ async function gateway(messages: unknown[], settings: ModelSettings, current: Cu
   const note = ranOut
     ? "\n\nI ran out of time while digging through the records. Ask me to continue and I will pick up from here."
     : "\n\nI reached the safe tool limit for this request. Please ask me to continue from here.";
-  if (!partial) {
+  if (!partial.trim()) {
     const closing = await askProvider(
       url,
       settings,
@@ -527,7 +527,7 @@ async function gateway(messages: unknown[], settings: ModelSettings, current: Cu
       return { ok: true, text: `${(closing.turn as Turn).text}${note}`, usage: null, steps: used, truncated: true };
     }
   }
-  return { ok: true, text: partial ? `${partial}${note}` : note.trim(), usage: null, steps: used, truncated: true };
+  return { ok: true, text: partial.trim() ? `${partial.trim()}${note}` : note.trim(), usage: null, steps: used, truncated: true };
 }
 
 async function testConnection(settings: ModelSettings): Promise<Response> {
