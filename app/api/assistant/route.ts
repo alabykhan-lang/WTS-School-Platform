@@ -299,14 +299,51 @@ type GatewaySuccess = { ok: true; text: string; usage: unknown; approval?: Recor
 type ModelSettings = { key: string; url: string; model: string; label: string };
 
 function providerFailure(status: number, detail: string): GatewayFailure {
-  const code = status === 401 || status === 403
-    ? "ASSISTANT_MODEL_KEY_REJECTED"
-    : status === 404
-      ? "ASSISTANT_MODEL_NOT_FOUND"
-      : status === 429
-        ? "ASSISTANT_MODEL_RATE_LIMITED"
-        : "ASSISTANT_MODEL_REQUEST_FAILED";
+  const channelMissing = /no available channel|no channel for model|model not available|not available for/i.test(detail);
+  const code = channelMissing
+    ? "ASSISTANT_MODEL_UNAVAILABLE"
+    : status === 401 || status === 403
+      ? "ASSISTANT_MODEL_KEY_REJECTED"
+      : status === 404
+        ? "ASSISTANT_MODEL_NOT_FOUND"
+        : status === 429
+          ? "ASSISTANT_MODEL_RATE_LIMITED"
+          : "ASSISTANT_MODEL_REQUEST_FAILED";
   return { ok: false, status, code, detail: detail.slice(0, 400) };
+}
+
+/** The models list lives beside the chat endpoint, so the same key can be checked. */
+function modelListUrl(chatUrl: string) {
+  return `${chatUrl.replace(/\/chat\/completions$/, "")}/models`;
+}
+
+async function listModels(settings: ModelSettings): Promise<Response> {
+  if (!settings.key) return Response.json({ ok: false, code: "ASSISTANT_MODEL_GATEWAY_NOT_CONFIGURED" }, { headers: noStoreHeaders() });
+  try {
+    const response = await fetch(modelListUrl(settings.url), {
+      headers: { Authorization: `Bearer ${settings.key}` },
+      cache: "no-store",
+    });
+    const text = await response.text();
+    let payload: Record<string, unknown> | null = null;
+    try { payload = JSON.parse(text) as Record<string, unknown>; } catch { payload = null; }
+    if (!response.ok || !payload) {
+      const provider = payload?.error && typeof payload.error === "object" ? payload.error as Record<string, unknown> : null;
+      const detail = String(provider?.message || payload?.message || text || `Provider replied ${response.status}`).trim();
+      return Response.json(providerFailure(response.status, detail), { status: 200, headers: noStoreHeaders() });
+    }
+    const rows = Array.isArray(payload.data) ? payload.data as Record<string, unknown>[] : [];
+    const models = rows
+      .map((row) => ({
+        id: String(row.id || ""),
+        kinds: Array.isArray(row.supported_endpoint_types) ? row.supported_endpoint_types.map(String) : [],
+      }))
+      .filter((row) => row.id && (!row.kinds.length || row.kinds.includes("openai")))
+      .map((row) => row.id);
+    return Response.json({ ok: true, models }, { headers: noStoreHeaders() });
+  } catch {
+    return Response.json({ ok: false, code: "ASSISTANT_MODEL_UNREACHABLE", detail: "The provider could not be reached from the school server." }, { status: 200, headers: noStoreHeaders() });
+  }
 }
 
 async function askProvider(settings: ModelSettings, body: Record<string, unknown>) {
@@ -439,6 +476,11 @@ export async function POST(request: NextRequest) {
     if (body.action === "test") {
       if (!isAdmin) throw new IdentityApiError("ASSISTANT_ADMIN_REQUIRED", 403);
       return testConnection(settings);
+    }
+
+    if (body.action === "models") {
+      if (!isAdmin) throw new IdentityApiError("ASSISTANT_ADMIN_REQUIRED", 403);
+      return listModels(settings);
     }
 
     const messages = Array.isArray(body.messages) ? body.messages.filter((message) => message && typeof message === "object").slice(-20) : [];

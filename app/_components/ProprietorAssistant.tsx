@@ -24,6 +24,7 @@ const STARTERS = [
 const ERRORS: Record<string, string> = {
   ASSISTANT_MODEL_KEY_REJECTED: "The API key was rejected. Check the key in Models.",
   ASSISTANT_MODEL_NOT_FOUND: "The model name was not found. Check the model ID in Models.",
+  ASSISTANT_MODEL_UNAVAILABLE: "This key cannot reach that model. Fetch the models the key supports and pick one.",
   ASSISTANT_MODEL_RATE_LIMITED: "The provider is limiting requests. Wait a moment and try again.",
   ASSISTANT_MODEL_UNREACHABLE: "The provider could not be reached from the school server.",
   ASSISTANT_MODEL_GATEWAY_NOT_CONFIGURED: "Add a model API key in Models.",
@@ -106,6 +107,8 @@ export function ProprietorAssistant() {
   const [showKey, setShowKey] = useState(false);
   const [test, setTest] = useState<TestState>({ state: "idle", message: "" });
   const [savedFlash, setSavedFlash] = useState(false);
+  const [modelList, setModelList] = useState<string[]>([]);
+  const [fetchingModels, setFetchingModels] = useState(false);
   const endRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -222,6 +225,26 @@ export function ProprietorAssistant() {
     } catch {
       setTest({ state: "fail", message: "The test could not run. Check your connection." });
     }
+  }
+
+  async function fetchModels() {
+    const key = form.key.trim() || settings.providerKey;
+    const url = form.url.trim() || settings.providerUrl || DEFAULT_URL;
+    if (!key) { setTest({ state: "fail", message: "Paste the API key first." }); return; }
+    setFetchingModels(true);
+    setTest({ state: "idle", message: "" });
+    try {
+      const response = await fetch("/api/assistant", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "models", provider_key: key, provider_url: url }) });
+      const value = await response.json();
+      if (value?.ok && Array.isArray(value.models)) {
+        setModelList(value.models);
+        setTest(value.models.length ? { state: "pass", message: `${value.models.length} model${value.models.length === 1 ? "" : "s"} available to this key. Pick one in Model ID.` } : { state: "fail", message: "That key returned no text models." });
+      } else {
+        setTest({ state: "fail", message: value?.detail ? `${ERRORS[value.code] || "Could not list models."} ${value.detail}` : ERRORS[value?.code] || "Could not list models." });
+      }
+    } catch {
+      setTest({ state: "fail", message: "The model list could not be fetched. Check your connection." });
+    } finally { setFetchingModels(false); }
   }
 
   function changeUsage(field: "usagePercent" | "perReplyCost", raw: string) {
@@ -363,10 +386,11 @@ export function ProprietorAssistant() {
           <label><span>API key</span><div className="assistantKeyRow"><input type={showKey ? "text" : "password"} autoComplete="new-password" placeholder="Paste the provider key" value={form.key} onChange={(event) => setForm({ ...form, key: event.target.value })}/><button type="button" onClick={() => setShowKey((shown) => !shown)}>{showKey ? "Hide" : "Show"}</button></div></label>
           <label><span>Endpoint</span><input type="url" inputMode="url" placeholder={config?.default_url || DEFAULT_URL} value={form.url} onChange={(event) => setForm({ ...form, url: event.target.value })}/><em>Use the provider address, for example {config?.default_url || DEFAULT_URL}</em></label>
           <div className="assistantPair">
-            <label><span>Model ID</span><input placeholder={config?.default_model || "deepseek-chat"} value={form.id} onChange={(event) => setForm({ ...form, id: event.target.value })}/></label>
+            <label><span>Model ID</span><input list="assistantModelChoices" placeholder={config?.default_model || "deepseek-chat"} value={form.id} onChange={(event) => setForm({ ...form, id: event.target.value })}/><datalist id="assistantModelChoices">{modelList.map((id) => <option key={id} value={id} />)}</datalist></label>
             <label><span>Display name</span><input placeholder={config?.default_model || "DeepSeek Chat"} value={form.label} onChange={(event) => setForm({ ...form, label: event.target.value })}/></label>
           </div>
           <div className="assistantActions">
+            <button type="button" className="assistantGhost" onClick={fetchModels} disabled={fetchingModels}>{fetchingModels ? "Fetching…" : "Fetch models"}</button>
             <button type="button" className="assistantGhost" onClick={runTest} disabled={test.state === "running"}>{test.state === "running" ? "Testing…" : "Test connection"}</button>
             <button type="button" className="assistantPrimary" onClick={saveModel}>Save model</button>
           </div>
