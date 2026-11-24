@@ -41,8 +41,9 @@ function readProviderUrl(value: unknown) {
   const normalised = parsed.toString().replace(/\/+$/, "");
   if (parsed.protocol !== "https:") throw new IdentityApiError("ASSISTANT_PROVIDER_URL_INVALID", 400);
   const path = parsed.pathname.replace(/\/+$/, "");
-  if (path === "" || /\/chat\/completions$/.test(path)) return /\/chat\/completions$/.test(path) ? normalised : `${normalised}/chat/completions`;
-  if (/\/v1$/.test(path)) return `${normalised}/chat/completions`;
+  if (/\/(chat\/completions|responses)$/.test(path)) return normalised;
+  if (path === "") return `${normalised}/v1/chat/completions`;
+  if (/\/v\d+$/.test(path)) return `${normalised}/chat/completions`;
   throw new IdentityApiError("ASSISTANT_PROVIDER_URL_INVALID", 400);
 }
 
@@ -314,7 +315,7 @@ function providerFailure(status: number, detail: string): GatewayFailure {
 
 /** The models list lives beside the chat endpoint, so the same key can be checked. */
 function modelListUrl(chatUrl: string) {
-  return `${chatUrl.replace(/\/chat\/completions$/, "")}/models`;
+  return `${chatUrl.replace(/\/(chat\/completions|responses)$/, "")}/models`;
 }
 
 async function listModels(settings: ModelSettings): Promise<Response> {
@@ -346,13 +347,97 @@ async function listModels(settings: ModelSettings): Promise<Response> {
   }
 }
 
-async function askProvider(settings: ModelSettings, body: Record<string, unknown>) {
-  const response = await fetch(settings.url, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${settings.key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: settings.model, temperature: 0.2, ...body }),
-    cache: "no-store",
-  });
+type ToolCall = { id: string; name: string; args: string };
+type Style = "chat" | "responses";
+type HistoryItem =
+  | { role: "system" | "user"; content: string }
+  | { role: "assistant"; text: string; calls: ToolCall[] }
+  | { role: "tool"; callId: string; content: string };
+type Turn = { text: string; calls: ToolCall[]; usage: unknown };
+
+function chatBody(history: HistoryItem[]) {
+  return {
+    messages: history.map((item) => {
+      if (item.role === "assistant") {
+        return {
+          role: "assistant",
+          content: item.text || null,
+          ...(item.calls.length ? { tool_calls: item.calls.map((call) => ({ id: call.id, type: "function", function: { name: call.name, arguments: call.args } })) } : {}),
+        };
+      }
+      if (item.role === "tool") return { role: "tool", tool_call_id: item.callId, content: item.content };
+      return { role: item.role, content: item.content };
+    }),
+    tools,
+    tool_choice: "auto",
+  };
+}
+
+function responsesBody(history: HistoryItem[]) {
+  const input: Record<string, unknown>[] = [];
+  for (const item of history) {
+    if (item.role === "assistant") {
+      if (item.text) input.push({ role: "assistant", content: item.text });
+      for (const call of item.calls) input.push({ type: "function_call", call_id: call.id, name: call.name, arguments: call.args });
+    } else if (item.role === "tool") {
+      input.push({ type: "function_call_output", call_id: item.callId, output: item.content });
+    } else {
+      input.push({ role: item.role, content: item.content });
+    }
+  }
+  return {
+    input,
+    tools: tools.map((tool) => ({ type: "function", name: tool.function.name, description: tool.function.description, parameters: tool.function.parameters })),
+    tool_choice: "auto",
+  };
+}
+
+function readTurn(style: Style, payload: Record<string, unknown>): Turn {
+  if (style === "chat") {
+    const choices = Array.isArray(payload.choices) ? payload.choices : [];
+    const message = choices[0] && typeof choices[0] === "object" ? (choices[0] as Record<string, unknown>).message as Record<string, unknown> : null;
+    const calls = Array.isArray(message?.tool_calls) ? message.tool_calls : [];
+    return {
+      text: typeof message?.content === "string" ? message.content : "",
+      calls: calls.map((call) => {
+        const item = call as Record<string, unknown>;
+        const fn = item.function as Record<string, unknown>;
+        return { id: String(item.id || ""), name: String(fn?.name || ""), args: String(fn?.arguments || "{}") };
+      }),
+      usage: payload.usage || null,
+    };
+  }
+  const output = Array.isArray(payload.output) ? payload.output as Record<string, unknown>[] : [];
+  let text = typeof payload.output_text === "string" ? payload.output_text : "";
+  const calls: ToolCall[] = [];
+  for (const item of output) {
+    if (item.type === "message" && Array.isArray(item.content)) {
+      for (const part of item.content as Record<string, unknown>[]) {
+        if (part.type === "output_text" && typeof part.text === "string") text += part.text;
+      }
+    }
+    if (item.type === "function_call") {
+      calls.push({ id: String(item.call_id || item.id || ""), name: String(item.name || ""), args: String(item.arguments || "{}") });
+    }
+  }
+  return { text, calls, usage: payload.usage || null };
+}
+
+async function askProvider(url: string, settings: ModelSettings, style: Style, history: HistoryItem[]) {
+  const body = style === "responses" ? responsesBody(history) : chatBody(history);
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${settings.key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model: settings.model, temperature: 0.2, ...body }),
+      cache: "no-store",
+      signal: AbortSignal.timeout(60000),
+    });
+  } catch (caught) {
+    const timedOut = caught instanceof Error && (caught.name === "TimeoutError" || caught.name === "AbortError");
+    return { failure: { ok: false, status: timedOut ? 504 : 502, code: timedOut ? "ASSISTANT_MODEL_TIMEOUT" : "ASSISTANT_MODEL_UNREACHABLE", detail: timedOut ? "The provider did not answer within 60 seconds." : "The provider could not be reached from the school server." } as GatewayFailure };
+  }
   const text = await response.text();
   let payload: Record<string, unknown> | null = null;
   try { payload = JSON.parse(text) as Record<string, unknown>; } catch { payload = null; }
@@ -361,40 +446,52 @@ async function askProvider(settings: ModelSettings, body: Record<string, unknown
     const detail = String(provider?.message || payload?.message || text || `Provider replied ${response.status}`).trim();
     return { failure: providerFailure(response.status, detail) };
   }
-  return { payload };
+  const turn = readTurn(style, payload);
+  if (!turn.text && !turn.calls.length) {
+    return { failure: { ok: false, status: 502, code: "ASSISTANT_MODEL_INVALID_RESPONSE", detail: "The provider returned no message." } as GatewayFailure };
+  }
+  return { turn };
 }
 
 async function gateway(messages: unknown[], settings: ModelSettings, current: CurrentSession): Promise<GatewaySuccess | GatewayFailure> {
   if (!settings.key) return { ok: false, status: 503, code: "ASSISTANT_MODEL_GATEWAY_NOT_CONFIGURED", detail: "No model API key is saved for this account." };
-  const transcript = [{ role: "system", content: systemPrompt(current) }, ...messages].slice(-24);
+  let url = settings.url;
+  let style: Style = /\/responses$/.test(url) ? "responses" : "chat";
+  const history: HistoryItem[] = [{ role: "system", content: systemPrompt(current) }];
+  for (const message of messages) {
+    const item = message as Record<string, unknown>;
+    if (typeof item.content !== "string") continue;
+    if (item.role === "assistant") history.push({ role: "assistant", text: item.content, calls: [] });
+    else if (item.role === "user") history.push({ role: "user", content: item.content });
+  }
   const used: string[] = [];
   const seen = new Map<string, string>();
+  let retriedStyle = false;
   for (let step = 0; step < 16; step += 1) {
-    const answer = await askProvider(settings, { messages: transcript, tools, tool_choice: "auto" });
+    let answer = await askProvider(url, settings, style, history);
+    if (answer.failure && style === "chat" && !retriedStyle && /responses/i.test(answer.failure.detail)) {
+      retriedStyle = true;
+      style = "responses";
+      url = url.replace(/\/chat\/completions$/, "/responses");
+      answer = await askProvider(url, settings, style, history);
+    }
     if (answer.failure) return answer.failure;
-    const payload = answer.payload || {};
-    const choices = Array.isArray(payload.choices) ? payload.choices : [];
-    const message = choices[0] && typeof choices[0] === "object" ? (choices[0] as Record<string, unknown>).message as Record<string, unknown> : null;
-    if (!message) return { ok: false, status: 502, code: "ASSISTANT_MODEL_INVALID_RESPONSE", detail: "The provider returned no message." };
-    const calls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
-    if (!calls.length) return { ok: true, text: typeof message.content === "string" ? message.content : "I could not produce a response.", usage: payload.usage || null, steps: used };
-    transcript.push(message);
-    for (const call of calls) {
-      const item = call as Record<string, unknown>;
-      const fn = item.function as Record<string, unknown>;
-      const name = String(fn?.name || "");
-      used.push(name);
+    const turn = answer.turn as Turn;
+    if (!turn.calls.length) return { ok: true, text: turn.text || "I could not produce a response.", usage: turn.usage, steps: used };
+    history.push({ role: "assistant", text: turn.text, calls: turn.calls });
+    for (const call of turn.calls) {
+      used.push(call.name);
       let args: Record<string, unknown> = {};
-      try { args = JSON.parse(String(fn?.arguments || "{}")); } catch { args = {}; }
-      const result = await executeTool(name, args, current);
+      try { args = JSON.parse(call.args || "{}"); } catch { args = {}; }
+      const result = await executeTool(call.name, args, current);
       if ((result as Record<string, unknown>).requires_confirmation === true) {
         return { ok: true, text: (result as Record<string, unknown>).summary as string, usage: null, approval: result as Record<string, unknown>, steps: used };
       }
-      const key = `${name}:${JSON.stringify(args)}`;
+      const key = `${call.name}:${JSON.stringify(args)}`;
       const cached = seen.get(key);
       const content = cached ?? JSON.stringify(result).slice(0, 50000);
       if (!cached) seen.set(key, content);
-      transcript.push({ role: "tool", tool_call_id: String(item.id || ""), content });
+      history.push({ role: "tool", callId: call.id, content });
     }
   }
   return { ok: true, text: "I reached the safe tool limit for this request. Please ask me to continue from here.", usage: null, steps: used };
@@ -402,17 +499,19 @@ async function gateway(messages: unknown[], settings: ModelSettings, current: Cu
 
 async function testConnection(settings: ModelSettings): Promise<Response> {
   if (!settings.key) return Response.json({ ok: false, code: "ASSISTANT_MODEL_GATEWAY_NOT_CONFIGURED" }, { status: 400, headers: noStoreHeaders() });
+  const history: HistoryItem[] = [{ role: "user", content: "Reply with the single word: ready" }];
+  let url = settings.url;
+  let style: Style = /\/responses$/.test(url) ? "responses" : "chat";
   const started = Date.now();
-  try {
-    const answer = await askProvider(settings, { messages: [{ role: "user", content: "Reply with the single word: ready" }], max_tokens: 12 });
-    const ms = Date.now() - started;
-    if (answer.failure) return Response.json({ ok: false, code: answer.failure.code, detail: answer.failure.detail, ms }, { status: 200, headers: noStoreHeaders() });
-    const choices = Array.isArray(answer.payload?.choices) ? answer.payload.choices as Record<string, unknown>[] : [];
-    const message = choices[0]?.message as Record<string, unknown> | undefined;
-    return Response.json({ ok: true, ms, reply: String(message?.content || "").trim().slice(0, 80) }, { headers: noStoreHeaders() });
-  } catch {
-    return Response.json({ ok: false, code: "ASSISTANT_MODEL_UNREACHABLE", detail: "The provider could not be reached from the school server." }, { headers: noStoreHeaders() });
+  let answer = await askProvider(url, settings, style, history);
+  if (answer.failure && style === "chat" && /responses/i.test(answer.failure.detail)) {
+    style = "responses";
+    url = url.replace(/\/chat\/completions$/, "/responses");
+    answer = await askProvider(url, settings, style, history);
   }
+  const ms = Date.now() - started;
+  if (answer.failure) return Response.json({ ok: false, code: answer.failure.code, detail: answer.failure.detail, ms }, { status: 200, headers: noStoreHeaders() });
+  return Response.json({ ok: true, ms, reply: String((answer.turn as Turn).text || "").trim().slice(0, 80), style }, { headers: noStoreHeaders() });
 }
 
 async function approve(token: string, current: CurrentSession) {

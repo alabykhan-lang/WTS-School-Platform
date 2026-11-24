@@ -26,6 +26,7 @@ const ERRORS: Record<string, string> = {
   ASSISTANT_MODEL_NOT_FOUND: "The model name was not found. Check the model ID in Models.",
   ASSISTANT_MODEL_UNAVAILABLE: "This key cannot reach that model. Fetch the models the key supports and pick one.",
   ASSISTANT_MODEL_RATE_LIMITED: "The provider is limiting requests. Wait a moment and try again.",
+  ASSISTANT_MODEL_TIMEOUT: "The model took too long to answer. Try again.",
   ASSISTANT_MODEL_UNREACHABLE: "The provider could not be reached from the school server.",
   ASSISTANT_MODEL_GATEWAY_NOT_CONFIGURED: "Add a model API key in Models.",
   ASSISTANT_MODEL_REQUEST_FAILED: "The model could not answer. Check the model settings in Models.",
@@ -347,12 +348,6 @@ export function ProprietorAssistant() {
           <p className="assistantEyebrow">PRIVATE ASSISTANT</p>
           <h1>{tab === "chats" ? `Good day, ${name}` : tab === "models" ? "Models" : "Usage"}</h1>
         </div>
-        {tab === "chats" && <label className="assistantModelPick">
-          <span>Model</span>
-          <select value={settings.defaultModel} onChange={(event) => setSettings((current) => ({ ...current, defaultModel: event.target.value }))} aria-label="Model">
-            {settings.models.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}
-          </select>
-        </label>}
         {tab === "chats" && <button type="button" className="assistantGhost assistantPrint" onClick={() => window.print()}>Print</button>}
       </header>
 
