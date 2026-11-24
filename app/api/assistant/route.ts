@@ -282,8 +282,14 @@ async function executeTool(name: string, args: Record<string, unknown>, current:
       return { requires_confirmation: true, summary: `Update student ${String(args.studentId)} with the supplied details.`, approval_token: approvalToken(current, { kind: "registry", action: "students.update", payload: { ...args } }) };
     case "archive_student":
       return { requires_confirmation: true, summary: `Archive student ${String(args.studentId)} as ${String(args.lifecycleStatus || "archived")}: ${String(args.reason)}.`, approval_token: approvalToken(current, { kind: "registry", action: "students.archive", payload: { ...args } }) };
-    case "enter_score":
-      return { requires_confirmation: true, summary: `Save the supplied score for student ${String(args.studentId)} in ${String(args.classKey)}.`, approval_token: approvalToken(current, { kind: "results", action: "scores.enter", payload: { student_id: args.studentId, class_key: args.classKey, subject_index: args.subjectIndex, term: args.term, academic_session: args.academicSession, ca1: args.ca1 ?? null, ca2: args.ca2 ?? null, ca3: args.ca3 ?? null, exam: args.exam ?? null, clear: args.clear || [] } }) };
+    case "enter_score": {
+      const set = (["ca1", "ca2", "ca3", "exam"] as const)
+        .filter((key) => args[key] !== null && args[key] !== undefined)
+        .map((key) => `${key.toUpperCase()} ${String(args[key])}`);
+      const cleared = Array.isArray(args.clear) && args.clear.length ? ` Clear ${args.clear.join(", ").toUpperCase()}.` : "";
+      const summary = `Set ${set.length ? set.join(", ") : "score"} for student ${String(args.studentId)} in ${String(args.classKey)}, subject ${String(args.subjectIndex)}.${cleared}`;
+      return { requires_confirmation: true, summary, approval_token: approvalToken(current, { kind: "results", action: "scores.enter", payload: { student_id: args.studentId, class_key: args.classKey, subject_index: args.subjectIndex, term: args.term, academic_session: args.academicSession, ca1: args.ca1 ?? null, ca2: args.ca2 ?? null, ca3: args.ca3 ?? null, exam: args.exam ?? null, clear: args.clear || [] } }) };
+    }
     default: return { ok: false, code: "ASSISTANT_TOOL_NOT_FOUND" };
   }
 }
