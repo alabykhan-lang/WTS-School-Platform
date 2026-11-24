@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
-type Message = { role: "user" | "assistant"; content: string; failed?: boolean };
+type Message = { role: "user" | "assistant"; content: string; failed?: boolean; document?: boolean };
 type Model = { id: string; label: string; description?: string };
 type Thread = { id: string; title: string; messages: Message[]; updatedAt: number };
 type Person = { id?: string; full_name?: string };
@@ -42,14 +42,38 @@ const ERRORS: Record<string, string> = {
   PROPRIETOR_ACCESS_REQUIRED: "This account does not have proprietor or developer access.",
 };
 
+type Effort = "low" | "medium" | "high";
+
 type Stored = {
   models: Model[];
   defaultModel: string;
   providerKey: string;
   providerUrl: string;
+  providerId: string;
+  effort: Effort;
   usagePercent: number;
   perReplyCost: number;
 };
+
+const PROVIDERS = [
+  { id: "yeta", label: "Yeta", url: "https://platform.yeta.ai/v1" },
+  { id: "xingchiapi", label: "Xingchiapi", url: "https://api.xingchiapi.com" },
+  { id: "deepseek", label: "DeepSeek", url: "https://api.deepseek.com" },
+  { id: "openai", label: "OpenAI", url: "https://api.openai.com/v1" },
+  { id: "gemini", label: "Gemini", url: "https://generativelanguage.googleapis.com/v1beta/openai" },
+  { id: "other", label: "Other", url: "" },
+];
+
+const EFFORTS: { id: Effort; label: string }[] = [
+  { id: "low", label: "Low (faster)" },
+  { id: "medium", label: "Medium (balanced)" },
+  { id: "high", label: "High (deeper)" },
+];
+
+function providerOf(url: string) {
+  const match = PROVIDERS.find((provider) => provider.url && url.startsWith(provider.url));
+  return match ? match.id : "other";
+}
 
 function sanitiseModels(value: unknown, fallback: Model[]): Model[] {
   const list = Array.isArray(value) ? value : [];
@@ -66,6 +90,8 @@ function readStored(key: string, config: AssistantConfig): Stored {
     defaultModel: config.default_model || FALLBACK_MODELS[0].id,
     providerKey: "",
     providerUrl: config.default_url || DEFAULT_URL,
+    providerId: providerOf(config.default_url || DEFAULT_URL),
+    effort: "low",
     usagePercent: 100,
     perReplyCost: 1,
   };
@@ -79,6 +105,8 @@ function readStored(key: string, config: AssistantConfig): Stored {
       defaultModel,
       providerKey: typeof saved.providerKey === "string" ? saved.providerKey : "",
       providerUrl: typeof saved.providerUrl === "string" && saved.providerUrl ? saved.providerUrl : fallback.providerUrl,
+      providerId: typeof saved.providerId === "string" && PROVIDERS.some((provider) => provider.id === saved.providerId) ? saved.providerId : providerOf(saved.providerUrl || fallback.providerUrl),
+      effort: saved.effort === "medium" || saved.effort === "high" ? saved.effort : "low",
       usagePercent: Number.isFinite(saved.usagePercent) ? Math.max(0, Math.min(100, Number(saved.usagePercent))) : 100,
       perReplyCost: Number.isFinite(saved.perReplyCost) ? Math.max(0, Math.min(100, Number(saved.perReplyCost))) : 1,
     };
@@ -95,11 +123,38 @@ function renderInline(text: string) {
   });
 }
 
+function splitCells(line: string) {
+  return line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((cell) => cell.trim());
+}
+
+function renderBlocks(content: string) {
+  const lines = content.split("\n");
+  const blocks: React.ReactNode[] = [];
+  let index = 0;
+  while (index < lines.length) {
+    const line = lines[index];
+    if (/^\s*\|/.test(line)) {
+      const rows: string[][] = [];
+      while (index < lines.length && /^\s*\|/.test(lines[index])) { rows.push(splitCells(lines[index])); index += 1; }
+      const body = rows.filter((row) => !row.every((cell) => /^:?-{2,}:?$/.test(cell)));
+      const [head, ...rest] = body;
+      if (head) {
+        blocks.push(<div className="assistantTableWrap" key={`w${index}`}><table className="assistantTable" key={`t${index}`}><thead><tr>{head.map((cell, cellIndex) => <th key={cellIndex}>{renderInline(cell)}</th>)}</tr></thead><tbody>{rest.map((row, rowIndex) => <tr key={rowIndex}>{row.map((cell, cellIndex) => <td key={cellIndex}>{renderInline(cell)}</td>)}</tr>)}</tbody></table></div>);
+      }
+      continue;
+    }
+    if (!line.trim() || /^---+$/.test(line.trim())) { index += 1; continue; }
+    blocks.push(<p key={`p${index}`}>{renderInline(line)}</p>);
+    index += 1;
+  }
+  return blocks;
+}
+
 export function ProprietorAssistant() {
   const [config, setConfig] = useState<AssistantConfig | null>(null);
   const [loadError, setLoadError] = useState("");
   const [stored, setStoredKey] = useState("");
-  const [settings, setSettings] = useState<Stored>({ models: FALLBACK_MODELS, defaultModel: FALLBACK_MODELS[0].id, providerKey: "", providerUrl: DEFAULT_URL, usagePercent: 100, perReplyCost: 1 });
+  const [settings, setSettings] = useState<Stored>({ models: FALLBACK_MODELS, defaultModel: FALLBACK_MODELS[0].id, providerKey: "", providerUrl: DEFAULT_URL, providerId: "yeta", effort: "low", usagePercent: 100, perReplyCost: 1 });
   const [threads, setThreads] = useState<Thread[]>([]);
   const [activeId, setActiveId] = useState("");
   const [tab, setTab] = useState<"chats" | "models" | "usage">("chats");
@@ -108,7 +163,7 @@ export function ProprietorAssistant() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [approval, setApproval] = useState<{ token: string; summary: string } | null>(null);
-  const [form, setForm] = useState({ id: "", label: "", url: DEFAULT_URL, key: "" });
+  const [form, setForm] = useState({ id: "", label: "", url: DEFAULT_URL, key: "", provider: "yeta", effort: "low" as Effort });
   const [showKey, setShowKey] = useState(false);
   const [test, setTest] = useState<TestState>({ state: "idle", message: "" });
   const [savedFlash, setSavedFlash] = useState(false);
@@ -128,7 +183,7 @@ export function ProprietorAssistant() {
         setStoredKey(settingsKey);
         const loaded = readStored(settingsKey, value as AssistantConfig);
         setSettings(loaded);
-        setForm({ id: "", label: "", url: loaded.providerUrl, key: loaded.providerKey });
+        setForm({ id: "", label: "", url: loaded.providerUrl, key: loaded.providerKey, provider: loaded.providerId, effort: loaded.effort });
         let list: Thread[] = [];
         try {
           const raw = JSON.parse(localStorage.getItem(chatKey) || "[]");
@@ -145,7 +200,7 @@ export function ProprietorAssistant() {
           setConfig(mock);
           const loaded = readStored("wts-assistant-settings:preview", mock);
           setSettings(loaded);
-          setForm({ id: "", label: "", url: loaded.providerUrl, key: loaded.providerKey });
+          setForm({ id: "", label: "", url: loaded.providerUrl, key: loaded.providerKey, provider: loaded.providerId, effort: loaded.effort });
           const fresh: Thread = { id: crypto.randomUUID(), title: "New chat", messages: [], updatedAt: Date.now() };
           setThreads([fresh]); setActiveId(fresh.id);
           return;
@@ -199,13 +254,14 @@ export function ProprietorAssistant() {
   }
 
   function saveModel() {
-    const id = form.id.trim();
+    const id = form.id.trim() || settings.defaultModel;
     if (!id) { setTest({ state: "fail", message: "Enter the model ID from the provider." }); return; }
     const label = form.label.trim() || id;
     const url = form.url.trim() || DEFAULT_URL;
     const key = form.key.trim();
     const next = [...settings.models.filter((model) => model.id !== id), { id, label, description: "Added by you" }];
-    setSettings((current) => ({ ...current, models: next, defaultModel: id, providerUrl: url, providerKey: key }));
+    if (!key && !settings.providerKey) { setTest({ state: "fail", message: "Paste the API key for this provider." }); return; }
+    setSettings((current) => ({ ...current, models: next, defaultModel: id, providerUrl: url, providerKey: key || current.providerKey, providerId: form.provider, effort: form.effort }));
     setSavedFlash(true); window.setTimeout(() => setSavedFlash(false), 1600);
     setTest({ state: "idle", message: "" });
   }
@@ -214,6 +270,20 @@ export function ProprietorAssistant() {
     if (settings.models.length < 2) return;
     const next = settings.models.filter((model) => model.id !== id);
     applyModels(next, settings.defaultModel === id ? next[0].id : settings.defaultModel);
+  }
+
+  function printDocument() {
+    document.body.classList.add("printDoc");
+    const clear = () => { document.body.classList.remove("printDoc"); window.removeEventListener("afterprint", clear); };
+    window.addEventListener("afterprint", clear);
+    window.print();
+    window.setTimeout(clear, 4000);
+  }
+
+  function removeKey() {
+    setSettings((current) => ({ ...current, providerKey: "" }));
+    setForm((current) => ({ ...current, key: "" }));
+    setTest({ state: "pass", message: "The stored key was removed from this device." });
   }
 
   async function runTest() {
@@ -293,6 +363,7 @@ export function ProprietorAssistant() {
           messages: updated,
           provider_key: config?.is_admin ? settings.providerKey : "",
           provider_url: config?.is_admin ? settings.providerUrl : "",
+          effort: settings.effort,
         }),
       });
       const value = await response.json();
@@ -301,7 +372,7 @@ export function ProprietorAssistant() {
         const said = String(value?.detail || "").trim().slice(0, 180);
         throw new Error(`${ERRORS[code] || "The request failed."} The server was ${host}.${said ? ` It said: ${said}` : ""}`);
       }
-      updateThread(threadId, [...updated, { role: "assistant", content: String(value.text || "Done.") }]);
+      updateThread(threadId, [...updated, { role: "assistant", content: String(value.text || "Done."), document: value.document === true }]);
       if (value.approval?.approval_token) setApproval({ token: value.approval.approval_token, summary: value.approval.summary || "Confirm this change." });
       setSettings((current) => ({ ...current, usagePercent: Math.max(0, current.usagePercent - current.perReplyCost) }));
     } catch (error) {
@@ -353,7 +424,7 @@ export function ProprietorAssistant() {
 
       <nav className="assistantNav" aria-label="Workspace">
         <button type="button" className={tab === "chats" ? "selected" : ""} onClick={() => setTab("chats")}>Chats</button>
-        {config.is_admin && <button type="button" className={tab === "models" ? "selected" : ""} onClick={() => setTab("models")}>Models</button>}
+        {config.is_admin && <button type="button" className={tab === "models" ? "selected" : ""} onClick={() => { setTab("models"); setForm((current) => ({ ...current, id: current.id || settings.defaultModel, provider: settings.providerId, effort: settings.effort })); }}>Models</button>}
         {config.is_admin && <button type="button" className={tab === "usage" ? "selected" : ""} onClick={() => setTab("usage")}>Usage</button>}
       </nav>
       <div className="assistantChatList">
@@ -377,7 +448,6 @@ export function ProprietorAssistant() {
           <p className="assistantEyebrow">PRIVATE ASSISTANT</p>
           <h1>{tab === "chats" ? `Good day, ${name}` : tab === "models" ? "Models" : "Usage"}</h1>
         </div>
-        {tab === "chats" && <button type="button" className="assistantGhost assistantPrint" onClick={() => window.print()}>Print</button>}
       </header>
 
       {tab === "chats" && <>
@@ -389,9 +459,10 @@ export function ProprietorAssistant() {
             <p>Ask about students, staff, classes, or results. I read live records and ask before saving a change.</p>
             <div className="assistantStarters">{STARTERS.map((prompt) => <button key={prompt} type="button" onClick={() => send(undefined, prompt)}><span>{prompt}</span><b>↗</b></button>)}</div>
           </div>}
-          {activeThread?.messages.map((message, index) => <article key={`${message.role}-${index}`} className={`assistantMessage ${message.role}`}>
+          {activeThread?.messages.map((message, index) => <article key={`${message.role}-${index}`} className={`assistantMessage ${message.role}${message.document ? " printable" : ""}`}>
             <div className="assistantWho">{message.role === "user" ? "You" : "WTS"}</div>
-            <div className={`assistantBubble${message.failed ? " failed" : ""}`}>{message.content.split("\n").map((line, lineIndex) => <p key={lineIndex}>{line ? renderInline(line) : <>&nbsp;</>}</p>)}</div>
+            <div className={`assistantBubble${message.failed ? " failed" : ""}`}>{renderBlocks(message.content)}</div>
+            {message.document && <button type="button" className="assistantDocPrint" onClick={printDocument}>Print this document</button>}
           </article>)}
           {busy && <article className="assistantMessage assistant"><div className="assistantWho">WTS</div><div className="assistantBubble assistantThinking"><i/><i/><i/></div></article>}
           <div ref={endRef}/>
@@ -410,17 +481,23 @@ export function ProprietorAssistant() {
           <h2>Connection</h2>
           <p className="assistantMuted">The key is kept on this device for your account only and sent only when you ask something. It is never shown to other accounts.</p>
           <p className={`assistantMuted assistantSaved ${settings.providerKey ? "" : "empty"}`}>In use now: {settings.providerKey ? `key ending ${settings.providerKey.slice(-4)}` : "no key saved"} at {hostOf(settings.providerUrl || DEFAULT_URL)} · model {settings.defaultModel}</p>
-          <label><span>API key</span><div className="assistantKeyRow"><input type={showKey ? "text" : "password"} autoComplete="new-password" placeholder="Paste the provider key" value={form.key} onChange={(event) => setForm({ ...form, key: event.target.value })}/><button type="button" onClick={() => setShowKey((shown) => !shown)}>{showKey ? "Hide" : "Show"}</button></div></label>
-          <label><span>Endpoint</span><input type="url" inputMode="url" placeholder={config?.default_url || DEFAULT_URL} value={form.url} onChange={(event) => setForm({ ...form, url: event.target.value })}/><em>Use the provider address, for example {config?.default_url || DEFAULT_URL}</em></label>
           <div className="assistantPair">
-            <label><span>Model ID</span><input list="assistantModelChoices" placeholder={config?.default_model || "deepseek-chat"} value={form.id} onChange={(event) => setForm({ ...form, id: event.target.value })}/><datalist id="assistantModelChoices">{modelList.map((id) => <option key={id} value={id} />)}</datalist></label>
-            <label><span>Display name</span><input placeholder={config?.default_model || "DeepSeek Chat"} value={form.label} onChange={(event) => setForm({ ...form, label: event.target.value })}/></label>
+            <label><span>Provider</span><select value={form.provider} onChange={(event) => {
+              const provider = PROVIDERS.find((item) => item.id === event.target.value);
+              setForm((current) => ({ ...current, provider: event.target.value, url: provider?.url || current.url }));
+            }}>{PROVIDERS.map((provider) => <option key={provider.id} value={provider.id}>{provider.label}</option>)}</select></label>
+            <label><span>Model</span><input list="assistantModelChoices" placeholder={config?.default_model || "deepseek-v4.1-flash"} value={form.id} onChange={(event) => setForm({ ...form, id: event.target.value })}/><datalist id="assistantModelChoices">{modelList.map((id) => <option key={id} value={id} />)}</datalist></label>
           </div>
+          <div className="assistantPair">
+            <label><span>Base URL (optional)</span><input type="url" inputMode="url" placeholder={config?.default_url || DEFAULT_URL} value={form.url} onChange={(event) => setForm({ ...form, url: event.target.value })}/></label>
+            <label><span>Effort</span><select value={form.effort} onChange={(event) => setForm({ ...form, effort: event.target.value as Effort })}>{EFFORTS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
+          </div>
+          <label><span>API key</span><div className="assistantKeyRow"><input type={showKey ? "text" : "password"} autoComplete="new-password" placeholder={settings.providerKey ? `stored …${settings.providerKey.slice(-4)}` : "sk-…"} value={form.key} onChange={(event) => setForm({ ...form, key: event.target.value })}/><button type="button" onClick={() => setShowKey((shown) => !shown)}>{showKey ? "Hide" : "Show"}</button></div>{settings.providerKey && <em>A key ending {settings.providerKey.slice(-4)} is stored. Leave empty to keep it.</em>}</label>
           <div className="assistantActions">
-            <button type="button" className="assistantGhost" onClick={fetchModels} disabled={fetchingModels}>{fetchingModels ? "Fetching…" : "Fetch models"}</button>
-            <button type="button" className="assistantGhost" onClick={runTest} disabled={test.state === "running"}>{test.state === "running" ? "Testing…" : "Test connection"}</button>
-            <button type="button" className="assistantGhost" onClick={testSaved} disabled={test.state === "running"}>Test saved settings</button>
-            <button type="button" className="assistantPrimary" onClick={saveModel}>Save model</button>
+            <button type="button" className="assistantPrimary" onClick={saveModel}>Save</button>
+            <button type="button" className="assistantGhost" onClick={fetchModels} disabled={fetchingModels}>{fetchingModels ? "Listing…" : "List models"}</button>
+            <button type="button" className="assistantGhost" onClick={runTest} disabled={test.state === "running"}>{test.state === "running" ? "Testing…" : "Test route"}</button>
+            {settings.providerKey && <button type="button" className="assistantRemove" onClick={removeKey}>Remove key</button>}
           </div>
           {test.state !== "idle" && <div className={`assistantTest ${test.state}`}>{test.message}</div>}
           {savedFlash && <div className="assistantTest pass">Saved. It is now the model in use.</div>}
@@ -459,7 +536,7 @@ export function ProprietorAssistant() {
 
     <nav className="assistantTabbar" aria-label="Workspace">
       <button type="button" className={tab === "chats" ? "selected" : ""} onClick={() => setTab("chats")}>Chats</button>
-      {config.is_admin && <button type="button" className={tab === "models" ? "selected" : ""} onClick={() => setTab("models")}>Models</button>}
+      {config.is_admin && <button type="button" className={tab === "models" ? "selected" : ""} onClick={() => { setTab("models"); setForm((current) => ({ ...current, id: current.id || settings.defaultModel, provider: settings.providerId, effort: settings.effort })); }}>Models</button>}
       {config.is_admin && <button type="button" className={tab === "usage" ? "selected" : ""} onClick={() => setTab("usage")}>Usage</button>}
     </nav>
   </main>;

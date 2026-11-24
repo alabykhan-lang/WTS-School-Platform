@@ -144,16 +144,89 @@ async function mintAppSession(current: CurrentSession, app: "registry" | "result
   return { session_id: exchanged.session_id, session_secret: exchanged.session_secret };
 }
 
-async function registry(current: CurrentSession, kind: "read" | "write", action: string, payload: Record<string, unknown> = {}) {
+/** One registry session for several reads, so contact lists do not pay for an SSO exchange each time. */
+async function openRegistry(current: CurrentSession) {
   const session = await mintAppSession(current, "registry");
-  const response = await fetch(`${portalOrigins.centralRegistry}/api/registry-v2`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.session_id}.${session.session_secret}` },
-    body: JSON.stringify({ kind, action, payload }),
-    cache: "no-store",
-    signal: AbortSignal.timeout(20000),
-  });
-  return response.json().catch(() => ({ ok: false, code: "REGISTRY_INVALID_RESPONSE" }));
+  return async (kind: "read" | "write", action: string, payload: Record<string, unknown> = {}) => {
+    const response = await fetch(`${portalOrigins.centralRegistry}/api/registry-v2`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.session_id}.${session.session_secret}` },
+      body: JSON.stringify({ kind, action, payload }),
+      cache: "no-store",
+      signal: AbortSignal.timeout(20000),
+    });
+    return response.json().catch(() => ({ ok: false, code: "REGISTRY_INVALID_RESPONSE" }));
+  };
+}
+
+async function registry(current: CurrentSession, kind: "read" | "write", action: string, payload: Record<string, unknown> = {}) {
+  return (await openRegistry(current))(kind, action, payload);
+}
+
+/** Guardian reads cached per request so a repeated contact question costs one pass. */
+const guardianCache = new WeakMap<CurrentSession, Map<string, Record<string, unknown>[]>>();
+
+async function guardiansFor(call: (kind: "read" | "write", action: string, payload?: Record<string, unknown>) => Promise<Record<string, unknown>>, current: CurrentSession, studentId: string) {
+  let cache = guardianCache.get(current);
+  if (!cache) { cache = new Map(); guardianCache.set(current, cache); }
+  const hit = cache.get(studentId);
+  if (hit) return hit;
+  const answer = await call("read", "guardians", { studentId });
+  const list = Array.isArray(answer?.guardians) ? (answer.guardians as Record<string, unknown>[]) : [];
+  cache.set(studentId, list);
+  return list;
+}
+
+/** Every guardian and phone contact for a class, gathered for a whole roster in one tool call. */
+async function classGuardians(current: CurrentSession, args: Record<string, unknown>) {
+  const call = await openRegistry(current);
+  const roster = await call("read", "students", { classKey: args.classKey || null, status: "active" });
+  if (!roster.ok) return roster;
+  const all = (Array.isArray(roster.students) ? roster.students : []) as Record<string, unknown>[];
+  const limit = Math.max(1, Math.min(200, Number(args.limit) || 200));
+  const slice = all.slice(0, limit);
+  const lists = new Map<string, Record<string, unknown>[]>();
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < slice.length) {
+      const index = cursor++;
+      const student = slice[index];
+      lists.set(String(student.id), await guardiansFor(call, current, String(student.id)));
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(10, slice.length) }, worker));
+  const rows: Record<string, unknown>[] = [];
+  let withPhone = 0;
+  let withConsent = 0;
+  for (const student of slice) {
+    const list = lists.get(String(student.id)) || [];
+    if (list.some((item) => item.primaryPhone || item.whatsappPhone)) withPhone += 1;
+    if (list.some((item) => item.notificationConsent)) withConsent += 1;
+    rows.push({
+      name: String(student.name || ""),
+      admno: String(student.admno || ""),
+      guardians: list.map((item) => ({
+        name: String(item.fullName || ""),
+        relationship: String(item.relationship || ""),
+        phone: String(item.primaryPhone || ""),
+        whatsapp: String(item.whatsappPhone || ""),
+        email: String(item.email || ""),
+        consent: item.notificationConsent === true,
+        primary: item.isPrimary === true,
+      })),
+    });
+  }
+  return {
+    ok: true,
+    class_key: String(args.classKey || "all classes"),
+    counted: slice.length,
+    total_in_scope: all.length,
+    truncated: all.length > slice.length,
+    students_with_a_phone: withPhone,
+    students_with_contact_consent: withConsent,
+    missing_phone: rows.filter((row) => !(row.guardians as unknown[]).some((item) => (item as Record<string, unknown>).phone)).map((row) => row.name),
+    rows,
+  };
 }
 
 /**
@@ -293,6 +366,70 @@ async function classRanking(current: CurrentSession, args: Record<string, unknow
   };
 }
 
+/** Everything a report card needs, in the shape the portal uses, so the assistant can render and print it. */
+async function reportCard(current: CurrentSession, args: Record<string, unknown>) {
+  const call = await openResults(current);
+  let studentId = String(args.studentId || "");
+  if (!studentId) {
+    const wanted = String(args.search || "").trim();
+    if (!wanted) return { ok: false, code: "RESULT_STUDENT_REQUIRED", detail: "Pass the student's name or admission number." };
+    const found = await registry(current, "read", "students", { search: wanted, classKey: args.classKey || null, status: "active" });
+    const hits = (Array.isArray(found?.students) ? found.students : []) as Record<string, unknown>[];
+    const exact = hits.find((row) => String(row.admno || "").toLowerCase() === wanted.toLowerCase()) || hits.find((row) => String(row.name || "").toLowerCase() === wanted.toLowerCase());
+    const pick = exact || (hits.length === 1 ? hits[0] : null);
+    if (!pick) {
+      return hits.length > 1
+        ? { ok: false, code: "RESULT_STUDENT_AMBIGUOUS", detail: `Which one? ${hits.slice(0, 8).map((row) => `${row.name} (${row.admno})`).join(", ")}.` }
+        : { ok: false, code: "RESULT_STUDENT_NOT_FOUND", detail: `No active student matches "${wanted}"${args.classKey ? ` in ${String(args.classKey)}` : ""}.` };
+    }
+    studentId = String(pick.id);
+  }
+  const payload = await withAcademicContext(current, { class_key: args.classKey, student_id: studentId });
+  if (!payload.class_key || !payload.term || !payload.academic_session) {
+    return { ok: false, code: "RESULT_ACADEMIC_CONTEXT_REQUIRED", detail: "A class, term and session are needed." };
+  }
+  await call("context.set", { class_key: payload.class_key, academic_session: payload.academic_session, term: payload.term });
+  const [summary, subjectsCall, traits, remarks, settings] = await Promise.all([
+    call("read.result_summary", payload),
+    call("read.subjects", { class_key: payload.class_key }),
+    call("read.traits", payload),
+    call("read.remarks", payload),
+    call("settings.read", {}),
+  ]);
+  if (!summary.ok) return summary;
+  const bag = (summary.summary || {}) as { students?: Record<string, unknown>[]; scores?: Record<string, unknown>[] };
+  const student = (bag.students || []).find((row) => String(row.id) === studentId);
+  if (!student) return { ok: false, code: "RESULT_STUDENT_NOT_IN_CLASS" };
+  const names = new Map<number, string>();
+  for (const row of (Array.isArray(subjectsCall?.rows) ? subjectsCall.rows : []) as Record<string, unknown>[]) {
+    names.set(Number(row.subject_index), String(row.subject_name || ""));
+  }
+  const config = ((settings?.settings || {}) as Record<string, unknown>).app_config as Record<string, unknown> | undefined;
+  const weights = (config?.assessment_config || config?.assessment || { ca1: 10, ca2: 10, ca3: 10, exam: 70 }) as Record<string, unknown>;
+  const scores = (bag.scores || []).filter((row) => String(row.student_id) === studentId);
+  const rows = scores
+    .map((row) => {
+      const index = Number(row.subject_index);
+      const total = ["ca1", "ca2", "ca3", "exam"].reduce((sum, key) => sum + (Number(row[key]) || 0), 0);
+      return { subject: names.get(index) || `Subject ${index}`, ca1: row.ca1, ca2: row.ca2, ca3: row.ca3, exam: row.exam, total };
+    })
+    .sort((a, b) => a.subject.localeCompare(b.subject));
+  return {
+    ok: true,
+    document: "report_card",
+    school: "Way to Success Standard Schools",
+    student: { name: String(student.name || ""), admno: String(student.admno || ""), class_key: String(student.class_key || ""), gender: String(student.gender || ""), house: String(student.house || "") },
+    term: payload.term,
+    academic_session: payload.academic_session,
+    weights,
+    rows,
+    total: rows.reduce((sum, row) => sum + row.total, 0),
+    traits: traits?.rows || [],
+    remarks: remarks?.rows || [],
+    note: "Print this as it is. Numbers come straight from the results portal.",
+  };
+}
+
 function approvalToken(current: CurrentSession, proposal: Record<string, unknown>) {
   const body = b64(JSON.stringify({ ...proposal, expires: Date.now() + 5 * 60 * 1000 }));
   const signature = b64(createHmac("sha256", current.secret).update(body).digest());
@@ -316,11 +453,14 @@ const tools = [
   { type: "function", function: { name: "school_overview", description: "Read the current school dashboard and academic context.", parameters: { type: "object", properties: {} } } },
   { type: "function", function: { name: "find_students", description: "Search active or archived students by name, admission number, or class.", parameters: { type: "object", properties: { search: { type: "string" }, classKey: { type: "string" }, status: { type: "string", enum: ["active", "archived", "all"] } } } } },
   { type: "function", function: { name: "student_record", description: "Read one student's complete central-registry record by id.", parameters: { type: "object", required: ["studentId"], properties: { studentId: { type: "string" } } } } },
+  { type: "function", function: { name: "student_guardians", description: "Read the guardians of one student with their phone, WhatsApp, email and contact consent.", parameters: { type: "object", required: ["studentId"], properties: { studentId: { type: "string" } } } } },
+  { type: "function", function: { name: "class_guardians", description: "Read guardians and phone contacts for a whole class in one call, with a count of who has no phone. Use this for contact lists, never one student at a time, and call it once.", parameters: { type: "object", required: ["classKey"], properties: { classKey: { type: "string" }, limit: { type: "integer" } } } } },
   { type: "function", function: { name: "staff_directory", description: "Read the staff directory and active assignments.", parameters: { type: "object", properties: { search: { type: "string" } } } } },
   { type: "function", function: { name: "result_students", description: "Read students and result context for a class.", parameters: { type: "object", required: ["classKey"], properties: { classKey: { type: "string" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
   { type: "function", function: { name: "result_subjects", description: "List the subject slots (index and subject name) for a class. Use this before reading or writing scores so you can name the subject.", parameters: { type: "object", required: ["classKey"], properties: { classKey: { type: "string" } } } } },
   { type: "function", function: { name: "result_scores", description: "Read score rows for a class. Leave subjectIndex out to get every subject in one call; pass it to narrow to one subject.", parameters: { type: "object", required: ["classKey"], properties: { classKey: { type: "string" }, subjectIndex: { type: "integer" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
   { type: "function", function: { name: "result_ranking", description: "Rank every student in a class on all recorded components at once (CA and exam, weighted by what is actually recorded). Use this for best student, top of class, or position questions instead of ranking one subject.", parameters: { type: "object", required: ["classKey"], properties: { classKey: { type: "string" }, limit: { type: "integer" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
+  { type: "function", function: { name: "report_card", description: "Build a printable report card for one student in the portal's own layout. Pass the class and the student's name or admission number; it finds the student itself, so no search call is needed. Render the result as a neat document the proprietor can print.", parameters: { type: "object", required: ["classKey"], properties: { classKey: { type: "string" }, studentId: { type: "string" }, search: { type: "string", description: "Student name or admission number" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
   { type: "function", function: { name: "create_student", description: "Prepare creation of a new student. Always requires proprietor confirmation before it changes records.", parameters: { type: "object", required: ["name", "classKey"], properties: { name: { type: "string" }, classKey: { type: "string" }, gender: { type: "string" }, house: { type: "string" }, age: { type: "string" }, admissionDate: { type: "string" } } } } },
   { type: "function", function: { name: "update_student", description: "Prepare a student record change. Always requires proprietor confirmation.", parameters: { type: "object", required: ["studentId"], properties: { studentId: { type: "string" }, name: { type: "string" }, classKey: { type: "string" }, gender: { type: "string" }, house: { type: "string" }, age: { type: "string" } } } } },
   { type: "function", function: { name: "archive_student", description: "Prepare student archival. Always requires proprietor confirmation and a reason.", parameters: { type: "object", required: ["studentId", "reason"], properties: { studentId: { type: "string" }, reason: { type: "string" }, lifecycleStatus: { type: "string", enum: ["archived", "withdrawn", "transferred", "graduated", "suspended"] } } } } },
@@ -335,7 +475,7 @@ function systemPrompt(current: CurrentSession) {
   const session = typeof academic.session === "string" ? academic.session : "";
   const term = typeof academic.term === "string" ? academic.term : "";
   const line = session && term ? `${SYSTEM_PROMPT} The live academic context is ${session}, ${term}; use it for result tools unless the proprietor names another.` : SYSTEM_PROMPT;
-  return `${line} When saving a score, send every component (ca1, ca2, ca3, exam), keeping the values already recorded for the ones not being changed. Work in as few tool calls as you can: reuse what a tool already gave you instead of fetching it again, and stop and answer once you have enough. For any best-student, top-of-class or position question, call result_ranking once instead of reading subjects one by one; never rank from a single subject unless the proprietor names that subject. Always call result_subjects before naming a subject, because score rows carry index numbers only. When exam marks are blank, say the figure is CA-only rather than calling it a term position. If the proprietor sent several short messages in a row, answer the newest one and mention the earlier points only in passing.`;
+  return `${line} When saving a score, send every component (ca1, ca2, ca3, exam), keeping the values already recorded for the ones not being changed. For contact questions use class_guardians once for the class instead of student_guardians per child, and say plainly when a number is missing rather than guessing. Do not call school_overview when the proprietor already named the class. Work in as few tool calls as you can: reuse what a tool already gave you instead of fetching it again, and stop and answer once you have enough. For any best-student, top-of-class or position question, call result_ranking once instead of reading subjects one by one; never rank from a single subject unless the proprietor names that subject. When asked for a report card, call report_card once with the class and name, then lay it out as a clean document: school and student at the top, one row per subject with its components and total, then traits and remark, then the total. Always call result_subjects before naming a subject, because score rows carry index numbers only. When exam marks are blank, say the figure is CA-only rather than calling it a term position. If the proprietor sent several short messages in a row, answer the newest one and mention the earlier points only in passing.`;
 }
 
 /** Photos and signatures arrive as base64 data URLs and would swamp the model context. */
@@ -368,12 +508,25 @@ async function executeTool(name: string, args: Record<string, unknown>, current:
       return slim({ workspace, dashboard });
     }
     case "find_students": return slim(await registry(current, "read", "students", { search: args.search || "", classKey: args.classKey || null, status: args.status || "active" }));
-    case "student_record": return slim(await registry(current, "read", "student", { studentId: args.studentId }));
+    case "student_record": {
+      const call = await openRegistry(current);
+      const [record, guardians] = await Promise.all([
+        call("read", "student", { studentId: args.studentId }),
+        guardiansFor(call, current, String(args.studentId)),
+      ]);
+      return slim({ ...record, guardians });
+    }
+    case "student_guardians": {
+      const call = await openRegistry(current);
+      return slim({ ok: true, guardians: await guardiansFor(call, current, String(args.studentId)) });
+    }
+    case "class_guardians": return slim(await classGuardians(current, args));
     case "staff_directory": return slim(await registry(current, "read", "staff", { search: args.search || "" }));
     case "result_students": return slim(await results(current, "read.students", await withAcademicContext(current, { class_key: args.classKey })));
     case "result_scores": return slim(await resultsInContext(current, "read.scores", { class_key: args.classKey, subject_index: args.subjectIndex ?? null, term: args.term, academic_session: args.academicSession }));
     case "result_subjects": return slim(await resultsInContext(current, "read.subjects", { class_key: args.classKey }));
     case "result_ranking": return slim(await classRanking(current, args));
+    case "report_card": return slim(await reportCard(current, args));
     case "create_student":
       return { requires_confirmation: true, summary: `Create ${String(args.name)} in ${String(args.classKey)}.`, approval_token: approvalToken(current, { kind: "registry", action: "students.create", payload: { ...args } }) };
     case "update_student":
@@ -393,8 +546,8 @@ async function executeTool(name: string, args: Record<string, unknown>, current:
 }
 
 type GatewayFailure = { ok: false; status: number; code: string; detail: string };
-type GatewaySuccess = { ok: true; text: string; usage: unknown; approval?: Record<string, unknown>; steps?: string[]; truncated?: boolean };
-type ModelSettings = { key: string; url: string; model: string; label: string };
+type GatewaySuccess = { ok: true; text: string; usage: unknown; approval?: Record<string, unknown>; steps?: string[]; truncated?: boolean; document?: boolean };
+type ModelSettings = { key: string; url: string; model: string; label: string; effort?: string };
 
 function providerFailure(status: number, detail: string): GatewayFailure {
   const channelMissing = /no available channel|no channel for model|model not available|not available for/i.test(detail);
@@ -524,14 +677,17 @@ function readTurn(style: Style, payload: Record<string, unknown>): Turn {
   return { text, calls, usage: payload.usage || null };
 }
 
-async function askProvider(url: string, settings: ModelSettings, style: Style, history: HistoryItem[], budgetMs = 45000, noTools = false) {
+async function askProvider(url: string, settings: ModelSettings, style: Style, history: HistoryItem[], budgetMs = 45000, noTools = false, retriedEffort = false) {
   const body = style === "responses" ? responsesBody(history, noTools) : chatBody(history, noTools);
+  const tuned = settings.effort
+    ? { ...body, ...(style === "responses" ? { reasoning: { effort: settings.effort } } : { reasoning_effort: settings.effort }) }
+    : body;
   let response: Response;
   try {
     response = await fetch(url, {
       method: "POST",
       headers: { Authorization: `Bearer ${settings.key}`, "Content-Type": "application/json", "User-Agent": "opencode/1.18.0" },
-      body: JSON.stringify({ model: settings.model, temperature: 0.2, ...body }),
+      body: JSON.stringify({ model: settings.model, temperature: 0.2, ...tuned }),
       cache: "no-store",
       signal: AbortSignal.timeout(Math.max(6000, budgetMs)),
     });
@@ -545,6 +701,9 @@ async function askProvider(url: string, settings: ModelSettings, style: Style, h
   if (!response.ok || !payload) {
     const provider = payload?.error && typeof payload.error === "object" ? payload.error as Record<string, unknown> : null;
     const detail = String(provider?.message || payload?.message || text || `Provider replied ${response.status}`).trim();
+    if (response.status === 400 && settings.effort && !retriedEffort && /effort|reasoning|unknown|unexpected|unsupported/i.test(detail)) {
+      return askProvider(url, { ...settings, effort: "" }, style, history, budgetMs, noTools, true);
+    }
     return { failure: providerFailure(response.status, detail) };
   }
   const turn = readTurn(style, payload);
@@ -569,7 +728,7 @@ async function gateway(messages: unknown[], settings: ModelSettings, current: Cu
   const seen = new Map<string, string>();
   let retriedStyle = false;
   const started = Date.now();
-  const totalBudget = 48000;
+  const totalBudget = 62000;
   let partial = "";
   let ranOut = false;
   for (let step = 0; step < 12; step += 1) {
@@ -587,7 +746,7 @@ async function gateway(messages: unknown[], settings: ModelSettings, current: Cu
       return answer.failure;
     }
     const turn = answer.turn as Turn;
-    if (!turn.calls.length) return { ok: true, text: turn.text || "I could not produce a response.", usage: turn.usage, steps: used };
+    if (!turn.calls.length) return { ok: true, text: turn.text || "I could not produce a response.", usage: turn.usage, steps: used, document: used.includes("report_card") || undefined };
     if (turn.text) partial = turn.text;
     history.push({ role: "assistant", text: turn.text, calls: turn.calls });
     for (const call of turn.calls) {
@@ -693,11 +852,13 @@ export async function POST(request: NextRequest) {
     if (suppliedKey && suppliedKey.length > 500) throw new IdentityApiError("ASSISTANT_PROVIDER_KEY_INVALID", 400);
     if (suppliedModel && suppliedModel.length > 120) throw new IdentityApiError("ASSISTANT_MODEL_NOT_AVAILABLE", 400);
 
+    const effort = ["low", "medium", "high"].includes(String(body.effort || "")) ? String(body.effort) : "";
     const settings: ModelSettings = {
       key: suppliedKey || DEEPSEEK_KEY || GATEWAY_KEY,
       url: suppliedUrl || PROVIDER_URL,
       model: suppliedModel || DEFAULT_MODEL,
       label: suppliedModel || DEFAULT_MODEL,
+      effort,
     };
 
     if (body.action === "test") {
@@ -716,7 +877,7 @@ export async function POST(request: NextRequest) {
     if (!result.ok) {
       return Response.json({ ok: false, code: result.code, detail: result.detail, model: settings.model }, { status: 200, headers: noStoreHeaders() });
     }
-    return Response.json({ ok: true, model: settings.model, text: result.text, usage: result.usage, approval: result.approval, steps: result.steps }, { headers: noStoreHeaders() });
+    return Response.json({ ok: true, model: settings.model, text: result.text, usage: result.usage, approval: result.approval, steps: result.steps, document: result.document }, { headers: noStoreHeaders() });
   } catch (caught) {
     return resultErrorResponse(caught);
   }
