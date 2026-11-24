@@ -361,10 +361,10 @@ export function ProprietorAssistant() {
           <h2>Connection</h2>
           <p className="assistantMuted">The key is kept on this device for your account only and sent only when you ask something. It is never shown to other accounts.</p>
           <label><span>API key</span><div className="assistantKeyRow"><input type={showKey ? "text" : "password"} autoComplete="new-password" placeholder="Paste the provider key" value={form.key} onChange={(event) => setForm({ ...form, key: event.target.value })}/><button type="button" onClick={() => setShowKey((shown) => !shown)}>{showKey ? "Hide" : "Show"}</button></div></label>
-          <label><span>Endpoint</span><input type="url" inputMode="url" placeholder={DEFAULT_URL} value={form.url} onChange={(event) => setForm({ ...form, url: event.target.value })}/><em>Use the provider address, for example https://api.deepseek.com</em></label>
+          <label><span>Endpoint</span><input type="url" inputMode="url" placeholder={config?.default_url || DEFAULT_URL} value={form.url} onChange={(event) => setForm({ ...form, url: event.target.value })}/><em>Use the provider address, for example {config?.default_url || DEFAULT_URL}</em></label>
           <div className="assistantPair">
-            <label><span>Model ID</span><input placeholder="deepseek-chat" value={form.id} onChange={(event) => setForm({ ...form, id: event.target.value })}/></label>
-            <label><span>Display name</span><input placeholder="DeepSeek Chat" value={form.label} onChange={(event) => setForm({ ...form, label: event.target.value })}/></label>
+            <label><span>Model ID</span><input placeholder={config?.default_model || "deepseek-chat"} value={form.id} onChange={(event) => setForm({ ...form, id: event.target.value })}/></label>
+            <label><span>Display name</span><input placeholder={config?.default_model || "DeepSeek Chat"} value={form.label} onChange={(event) => setForm({ ...form, label: event.target.value })}/></label>
           </div>
           <div className="assistantActions">
             <button type="button" className="assistantGhost" onClick={runTest} disabled={test.state === "running"}>{test.state === "running" ? "Testing…" : "Test connection"}</button>
