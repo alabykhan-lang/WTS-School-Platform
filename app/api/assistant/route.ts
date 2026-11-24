@@ -238,8 +238,8 @@ function systemPrompt(current: CurrentSession) {
   const academic = (current.context.academic_context || {}) as Record<string, unknown>;
   const session = typeof academic.session === "string" ? academic.session : "";
   const term = typeof academic.term === "string" ? academic.term : "";
-  return session && term ? `${SYSTEM_PROMPT} The live academic context is ${session}, ${term}; use it for result tools unless the proprietor names another.` : SYSTEM_PROMPT;
-}
+  const line = session && term ? `${SYSTEM_PROMPT} The live academic context is ${session}, ${term}; use it for result tools unless the proprietor names another.` : SYSTEM_PROMPT;
+  return `${line} When saving a score, send every component (ca1, ca2, ca3, exam), keeping the values already recorded for the ones not being changed.`;
 
 /** Photos and signatures arrive as base64 data URLs and would swamp the model context. */
 function slim(value: unknown, depth = 0): unknown {
@@ -282,7 +282,7 @@ async function executeTool(name: string, args: Record<string, unknown>, current:
     case "archive_student":
       return { requires_confirmation: true, summary: `Archive student ${String(args.studentId)} as ${String(args.lifecycleStatus || "archived")}: ${String(args.reason)}.`, approval_token: approvalToken(current, { kind: "registry", action: "students.archive", payload: { ...args } }) };
     case "enter_score":
-      return { requires_confirmation: true, summary: `Save the supplied score for student ${String(args.studentId)} in ${String(args.classKey)}.`, approval_token: approvalToken(current, { kind: "results", action: "scores.enter", payload: { ...args } }) };
+      return { requires_confirmation: true, summary: `Save the supplied score for student ${String(args.studentId)} in ${String(args.classKey)}.`, approval_token: approvalToken(current, { kind: "results", action: "scores.enter", payload: { student_id: args.studentId, class_key: args.classKey, subject_index: args.subjectIndex, term: args.term, academic_session: args.academicSession, ca1: args.ca1 ?? null, ca2: args.ca2 ?? null, ca3: args.ca3 ?? null, exam: args.exam ?? null, clear: args.clear || [] } }) };
     default: return { ok: false, code: "ASSISTANT_TOOL_NOT_FOUND" };
   }
 }

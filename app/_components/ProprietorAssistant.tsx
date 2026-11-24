@@ -267,7 +267,13 @@ export function ProprietorAssistant() {
       const response = await fetch("/api/assistant", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ approval_token: approval.token }) });
       const value = await response.json();
       if (!response.ok || !value?.ok) throw new Error(String(value?.code || "CHANGE_FAILED"));
-      if (activeThread) updateThread(activeThread.id, [...activeThread.messages, { role: "assistant", content: `${approval.summary}\n\nThe system returned: ${value.completed?.result?.code || "completed"}.` }]);
+      if (activeThread) {
+        const result = (value.completed?.result || {}) as { ok?: boolean; code?: string; error_detail?: string };
+        const line = result.ok
+          ? `Done. ${value.completed?.summary || approval.summary}`
+          : `Not saved: ${result.code || "unknown error"}${result.error_detail ? ` — ${result.error_detail}` : ""}.`;
+        updateThread(activeThread.id, [...activeThread.messages, { role: "assistant", content: line }]);
+      }
       setApproval(null);
     } catch { setNotice("The confirmation failed. Refresh the record and try again."); }
     finally { setBusy(false); }
