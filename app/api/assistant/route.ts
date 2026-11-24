@@ -325,7 +325,8 @@ async function gateway(messages: unknown[], settings: ModelSettings, current: Cu
   if (!settings.key) return { ok: false, status: 503, code: "ASSISTANT_MODEL_GATEWAY_NOT_CONFIGURED", detail: "No model API key is saved for this account." };
   const transcript = [{ role: "system", content: systemPrompt(current) }, ...messages].slice(-24);
   const used: string[] = [];
-  for (let step = 0; step < 12; step += 1) {
+  const seen = new Map<string, string>();
+  for (let step = 0; step < 16; step += 1) {
     const answer = await askProvider(settings, { messages: transcript, tools, tool_choice: "auto" });
     if (answer.failure) return answer.failure;
     const payload = answer.payload || {};
@@ -346,7 +347,11 @@ async function gateway(messages: unknown[], settings: ModelSettings, current: Cu
       if ((result as Record<string, unknown>).requires_confirmation === true) {
         return { ok: true, text: (result as Record<string, unknown>).summary as string, usage: null, approval: result as Record<string, unknown>, steps: used };
       }
-      transcript.push({ role: "tool", tool_call_id: String(item.id || ""), content: JSON.stringify(result).slice(0, 50000) });
+      const key = `${name}:${JSON.stringify(args)}`;
+      const cached = seen.get(key);
+      const content = cached ?? JSON.stringify(result).slice(0, 50000);
+      if (!cached) seen.set(key, content);
+      transcript.push({ role: "tool", tool_call_id: String(item.id || ""), content });
     }
   }
   return { ok: true, text: "I reached the safe tool limit for this request. Please ask me to continue from here.", usage: null, steps: used };
