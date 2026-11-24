@@ -181,12 +181,26 @@ async function results(current: CurrentSession, action: string, payload: Record<
 }
 
 /** Fill term and session from the live academic context when the model omits them. */
-function withAcademicContext(current: CurrentSession, payload: Record<string, unknown>): Record<string, unknown> {
-  const academic = (current.context.academic_context || {}) as Record<string, unknown>;
+/** The live term and session, read from the results app when the session itself does not carry them. */
+async function liveAcademic(current: CurrentSession) {
+  const held = (current.context.academic_context || {}) as Record<string, unknown>;
+  if (typeof held.session === "string" && held.session && typeof held.term === "string" && held.term) {
+    return { session: held.session, term: held.term };
+  }
+  const read = await results(current, "settings.read", {}).catch(() => null);
+  const live = ((read?.settings || {}) as Record<string, unknown>).academic_context as Record<string, unknown> | undefined;
+  const session = typeof live?.academic_session === "string" ? live.academic_session : "";
+  const term = typeof live?.term === "string" ? live.term : "";
+  if (session && term) (current.context as Record<string, unknown>).academic_context = { ...held, session, term };
+  return { session, term };
+}
+
+async function withAcademicContext(current: CurrentSession, payload: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const live = await liveAcademic(current);
   return {
     ...payload,
-    term: payload.term || academic.term || null,
-    academic_session: payload.academic_session || academic.session || null,
+    term: payload.term || live.term || null,
+    academic_session: payload.academic_session || live.session || null,
   };
 }
 
@@ -195,11 +209,88 @@ const CONTEXT_BOUND_ACTIONS = new Set(["scores.enter", "traits.enter", "remarks.
 /** Open the class/term/session on the session, then run the action on that same session. */
 async function resultsInContext(current: CurrentSession, action: string, payload: Record<string, unknown>) {
   const call = await openResults(current);
-  const scoped = withAcademicContext(current, payload);
+  const scoped = await withAcademicContext(current, payload);
   if (scoped.class_key && scoped.term && scoped.academic_session) {
     await call("context.set", { class_key: scoped.class_key, academic_session: scoped.academic_session, term: scoped.term });
   }
   return call(action, scoped);
+}
+
+/** One call that returns a whole class ranked on everything recorded, so answers are not guesses from one subject. */
+async function classRanking(current: CurrentSession, args: Record<string, unknown>) {
+  const call = await openResults(current);
+  const payload = await withAcademicContext(current, { class_key: args.classKey });
+  if (!payload.class_key || !payload.term || !payload.academic_session) {
+    return { ok: false, code: "RESULT_ACADEMIC_CONTEXT_REQUIRED", detail: "A class, term and session are needed." };
+  }
+  await call("context.set", { class_key: payload.class_key, academic_session: payload.academic_session, term: payload.term });
+  const summary = await call("read.result_summary", payload);
+  if (!summary.ok) return summary;
+  const subjectsCall = await call("read.subjects", { class_key: payload.class_key });
+  const names = new Map<number, string>();
+  for (const row of (Array.isArray(subjectsCall?.rows) ? subjectsCall.rows : []) as Record<string, unknown>[]) {
+    names.set(Number(row.subject_index), String(row.subject_name || ""));
+  }
+  const bag = (summary.summary || {}) as { students?: Record<string, unknown>[]; scores?: Record<string, unknown>[] };
+  const byStudent = new Map<string, Record<string, unknown>[]>();
+  for (const row of bag.scores || []) {
+    const id = String(row.student_id || "");
+    if (!id) continue;
+    byStudent.set(id, [...(byStudent.get(id) || []), row]);
+  }
+  const limit = Math.max(1, Math.min(50, Number(args.limit) || 10));
+  const scored = (bag.students || []).map((student) => {
+    const rows = byStudent.get(String(student.id)) || [];
+    const subjects = new Map<number, { ca: string[]; exam: number | null }>();
+    let total = 0;
+    let max = 0;
+    for (const row of rows) {
+      const index = Number(row.subject_index);
+      const entry = subjects.get(index) || { ca: [] as string[], exam: null as number | null };
+      for (const part of ["ca1", "ca2", "ca3"] as const) {
+        const value = row[part];
+        if (value !== null && value !== undefined && value !== "") {
+          total += Number(value) || 0;
+          max += 10;
+          entry.ca.push(`${part.toUpperCase()} ${value}`);
+        }
+      }
+      const exam = row.exam;
+      if (exam !== null && exam !== undefined && exam !== "") {
+        total += Number(exam) || 0;
+        max += 70;
+        entry.exam = Number(exam);
+      }
+      subjects.set(index, entry);
+    }
+    return {
+      name: String(student.name || "Unknown"),
+      admno: String(student.admno || ""),
+      recorded: total,
+      possible: max,
+      percent: max ? Math.round((total / max) * 1000) / 10 : 0,
+      exam_missing: [...subjects.values()].every((entry) => entry.exam === null),
+      subject_count: [...subjects.keys()].length,
+    };
+  }).sort((a, b) => b.percent - a.percent || b.recorded - a.recorded);
+  let last = -1;
+  let rank = 0;
+  const ranked = scored.map((row, index) => {
+    if (row.percent !== last) { rank = index + 1; last = row.percent; }
+    return { rank, ...row };
+  });
+  const blankExam = ranked.filter((row) => row.exam_missing).length;
+  return {
+    ok: true,
+    class_key: payload.class_key,
+    term: payload.term,
+    academic_session: payload.academic_session,
+    basis: "Every recorded CA and exam mark, weighted by the marks actually recorded, so a blank exam does not sink a student who has CA only.",
+    class_size: ranked.length,
+    students_with_no_exam: blankExam,
+    subjects_with_names: [...names.entries()].slice(0, 40).map(([index, name]) => `${index}: ${name}`),
+    ranked: ranked.slice(0, limit),
+  };
 }
 
 function approvalToken(current: CurrentSession, proposal: Record<string, unknown>) {
@@ -227,7 +318,9 @@ const tools = [
   { type: "function", function: { name: "student_record", description: "Read one student's complete central-registry record by id.", parameters: { type: "object", required: ["studentId"], properties: { studentId: { type: "string" } } } } },
   { type: "function", function: { name: "staff_directory", description: "Read the staff directory and active assignments.", parameters: { type: "object", properties: { search: { type: "string" } } } } },
   { type: "function", function: { name: "result_students", description: "Read students and result context for a class.", parameters: { type: "object", required: ["classKey"], properties: { classKey: { type: "string" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
-  { type: "function", function: { name: "result_scores", description: "Read score rows for a class and subject.", parameters: { type: "object", required: ["classKey", "subjectIndex"], properties: { classKey: { type: "string" }, subjectIndex: { type: "integer" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
+  { type: "function", function: { name: "result_subjects", description: "List the subject slots (index and subject name) for a class. Use this before reading or writing scores so you can name the subject.", parameters: { type: "object", required: ["classKey"], properties: { classKey: { type: "string" } } } } },
+  { type: "function", function: { name: "result_scores", description: "Read score rows for a class. Leave subjectIndex out to get every subject in one call; pass it to narrow to one subject.", parameters: { type: "object", required: ["classKey"], properties: { classKey: { type: "string" }, subjectIndex: { type: "integer" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
+  { type: "function", function: { name: "result_ranking", description: "Rank every student in a class on all recorded components at once (CA and exam, weighted by what is actually recorded). Use this for best student, top of class, or position questions instead of ranking one subject.", parameters: { type: "object", required: ["classKey"], properties: { classKey: { type: "string" }, limit: { type: "integer" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
   { type: "function", function: { name: "create_student", description: "Prepare creation of a new student. Always requires proprietor confirmation before it changes records.", parameters: { type: "object", required: ["name", "classKey"], properties: { name: { type: "string" }, classKey: { type: "string" }, gender: { type: "string" }, house: { type: "string" }, age: { type: "string" }, admissionDate: { type: "string" } } } } },
   { type: "function", function: { name: "update_student", description: "Prepare a student record change. Always requires proprietor confirmation.", parameters: { type: "object", required: ["studentId"], properties: { studentId: { type: "string" }, name: { type: "string" }, classKey: { type: "string" }, gender: { type: "string" }, house: { type: "string" }, age: { type: "string" } } } } },
   { type: "function", function: { name: "archive_student", description: "Prepare student archival. Always requires proprietor confirmation and a reason.", parameters: { type: "object", required: ["studentId", "reason"], properties: { studentId: { type: "string" }, reason: { type: "string" }, lifecycleStatus: { type: "string", enum: ["archived", "withdrawn", "transferred", "graduated", "suspended"] } } } } },
@@ -242,7 +335,7 @@ function systemPrompt(current: CurrentSession) {
   const session = typeof academic.session === "string" ? academic.session : "";
   const term = typeof academic.term === "string" ? academic.term : "";
   const line = session && term ? `${SYSTEM_PROMPT} The live academic context is ${session}, ${term}; use it for result tools unless the proprietor names another.` : SYSTEM_PROMPT;
-  return `${line} When saving a score, send every component (ca1, ca2, ca3, exam), keeping the values already recorded for the ones not being changed. Work in as few tool calls as you can: reuse what a tool already gave you instead of fetching it again, and stop and answer once you have enough. If the proprietor sent several short messages in a row, answer the newest one and mention the earlier points only in passing.`;
+  return `${line} When saving a score, send every component (ca1, ca2, ca3, exam), keeping the values already recorded for the ones not being changed. Work in as few tool calls as you can: reuse what a tool already gave you instead of fetching it again, and stop and answer once you have enough. For any best-student, top-of-class or position question, call result_ranking once instead of reading subjects one by one; never rank from a single subject unless the proprietor names that subject. Always call result_subjects before naming a subject, because score rows carry index numbers only. When exam marks are blank, say the figure is CA-only rather than calling it a term position. If the proprietor sent several short messages in a row, answer the newest one and mention the earlier points only in passing.`;
 }
 
 /** Photos and signatures arrive as base64 data URLs and would swamp the model context. */
@@ -277,8 +370,10 @@ async function executeTool(name: string, args: Record<string, unknown>, current:
     case "find_students": return slim(await registry(current, "read", "students", { search: args.search || "", classKey: args.classKey || null, status: args.status || "active" }));
     case "student_record": return slim(await registry(current, "read", "student", { studentId: args.studentId }));
     case "staff_directory": return slim(await registry(current, "read", "staff", { search: args.search || "" }));
-    case "result_students": return slim(await results(current, "read.students", withAcademicContext(current, { class_key: args.classKey })));
-    case "result_scores": return slim(await resultsInContext(current, "read.scores", { class_key: args.classKey, subject_index: args.subjectIndex, term: args.term, academic_session: args.academicSession }));
+    case "result_students": return slim(await results(current, "read.students", await withAcademicContext(current, { class_key: args.classKey })));
+    case "result_scores": return slim(await resultsInContext(current, "read.scores", { class_key: args.classKey, subject_index: args.subjectIndex ?? null, term: args.term, academic_session: args.academicSession }));
+    case "result_subjects": return slim(await resultsInContext(current, "read.subjects", { class_key: args.classKey }));
+    case "result_ranking": return slim(await classRanking(current, args));
     case "create_student":
       return { requires_confirmation: true, summary: `Create ${String(args.name)} in ${String(args.classKey)}.`, approval_token: approvalToken(current, { kind: "registry", action: "students.create", payload: { ...args } }) };
     case "update_student":
