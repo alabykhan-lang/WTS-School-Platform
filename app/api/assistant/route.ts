@@ -209,7 +209,7 @@ function readApproval(current: CurrentSession, token: string) {
   const dot = token.lastIndexOf(".");
   if (dot <= 0) throw new IdentityApiError("APPROVAL_INVALID", 400);
   const body = token.slice(0, dot);
-  const supplied = Buffer.from(token.slice(dot + 1));
+  const supplied = Buffer.from(token.slice(dot + 1), "base64url");
   const expected = createHmac("sha256", current.secret).update(body).digest();
   if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) throw new IdentityApiError("APPROVAL_INVALID", 400);
   let proposal: Record<string, unknown>;
