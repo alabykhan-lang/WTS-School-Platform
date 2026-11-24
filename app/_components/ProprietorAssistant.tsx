@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
-type Message = { role: "user" | "assistant"; content: string };
+type Message = { role: "user" | "assistant"; content: string; failed?: boolean };
 type Model = { id: string; label: string; description?: string };
 type Thread = { id: string; title: string; messages: Message[]; updatedAt: number };
 type Person = { id?: string; full_name?: string };
@@ -10,6 +10,10 @@ type AssistantConfig = { configured: boolean; models: Model[]; default_model: st
 type TestState = { state: "idle" | "running" | "pass" | "fail"; message: string };
 
 const DEFAULT_URL = "https://api.deepseek.com";
+
+function hostOf(value: string) {
+  try { return new URL(value).host; } catch { return value; }
+}
 const FALLBACK_MODELS: Model[] = [
   { id: "deepseek-chat", label: "DeepSeek Chat", description: "Everyday school requests" },
   { id: "deepseek-reasoner", label: "DeepSeek Reasoner", description: "Longer reasoning tasks" },
@@ -250,6 +254,17 @@ export function ProprietorAssistant() {
     } finally { setFetchingModels(false); }
   }
 
+  async function testSaved() {
+    if (!settings.providerKey) { setTest({ state: "fail", message: "No key is saved on this device yet. Paste one and press Save model." }); return; }
+    setTest({ state: "running", message: "" });
+    try {
+      const response = await fetch("/api/assistant", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "test", provider_key: settings.providerKey, provider_url: settings.providerUrl, model: settings.defaultModel }) });
+      const value = await response.json();
+      if (value?.ok) setTest({ state: "pass", message: `The saved key and address answered in ${value.ms} ms through ${hostOf(settings.providerUrl || DEFAULT_URL)}.` });
+      else setTest({ state: "fail", message: `${ERRORS[value?.code] || "The saved setting failed."}${value?.detail ? ` ${String(value.detail).slice(0, 180)}` : ""}` });
+    } catch { setTest({ state: "fail", message: "The test could not reach the school server. Check your connection." }); }
+  }
+
   function changeUsage(field: "usagePercent" | "perReplyCost", raw: string) {
     const value = Number(raw);
     setSettings((current) => ({ ...current, [field]: Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : 0 }));
@@ -260,14 +275,19 @@ export function ProprietorAssistant() {
     const content = (prompt || draft).trim();
     if (!content || busy || !activeThread) return;
     if (settings.usagePercent <= 0) { setNotice("Usage balance is at 0%. Raise it in the Usage tab to continue."); setTab("usage"); return; }
+    const threadId = activeThread.id;
+    const host = hostOf(settings.providerUrl || DEFAULT_URL);
     const updated = [...activeThread.messages, { role: "user", content } as Message];
-    updateThread(activeThread.id, updated);
+    updateThread(threadId, updated);
     setDraft(""); setBusy(true); setNotice("");
+    const controller = new AbortController();
+    const stop = window.setTimeout(() => controller.abort(), 100000);
     try {
       const response = await fetch("/api/assistant", {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
         body: JSON.stringify({
           model: settings.defaultModel,
           messages: updated,
@@ -276,14 +296,23 @@ export function ProprietorAssistant() {
         }),
       });
       const value = await response.json();
-      if (!response.ok || !value?.ok) throw new Error(String(value?.code || "ASSISTANT_REQUEST_FAILED"));
-      updateThread(activeThread.id, [...updated, { role: "assistant", content: String(value.text || "Done.") }]);
+      if (!response.ok || !value?.ok) {
+        const code = String(value?.code || "ASSISTANT_REQUEST_FAILED");
+        const said = String(value?.detail || "").trim().slice(0, 180);
+        throw new Error(`${ERRORS[code] || "The request failed."} The server was ${host}.${said ? ` It said: ${said}` : ""}`);
+      }
+      updateThread(threadId, [...updated, { role: "assistant", content: String(value.text || "Done.") }]);
       if (value.approval?.approval_token) setApproval({ token: value.approval.approval_token, summary: value.approval.summary || "Confirm this change." });
       setSettings((current) => ({ ...current, usagePercent: Math.max(0, current.usagePercent - current.perReplyCost) }));
     } catch (error) {
-      const code = error instanceof Error ? error.message : "";
-      setNotice(ERRORS[code] || "The request failed. Check your connection and model settings, then try again.");
-    } finally { setBusy(false); }
+      const failed = controller.signal.aborted
+        ? `${host} did not answer within 100 seconds, so the request was stopped. Try again.`
+        : error instanceof Error && error.message && !error.message.startsWith("ASSISTANT_")
+          ? error.message
+          : `${ERRORS["ASSISTANT_REQUEST_FAILED"]} The server was ${host}.`;
+      setNotice(failed);
+      updateThread(threadId, [...updated, { role: "assistant", content: failed, failed: true }]);
+    } finally { window.clearTimeout(stop); setBusy(false); }
   }
 
   async function confirm() {
@@ -362,7 +391,7 @@ export function ProprietorAssistant() {
           </div>}
           {activeThread?.messages.map((message, index) => <article key={`${message.role}-${index}`} className={`assistantMessage ${message.role}`}>
             <div className="assistantWho">{message.role === "user" ? "You" : "WTS"}</div>
-            <div className="assistantBubble">{message.content.split("\n").map((line, lineIndex) => <p key={lineIndex}>{line ? renderInline(line) : <>&nbsp;</>}</p>)}</div>
+            <div className={`assistantBubble${message.failed ? " failed" : ""}`}>{message.content.split("\n").map((line, lineIndex) => <p key={lineIndex}>{line ? renderInline(line) : <>&nbsp;</>}</p>)}</div>
           </article>)}
           {busy && <article className="assistantMessage assistant"><div className="assistantWho">WTS</div><div className="assistantBubble assistantThinking"><i/><i/><i/></div></article>}
           <div ref={endRef}/>
@@ -380,6 +409,7 @@ export function ProprietorAssistant() {
         <div className="assistantCard">
           <h2>Connection</h2>
           <p className="assistantMuted">The key is kept on this device for your account only and sent only when you ask something. It is never shown to other accounts.</p>
+          <p className={`assistantMuted assistantSaved ${settings.providerKey ? "" : "empty"}`}>In use now: {settings.providerKey ? `key ending ${settings.providerKey.slice(-4)}` : "no key saved"} at {hostOf(settings.providerUrl || DEFAULT_URL)} · model {settings.defaultModel}</p>
           <label><span>API key</span><div className="assistantKeyRow"><input type={showKey ? "text" : "password"} autoComplete="new-password" placeholder="Paste the provider key" value={form.key} onChange={(event) => setForm({ ...form, key: event.target.value })}/><button type="button" onClick={() => setShowKey((shown) => !shown)}>{showKey ? "Hide" : "Show"}</button></div></label>
           <label><span>Endpoint</span><input type="url" inputMode="url" placeholder={config?.default_url || DEFAULT_URL} value={form.url} onChange={(event) => setForm({ ...form, url: event.target.value })}/><em>Use the provider address, for example {config?.default_url || DEFAULT_URL}</em></label>
           <div className="assistantPair">
@@ -389,6 +419,7 @@ export function ProprietorAssistant() {
           <div className="assistantActions">
             <button type="button" className="assistantGhost" onClick={fetchModels} disabled={fetchingModels}>{fetchingModels ? "Fetching…" : "Fetch models"}</button>
             <button type="button" className="assistantGhost" onClick={runTest} disabled={test.state === "running"}>{test.state === "running" ? "Testing…" : "Test connection"}</button>
+            <button type="button" className="assistantGhost" onClick={testSaved} disabled={test.state === "running"}>Test saved settings</button>
             <button type="button" className="assistantPrimary" onClick={saveModel}>Save model</button>
           </div>
           {test.state !== "idle" && <div className={`assistantTest ${test.state}`}>{test.message}</div>}

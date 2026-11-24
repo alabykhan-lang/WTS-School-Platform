@@ -431,7 +431,7 @@ async function askProvider(url: string, settings: ModelSettings, style: Style, h
   try {
     response = await fetch(url, {
       method: "POST",
-      headers: { Authorization: `Bearer ${settings.key}`, "Content-Type": "application/json" },
+      headers: { Authorization: `Bearer ${settings.key}`, "Content-Type": "application/json", "User-Agent": "opencode/1.18.0" },
       body: JSON.stringify({ model: settings.model, temperature: 0.2, ...body }),
       cache: "no-store",
       signal: AbortSignal.timeout(60000),
