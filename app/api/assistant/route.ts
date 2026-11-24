@@ -753,14 +753,15 @@ async function gateway(messages: unknown[], settings: ModelSettings, current: Cu
       used.push(call.name);
       let args: Record<string, unknown> = {};
       try { args = JSON.parse(call.args || "{}"); } catch { args = {}; }
+      const key = `${call.name}:${JSON.stringify(call.name === "class_guardians" ? { classKey: args.classKey } : args)}`;
+      const cached = seen.get(key);
+      if (cached) { history.push({ role: "tool", callId: call.id, content: cached }); continue; }
       const result = await executeTool(call.name, args, current);
       if ((result as Record<string, unknown>).requires_confirmation === true) {
         return { ok: true, text: (result as Record<string, unknown>).summary as string, usage: null, approval: result as Record<string, unknown>, steps: used };
       }
-      const key = `${call.name}:${JSON.stringify(args)}`;
-      const cached = seen.get(key);
-      const content = cached ?? JSON.stringify(result).slice(0, 50000);
-      if (!cached) seen.set(key, content);
+      const content = JSON.stringify(result).slice(0, 50000);
+      seen.set(key, content);
       history.push({ role: "tool", callId: call.id, content });
     }
     if (Date.now() - started > totalBudget) { ranOut = true; break; }
