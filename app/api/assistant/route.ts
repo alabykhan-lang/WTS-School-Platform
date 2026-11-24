@@ -389,6 +389,8 @@ function responsesBody(history: HistoryItem[]) {
     input,
     tools: tools.map((tool) => ({ type: "function", name: tool.function.name, description: tool.function.description, parameters: tool.function.parameters })),
     tool_choice: "auto",
+    stream: false,
+    store: false,
   };
 }
 
