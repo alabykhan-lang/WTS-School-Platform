@@ -240,6 +240,7 @@ function systemPrompt(current: CurrentSession) {
   const term = typeof academic.term === "string" ? academic.term : "";
   const line = session && term ? `${SYSTEM_PROMPT} The live academic context is ${session}, ${term}; use it for result tools unless the proprietor names another.` : SYSTEM_PROMPT;
   return `${line} When saving a score, send every component (ca1, ca2, ca3, exam), keeping the values already recorded for the ones not being changed.`;
+}
 
 /** Photos and signatures arrive as base64 data URLs and would swamp the model context. */
 function slim(value: unknown, depth = 0): unknown {
