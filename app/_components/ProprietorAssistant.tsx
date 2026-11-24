@@ -221,6 +221,7 @@ export function ProprietorAssistant() {
       const response = await fetch("/api/assistant", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "test", model: id, provider_key: key, provider_url: url }) });
       const value = await response.json();
       if (value?.ok) setTest({ state: "pass", message: `Connected in ${value.ms} ms. The key and model work.` });
+      else if (value?.code === "ASSISTANT_MODEL_UNAVAILABLE") { setTest({ state: "fail", message: ERRORS[value.code] }); await fetchModels(); }
       else setTest({ state: "fail", message: value?.detail ? `${ERRORS[value.code] || "Connection failed."} ${value.detail}` : ERRORS[value?.code] || "Connection failed." });
     } catch {
       setTest({ state: "fail", message: "The test could not run. Check your connection." });
@@ -238,6 +239,7 @@ export function ProprietorAssistant() {
       const value = await response.json();
       if (value?.ok && Array.isArray(value.models)) {
         setModelList(value.models);
+        if (value.models.length && !value.models.includes(form.id.trim())) setForm((current) => ({ ...current, id: value.models[0] }));
         setTest(value.models.length ? { state: "pass", message: `${value.models.length} model${value.models.length === 1 ? "" : "s"} available to this key. Pick one in Model ID.` } : { state: "fail", message: "That key returned no text models." });
       } else {
         setTest({ state: "fail", message: value?.detail ? `${ERRORS[value.code] || "Could not list models."} ${value.detail}` : ERRORS[value?.code] || "Could not list models." });
