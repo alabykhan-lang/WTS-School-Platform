@@ -12,6 +12,6 @@ export const metadata: Metadata = {
 
 export default async function AssistantPage() {
   const cookieStore = await cookies();
-  if (!cookieStore.has(WORKSPACE_SESSION_COOKIE)) redirect("/portal/sign-in?return_to=%2Fassistant");
+  if (!cookieStore.has(WORKSPACE_SESSION_COOKIE) && process.env.NODE_ENV === "production") redirect("/portal/sign-in?return_to=%2Fassistant");
   return <ProprietorAssistant />;
 }

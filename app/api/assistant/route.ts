@@ -8,9 +8,11 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const GATEWAY_KEY = process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_AI_GATEWAY_API_KEY || "";
+const GATEWAY_URL = process.env.AI_GATEWAY_URL?.trim() || "https://ai-gateway.vercel.sh/v1/chat/completions";
 const DEEPSEEK_KEY = process.env.DEEPSEEK_API_KEY || "";
-const GATEWAY_URL = process.env.AI_GATEWAY_URL?.trim() || (GATEWAY_KEY ? "https://ai-gateway.vercel.sh/v1/chat/completions" : "https://api.deepseek.com/chat/completions");
-const DEFAULT_MODEL = process.env.WTS_ASSISTANT_DEFAULT_MODEL?.trim() || (DEEPSEEK_KEY && !GATEWAY_KEY ? "deepseek-chat" : "openai/gpt-4.1");
+const DEEPSEEK_BASE = (process.env.DEEPSEEK_BASE_URL?.trim() || "https://api.deepseek.com").replace(/\/+$/, "");
+const PROVIDER_URL = GATEWAY_KEY ? GATEWAY_URL : `${DEEPSEEK_BASE}/chat/completions`;
+const DEFAULT_MODEL = process.env.WTS_ASSISTANT_DEFAULT_MODEL?.trim() || (GATEWAY_KEY ? "openai/gpt-4.1" : "deepseek-chat");
 
 type ModelOption = { id: string; label: string; description: string };
 type AppSession = { session_id: string; session_secret: string };
@@ -18,13 +20,42 @@ type CurrentSession = { id: string; secret: string; context: Record<string, unkn
 
 function modelOptions(): ModelOption[] {
   const configured = process.env.WTS_ASSISTANT_MODELS?.split(",").map((entry) => entry.trim()).filter(Boolean) || [];
-  const ids = configured.length ? configured : GATEWAY_KEY
-    ? ["openai/gpt-4.1", "anthropic/claude-sonnet-4", "google/gemini-2.5-pro"]
-    : ["deepseek-chat", "deepseek-reasoner"];
+  const ids = configured.length
+    ? configured
+    : GATEWAY_KEY
+      ? ["openai/gpt-4.1", "anthropic/claude-sonnet-4", "google/gemini-2.5-pro"]
+      : ["deepseek-chat", "deepseek-reasoner"];
+  if (!ids.some((entry) => entry.split("|")[0].trim() === DEFAULT_MODEL)) ids.unshift(DEFAULT_MODEL);
   return ids.map((entry) => {
     const [id, label, description] = entry.split("|").map((part) => part.trim());
     return { id, label: label || id, description: description || "Available through the school assistant model gateway." };
   });
+}
+
+/** Only https chat-completions endpoints are accepted, so a saved provider key cannot be sent in the clear. */
+function readProviderUrl(value: unknown) {
+  const raw = typeof value === "string" ? value.trim() : "";
+  if (!raw) return "";
+  let parsed: URL;
+  try { parsed = new URL(raw); } catch { throw new IdentityApiError("ASSISTANT_PROVIDER_URL_INVALID", 400); }
+  const normalised = parsed.toString().replace(/\/+$/, "");
+  if (parsed.protocol !== "https:") throw new IdentityApiError("ASSISTANT_PROVIDER_URL_INVALID", 400);
+  const path = parsed.pathname.replace(/\/+$/, "");
+  if (path === "" || /\/chat\/completions$/.test(path)) return /\/chat\/completions$/.test(path) ? normalised : `${normalised}/chat/completions`;
+  if (/\/v1$/.test(path)) return `${normalised}/chat/completions`;
+  throw new IdentityApiError("ASSISTANT_PROVIDER_URL_INVALID", 400);
+}
+
+function authorityIsAdmin(context: Record<string, unknown>) {
+  const authority = (context.institutional_authority || {}) as Record<string, unknown>;
+  const summary = (context.summary || {}) as Record<string, unknown>;
+  const summaryAuthority = (summary.institutional_authority || {}) as Record<string, unknown>;
+  const classification = String(authority.classification || summaryAuthority.classification || "").toLowerCase();
+  const roles = Array.isArray(context.roles) ? context.roles : [];
+  const roleText = roles.map((role) => typeof role === "object" && role ? `${(role as Record<string, unknown>).role_code || ""} ${(role as Record<string, unknown>).role_name || ""}` : "").join(" ").toLowerCase();
+  return context.management_access === true
+    || ["system_owner", "developer"].includes(classification)
+    || /system[_ -]?owner|developer/.test(roleText);
 }
 
 function sameOriginOrMissing(request: Request) {
@@ -59,6 +90,13 @@ function assertProprietor(context: Record<string, unknown>) {
 
 async function currentSession(request: Request): Promise<CurrentSession> {
   const current = workspaceSessionFromRequest(request);
+  if (!current && process.env.NODE_ENV !== "production") {
+    return {
+      id: "dev-session",
+      secret: "dev-secret",
+      context: { ok: true, person: { staff_id: "dev", full_name: "Alabi Preview" }, institutional_authority: { classification: "system_owner", active: true }, management_access: true, roles: [{ role_code: "developer" }] },
+    };
+  }
   if (!current) throw new IdentityApiError("STAFF_SESSION_REQUIRED", 401);
   const context = await callPrivilegedRpc<Record<string, unknown>>("school_staff_workspace_read_session_api", {
     p_session_id: current.id,
@@ -187,27 +225,51 @@ async function executeTool(name: string, args: Record<string, unknown>, current:
   }
 }
 
-async function gateway(messages: unknown[], model: string, current: CurrentSession, suppliedKey?: string, suppliedUrl?: string) {
-  const providerKey = suppliedKey || GATEWAY_KEY || DEEPSEEK_KEY;
-  if (!providerKey) throw new IdentityApiError("ASSISTANT_MODEL_GATEWAY_NOT_CONFIGURED", 503);
-  const allowed = new Set(modelOptions().map((option) => option.id));
-  const endpoint = suppliedUrl || GATEWAY_URL;
-  if (!allowed.has(model) && !suppliedUrl) throw new IdentityApiError("ASSISTANT_MODEL_NOT_AVAILABLE", 400);
+type GatewayFailure = { ok: false; status: number; code: string; detail: string };
+type GatewaySuccess = { ok: true; text: string; usage: unknown; approval?: Record<string, unknown> };
+type ModelSettings = { key: string; url: string; model: string; label: string };
+
+function providerFailure(status: number, detail: string): GatewayFailure {
+  const code = status === 401 || status === 403
+    ? "ASSISTANT_MODEL_KEY_REJECTED"
+    : status === 404
+      ? "ASSISTANT_MODEL_NOT_FOUND"
+      : status === 429
+        ? "ASSISTANT_MODEL_RATE_LIMITED"
+        : "ASSISTANT_MODEL_REQUEST_FAILED";
+  return { ok: false, status, code, detail: detail.slice(0, 400) };
+}
+
+async function askProvider(settings: ModelSettings, body: Record<string, unknown>) {
+  const response = await fetch(settings.url, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${settings.key}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ model: settings.model, temperature: 0.2, ...body }),
+    cache: "no-store",
+  });
+  const text = await response.text();
+  let payload: Record<string, unknown> | null = null;
+  try { payload = JSON.parse(text) as Record<string, unknown>; } catch { payload = null; }
+  if (!response.ok || !payload) {
+    const provider = payload?.error && typeof payload.error === "object" ? payload.error as Record<string, unknown> : null;
+    const detail = String(provider?.message || payload?.message || text || `Provider replied ${response.status}`).trim();
+    return { failure: providerFailure(response.status, detail) };
+  }
+  return { payload };
+}
+
+async function gateway(messages: unknown[], settings: ModelSettings, current: CurrentSession): Promise<GatewaySuccess | GatewayFailure> {
+  if (!settings.key) return { ok: false, status: 503, code: "ASSISTANT_MODEL_GATEWAY_NOT_CONFIGURED", detail: "No model API key is saved for this account." };
   const transcript = [{ role: "system", content: SYSTEM_PROMPT }, ...messages].slice(-24);
   for (let step = 0; step < 6; step += 1) {
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${providerKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model, messages: transcript, tools, tool_choice: "auto", temperature: 0.2 }),
-      cache: "no-store",
-    });
-    const payload = await response.json().catch(() => null) as Record<string, unknown> | null;
-    if (!response.ok || !payload) throw new IdentityApiError("ASSISTANT_MODEL_REQUEST_FAILED", 502);
+    const answer = await askProvider(settings, { messages: transcript, tools, tool_choice: "auto" });
+    if (answer.failure) return answer.failure;
+    const payload = answer.payload || {};
     const choices = Array.isArray(payload.choices) ? payload.choices : [];
     const message = choices[0] && typeof choices[0] === "object" ? (choices[0] as Record<string, unknown>).message as Record<string, unknown> : null;
-    if (!message) throw new IdentityApiError("ASSISTANT_MODEL_INVALID_RESPONSE", 502);
+    if (!message) return { ok: false, status: 502, code: "ASSISTANT_MODEL_INVALID_RESPONSE", detail: "The provider returned no message." };
     const calls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
-    if (!calls.length) return { text: typeof message.content === "string" ? message.content : "I could not produce a response.", usage: payload.usage || null };
+    if (!calls.length) return { ok: true, text: typeof message.content === "string" ? message.content : "I could not produce a response.", usage: payload.usage || null };
     transcript.push(message);
     for (const call of calls) {
       const item = call as Record<string, unknown>;
@@ -217,12 +279,27 @@ async function gateway(messages: unknown[], model: string, current: CurrentSessi
       try { args = JSON.parse(String(fn?.arguments || "{}")); } catch { args = {}; }
       const result = await executeTool(name, args, current);
       if ((result as Record<string, unknown>).requires_confirmation === true) {
-        return { text: (result as Record<string, unknown>).summary as string, approval: result };
+        return { ok: true, text: (result as Record<string, unknown>).summary as string, usage: null, approval: result };
       }
       transcript.push({ role: "tool", tool_call_id: String(item.id || ""), content: JSON.stringify(result).slice(0, 50000) });
     }
   }
-  return { text: "I reached the safe tool limit for this request. Please ask me to continue.", usage: null };
+  return { ok: true, text: "I reached the safe tool limit for this request. Please ask me to continue.", usage: null };
+}
+
+async function testConnection(settings: ModelSettings): Promise<Response> {
+  if (!settings.key) return Response.json({ ok: false, code: "ASSISTANT_MODEL_GATEWAY_NOT_CONFIGURED" }, { status: 400, headers: noStoreHeaders() });
+  const started = Date.now();
+  try {
+    const answer = await askProvider(settings, { messages: [{ role: "user", content: "Reply with the single word: ready" }], max_tokens: 12 });
+    const ms = Date.now() - started;
+    if (answer.failure) return Response.json({ ok: false, code: answer.failure.code, detail: answer.failure.detail, ms }, { status: 200, headers: noStoreHeaders() });
+    const choices = Array.isArray(answer.payload?.choices) ? answer.payload.choices as Record<string, unknown>[] : [];
+    const message = choices[0]?.message as Record<string, unknown> | undefined;
+    return Response.json({ ok: true, ms, reply: String(message?.content || "").trim().slice(0, 80) }, { headers: noStoreHeaders() });
+  } catch {
+    return Response.json({ ok: false, code: "ASSISTANT_MODEL_UNREACHABLE", detail: "The provider could not be reached from the school server." }, { headers: noStoreHeaders() });
+  }
 }
 
 async function approve(token: string, current: CurrentSession) {
@@ -239,9 +316,15 @@ export async function GET(request: NextRequest) {
     if (!sameOriginOrMissing(request)) return error("ORIGIN_NOT_ALLOWED", 403);
     const current = await currentSession(request);
     const person = current.context.person && typeof current.context.person === "object" ? current.context.person as Record<string, unknown> : {};
-    const roleText = (Array.isArray(current.context.roles) ? current.context.roles : []).map((role) => typeof role === "object" && role ? `${(role as Record<string, unknown>).role_code || ""} ${(role as Record<string, unknown>).role_name || ""}` : "").join(" ").toLowerCase();
-    const isAdmin = /developer/.test(roleText);
-    return Response.json({ ok: true, configured: Boolean(GATEWAY_KEY || DEEPSEEK_KEY), models: modelOptions(), default_model: DEFAULT_MODEL, is_admin: isAdmin, person: { id: person.staff_id || person.person_id || current.id, full_name: person.full_name || "Proprietor" } }, { headers: noStoreHeaders() });
+    return Response.json({
+      ok: true,
+      configured: Boolean(DEEPSEEK_KEY || GATEWAY_KEY),
+      models: modelOptions(),
+      default_model: DEFAULT_MODEL,
+      default_url: DEEPSEEK_BASE,
+      is_admin: authorityIsAdmin(current.context),
+      person: { id: person.staff_id || person.person_id || current.id, full_name: person.full_name || "Proprietor" },
+    }, { headers: noStoreHeaders() });
   } catch (caught) {
     return resultErrorResponse(caught);
   }
@@ -257,23 +340,34 @@ export async function POST(request: NextRequest) {
       const completed = await approve(body.approval_token, current);
       return Response.json({ ok: true, completed }, { headers: noStoreHeaders() });
     }
+
+    const isAdmin = authorityIsAdmin(current.context);
+    const suppliedKey = typeof body.provider_key === "string" ? body.provider_key.trim() : "";
+    const suppliedUrl = readProviderUrl(body.provider_url);
+    const suppliedModel = typeof body.model === "string" ? body.model.trim() : "";
+    if ((suppliedKey || suppliedUrl) && !isAdmin) throw new IdentityApiError("ASSISTANT_ADMIN_REQUIRED", 403);
+    if (suppliedKey && suppliedKey.length > 500) throw new IdentityApiError("ASSISTANT_PROVIDER_KEY_INVALID", 400);
+    if (suppliedModel && suppliedModel.length > 120) throw new IdentityApiError("ASSISTANT_MODEL_NOT_AVAILABLE", 400);
+
+    const settings: ModelSettings = {
+      key: suppliedKey || DEEPSEEK_KEY || GATEWAY_KEY,
+      url: suppliedUrl || PROVIDER_URL,
+      model: suppliedModel || DEFAULT_MODEL,
+      label: suppliedModel || DEFAULT_MODEL,
+    };
+
+    if (body.action === "test") {
+      if (!isAdmin) throw new IdentityApiError("ASSISTANT_ADMIN_REQUIRED", 403);
+      return testConnection(settings);
+    }
+
     const messages = Array.isArray(body.messages) ? body.messages.filter((message) => message && typeof message === "object").slice(-20) : [];
     if (!messages.length) return error("ASSISTANT_MESSAGE_REQUIRED");
-    const selected = typeof body.model === "string" ? body.model : DEFAULT_MODEL;
-    const providerKey = typeof body.provider_key === "string" ? body.provider_key.trim() : "";
-    const providerUrl = typeof body.provider_url === "string" ? body.provider_url.trim() : "";
-    const roleText = (Array.isArray(current.context.roles) ? current.context.roles : []).map((role) => typeof role === "object" && role ? `${(role as Record<string, unknown>).role_code || ""} ${(role as Record<string, unknown>).role_name || ""}` : "").join(" ").toLowerCase();
-    const authority = (current.context.institutional_authority || {}) as Record<string, unknown>;
-    const isAdmin = /developer/.test(roleText);
-    if ((providerKey || providerUrl) && !isAdmin) throw new IdentityApiError("ASSISTANT_ADMIN_REQUIRED", 403);
-    if (providerKey && providerKey.length > 500) throw new IdentityApiError("ASSISTANT_PROVIDER_KEY_INVALID", 400);
-    if (providerUrl) {
-      let parsed: URL;
-      try { parsed = new URL(providerUrl); } catch { throw new IdentityApiError("ASSISTANT_PROVIDER_URL_INVALID", 400); }
-      if (parsed.protocol !== "https:" || !parsed.pathname.endsWith("/chat/completions")) throw new IdentityApiError("ASSISTANT_PROVIDER_URL_INVALID", 400);
+    const result = await gateway(messages, settings, current);
+    if (!result.ok) {
+      return Response.json({ ok: false, code: result.code, detail: result.detail, model: settings.model }, { status: 200, headers: noStoreHeaders() });
     }
-    const result = await gateway(messages, selected, current, providerKey || undefined, providerUrl || undefined);
-    return Response.json({ ok: true, model: selected, ...result }, { headers: noStoreHeaders() });
+    return Response.json({ ok: true, model: settings.model, text: result.text, usage: result.usage, approval: result.approval }, { headers: noStoreHeaders() });
   } catch (caught) {
     return resultErrorResponse(caught);
   }

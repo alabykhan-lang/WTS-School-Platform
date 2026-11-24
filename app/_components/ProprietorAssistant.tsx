@@ -1,111 +1,262 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 type Message = { role: "user" | "assistant"; content: string };
-type Model = { id: string; label: string; description: string };
+type Model = { id: string; label: string; description?: string };
 type Thread = { id: string; title: string; messages: Message[]; updatedAt: number };
-type AssistantConfig = { configured: boolean; models: Model[]; default_model: string; is_admin: boolean; person?: { id?: string; full_name?: string } };
-type LocalSettings = { models: Model[]; defaultModel: string; providerKey: string; providerUrl: string; usagePercent: number; perReplyCost: number };
+type Person = { id?: string; full_name?: string };
+type AssistantConfig = { configured: boolean; models: Model[]; default_model: string; default_url: string; is_admin: boolean; person?: Person };
+type TestState = { state: "idle" | "running" | "pass" | "fail"; message: string };
 
-const initialModels = [
-  { id: "deepseek-chat", label: "DeepSeek Chat", description: "Quick everyday requests" },
+const DEFAULT_URL = "https://api.deepseek.com";
+const FALLBACK_MODELS: Model[] = [
+  { id: "deepseek-chat", label: "DeepSeek Chat", description: "Everyday school requests" },
   { id: "deepseek-reasoner", label: "DeepSeek Reasoner", description: "Longer reasoning tasks" },
 ];
-const starters = ["How many active students do we have in each class?", "Show the current school dashboard.", "Find Fatai Waris and show his class and result status.", "Show SS3 students and their current results."];
+const STARTERS = [
+  "How many active students do we have in each class?",
+  "Show the current school dashboard.",
+  "Find a student and show their class and result status.",
+  "Show today's staff on duty.",
+];
 
-function readSettings(key: string, fallback: AssistantConfig): LocalSettings {
+const ERRORS: Record<string, string> = {
+  ASSISTANT_MODEL_KEY_REJECTED: "The API key was rejected. Check the key in Models.",
+  ASSISTANT_MODEL_NOT_FOUND: "The model name was not found. Check the model ID in Models.",
+  ASSISTANT_MODEL_RATE_LIMITED: "The provider is limiting requests. Wait a moment and try again.",
+  ASSISTANT_MODEL_UNREACHABLE: "The provider could not be reached from the school server.",
+  ASSISTANT_MODEL_GATEWAY_NOT_CONFIGURED: "Add a model API key in Models.",
+  ASSISTANT_MODEL_REQUEST_FAILED: "The model could not answer. Check the model settings in Models.",
+  ASSISTANT_PROVIDER_URL_INVALID: "The endpoint address is not a valid https chat-completions address.",
+  ASSISTANT_ADMIN_REQUIRED: "Model settings are available to the developer account only.",
+  ASSISTANT_MODEL_NOT_AVAILABLE: "That model name is too long or invalid.",
+  STAFF_SESSION_REQUIRED: "Your sign-in expired. Reload the page and sign in again.",
+  STAFF_SESSION_NOT_ACTIVE: "Your sign-in expired. Reload the page and sign in again.",
+  PROPRIETOR_ACCESS_REQUIRED: "This account does not have proprietor or developer access.",
+};
+
+type Stored = {
+  models: Model[];
+  defaultModel: string;
+  providerKey: string;
+  providerUrl: string;
+  usagePercent: number;
+  perReplyCost: number;
+};
+
+function sanitiseModels(value: unknown, fallback: Model[]): Model[] {
+  const list = Array.isArray(value) ? value : [];
+  const clean = list
+    .filter((item) => item && typeof item === "object")
+    .map((item) => ({ id: String((item as Model).id || "").trim(), label: String((item as Model).label || "").trim(), description: String((item as Model).description || "") }))
+    .filter((item) => item.id);
+  return clean.length ? clean : fallback;
+}
+
+function readStored(key: string, config: AssistantConfig): Stored {
+  const fallback: Stored = {
+    models: config.models?.length ? config.models : FALLBACK_MODELS,
+    defaultModel: config.default_model || FALLBACK_MODELS[0].id,
+    providerKey: "",
+    providerUrl: config.default_url || DEFAULT_URL,
+    usagePercent: 100,
+    perReplyCost: 1,
+  };
   try {
-    const saved = JSON.parse(localStorage.getItem(key) || "null");
+    const saved = JSON.parse(localStorage.getItem(key) || "null") as Partial<Stored> | null;
+    if (!saved) return fallback;
+    const models = sanitiseModels(saved.models, fallback.models);
+    const defaultModel = models.some((model) => model.id === saved.defaultModel) ? String(saved.defaultModel) : models[0].id;
     return {
-      models: Array.isArray(saved?.models) && saved.models.length ? saved.models : fallback.models?.length ? fallback.models : initialModels,
-      defaultModel: saved?.defaultModel || fallback.default_model || initialModels[0].id,
-      providerKey: typeof saved?.providerKey === "string" ? saved.providerKey : "",
-      providerUrl: typeof saved?.providerUrl === "string" ? saved.providerUrl : "https://api.deepseek.com/chat/completions",
-      usagePercent: Number.isFinite(saved?.usagePercent) ? Math.max(0, Math.min(100, saved.usagePercent)) : 100,
-      perReplyCost: Number.isFinite(saved?.perReplyCost) ? Math.max(0, Math.min(100, saved.perReplyCost)) : 1,
+      models,
+      defaultModel,
+      providerKey: typeof saved.providerKey === "string" ? saved.providerKey : "",
+      providerUrl: typeof saved.providerUrl === "string" && saved.providerUrl ? saved.providerUrl : fallback.providerUrl,
+      usagePercent: Number.isFinite(saved.usagePercent) ? Math.max(0, Math.min(100, Number(saved.usagePercent))) : 100,
+      perReplyCost: Number.isFinite(saved.perReplyCost) ? Math.max(0, Math.min(100, Number(saved.perReplyCost))) : 1,
     };
   } catch {
-    return { models: fallback.models?.length ? fallback.models : initialModels, defaultModel: fallback.default_model || initialModels[0].id, providerKey: "", providerUrl: "https://api.deepseek.com/chat/completions", usagePercent: 100, perReplyCost: 1 };
+    return fallback;
   }
+}
+
+function renderInline(text: string) {
+  return text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).filter(Boolean).map((part, index) => {
+    if (part.startsWith("**") && part.endsWith("**") && part.length > 4) return <strong key={index}>{part.slice(2, -2)}</strong>;
+    if (part.startsWith("`") && part.endsWith("`") && part.length > 2) return <code key={index}>{part.slice(1, -1)}</code>;
+    return <span key={index}>{part}</span>;
+  });
 }
 
 export function ProprietorAssistant() {
   const [config, setConfig] = useState<AssistantConfig | null>(null);
-  const [settings, setSettings] = useState<LocalSettings>({ models: initialModels, defaultModel: initialModels[0].id, providerKey: "", providerUrl: "https://api.deepseek.com/chat/completions", usagePercent: 100, perReplyCost: 1 });
-  const [storageKey, setStorageKey] = useState("");
+  const [loadError, setLoadError] = useState("");
+  const [stored, setStoredKey] = useState("");
+  const [settings, setSettings] = useState<Stored>({ models: FALLBACK_MODELS, defaultModel: FALLBACK_MODELS[0].id, providerKey: "", providerUrl: DEFAULT_URL, usagePercent: 100, perReplyCost: 1 });
   const [threads, setThreads] = useState<Thread[]>([]);
   const [activeId, setActiveId] = useState("");
   const [tab, setTab] = useState<"chats" | "models" | "usage">("chats");
+  const [drawer, setDrawer] = useState(false);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [approval, setApproval] = useState<{ token: string; summary: string } | null>(null);
-  const [newModelId, setNewModelId] = useState("");
-  const [newModelLabel, setNewModelLabel] = useState("");
+  const [form, setForm] = useState({ id: "", label: "", url: DEFAULT_URL, key: "" });
+  const [showKey, setShowKey] = useState(false);
+  const [test, setTest] = useState<TestState>({ state: "idle", message: "" });
+  const [savedFlash, setSavedFlash] = useState(false);
+  const endRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    fetch("/api/assistant", { credentials: "same-origin", cache: "no-store" }).then(async (response) => {
-      const value = await response.json();
-      if (!response.ok || !value?.ok) throw new Error(value?.code || "ASSISTANT_UNAVAILABLE");
-      setConfig(value);
-      const personId = String(value.person?.id || "signed-in-user");
-      const localSettingsKey = `wts-assistant-settings:${personId}`;
-      const chatKey = `wts-assistant-chats:${personId}`;
-      setStorageKey(localSettingsKey);
-      const loadedSettings = readSettings(localSettingsKey, value);
-      setSettings(loadedSettings);
-      try {
-        const storedThreads = JSON.parse(localStorage.getItem(chatKey) || "[]");
-        if (Array.isArray(storedThreads) && storedThreads.length) { setThreads(storedThreads); setActiveId(storedThreads[0].id); }
-        else {
-          const fresh = { id: crypto.randomUUID(), title: "New chat", messages: [], updatedAt: Date.now() };
+    fetch("/api/assistant", { credentials: "same-origin", cache: "no-store" })
+      .then(async (response) => {
+        const value = await response.json();
+        if (!response.ok || !value?.ok) throw new Error(String(value?.code || "ASSISTANT_UNAVAILABLE"));
+        const personId = String(value.person?.id || "signed-in-user");
+        setConfig(value as AssistantConfig);
+        const settingsKey = `wts-assistant-settings:${personId}`;
+        const chatKey = `wts-assistant-chats:${personId}`;
+        setStoredKey(settingsKey);
+        const loaded = readStored(settingsKey, value as AssistantConfig);
+        setSettings(loaded);
+        setForm({ id: "", label: "", url: loaded.providerUrl, key: loaded.providerKey });
+        let list: Thread[] = [];
+        try {
+          const raw = JSON.parse(localStorage.getItem(chatKey) || "[]");
+          if (Array.isArray(raw)) list = raw.filter((item) => item && typeof item === "object").slice(0, 60);
+        } catch { list = []; }
+        if (!list.length) list = [{ id: crypto.randomUUID(), title: "New chat", messages: [], updatedAt: Date.now() }];
+        setThreads(list);
+        setActiveId(list[0].id);
+      })
+      .catch((error) => {
+        const code = error instanceof Error ? error.message : "";
+        if (process.env.NODE_ENV !== "production") {
+          const mock: AssistantConfig = { configured: true, models: FALLBACK_MODELS, default_model: FALLBACK_MODELS[0].id, default_url: DEFAULT_URL, is_admin: true, person: { id: "preview", full_name: "Alabi Preview" } };
+          setConfig(mock);
+          const loaded = readStored("wts-assistant-settings:preview", mock);
+          setSettings(loaded);
+          setForm({ id: "", label: "", url: loaded.providerUrl, key: loaded.providerKey });
+          const fresh: Thread = { id: crypto.randomUUID(), title: "New chat", messages: [], updatedAt: Date.now() };
           setThreads([fresh]); setActiveId(fresh.id);
+          return;
         }
-      } catch {
-        const fresh = { id: crypto.randomUUID(), title: "New chat", messages: [], updatedAt: Date.now() };
-        setThreads([fresh]); setActiveId(fresh.id);
-      }
-    }).catch((error) => {
-      const code = error instanceof Error ? error.message : "";
-      setNotice(code === "PROPRIETOR_ACCESS_REQUIRED" ? "This account does not have proprietor or developer access." : "Your session could not be verified. Please sign in to the Staff Portal.");
-    });
+        setLoadError(code === "PROPRIETOR_ACCESS_REQUIRED" ? "This account does not have proprietor or developer access." : "Your session could not be verified. Please sign in to the Staff Portal.");
+      });
   }, []);
 
+  useEffect(() => { if (stored) localStorage.setItem(stored, JSON.stringify(settings)); }, [settings, stored]);
   useEffect(() => {
     if (!config?.person?.id || !threads.length) return;
     localStorage.setItem(`wts-assistant-chats:${config.person.id}`, JSON.stringify(threads));
   }, [threads, config]);
-  useEffect(() => { if (storageKey) localStorage.setItem(storageKey, JSON.stringify(settings)); }, [settings, storageKey]);
+  useEffect(() => { endRef.current?.scrollIntoView({ block: "end" }); }, [activeId, threads]);
 
   const activeThread = threads.find((thread) => thread.id === activeId) || threads[0];
   const name = useMemo(() => config?.person?.full_name?.split(" ")[0] || "there", [config]);
+  const activeModel = settings.models.find((model) => model.id === settings.defaultModel);
 
   function newChat() {
-    const item = { id: crypto.randomUUID(), title: "New chat", messages: [], updatedAt: Date.now() };
-    setThreads((current) => [item, ...current]); setActiveId(item.id); setApproval(null); setNotice(""); setTab("chats");
+    const item: Thread = { id: crypto.randomUUID(), title: "New chat", messages: [], updatedAt: Date.now() };
+    setThreads((current) => [item, ...current]);
+    setActiveId(item.id);
+    setApproval(null); setNotice(""); setTab("chats"); setDrawer(false);
   }
 
   function updateThread(id: string, messages: Message[]) {
-    setThreads((current) => current.map((thread) => thread.id === id ? { ...thread, messages, title: thread.title === "New chat" && messages[0]?.role === "user" ? messages[0].content.slice(0, 40) : thread.title, updatedAt: Date.now() } : thread).sort((a, b) => b.updatedAt - a.updatedAt));
+    setThreads((current) => current
+      .map((thread) => thread.id === id
+        ? { ...thread, messages, title: thread.title === "New chat" && messages[0]?.role === "user" ? messages[0].content.slice(0, 46) : thread.title, updatedAt: Date.now() }
+        : thread)
+      .sort((a, b) => b.updatedAt - a.updatedAt));
+  }
+
+  function removeThread(id: string) {
+    setThreads((current) => {
+      const next = current.filter((thread) => thread.id !== id);
+      if (!next.length) {
+        const fresh: Thread = { id: crypto.randomUUID(), title: "New chat", messages: [], updatedAt: Date.now() };
+        setActiveId(fresh.id);
+        return [fresh];
+      }
+      if (id === activeId) setActiveId(next[0].id);
+      return next;
+    });
+  }
+
+  function applyModels(next: Model[], defaultModel?: string) {
+    setSettings((current) => ({ ...current, models: next, defaultModel: defaultModel && next.some((model) => model.id === defaultModel) ? defaultModel : next[0].id }));
+    setSavedFlash(true); window.setTimeout(() => setSavedFlash(false), 1600);
+  }
+
+  function saveModel() {
+    const id = form.id.trim();
+    if (!id) { setTest({ state: "fail", message: "Enter the model ID from the provider." }); return; }
+    const label = form.label.trim() || id;
+    const url = form.url.trim() || DEFAULT_URL;
+    const key = form.key.trim();
+    const next = [...settings.models.filter((model) => model.id !== id), { id, label, description: "Added by you" }];
+    setSettings((current) => ({ ...current, models: next, defaultModel: id, providerUrl: url, providerKey: key }));
+    setSavedFlash(true); window.setTimeout(() => setSavedFlash(false), 1600);
+    setTest({ state: "idle", message: "" });
+  }
+
+  function removeModel(id: string) {
+    if (settings.models.length < 2) return;
+    const next = settings.models.filter((model) => model.id !== id);
+    applyModels(next, settings.defaultModel === id ? next[0].id : settings.defaultModel);
+  }
+
+  async function runTest() {
+    const id = form.id.trim() || settings.defaultModel;
+    const key = form.key.trim() || settings.providerKey;
+    const url = form.url.trim() || settings.providerUrl || DEFAULT_URL;
+    if (!key) { setTest({ state: "fail", message: "Paste the API key first." }); return; }
+    setTest({ state: "running", message: "Testing the connection…" });
+    try {
+      const response = await fetch("/api/assistant", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "test", model: id, provider_key: key, provider_url: url }) });
+      const value = await response.json();
+      if (value?.ok) setTest({ state: "pass", message: `Connected in ${value.ms} ms. The key and model work.` });
+      else setTest({ state: "fail", message: value?.detail ? `${ERRORS[value.code] || "Connection failed."} ${value.detail}` : ERRORS[value?.code] || "Connection failed." });
+    } catch {
+      setTest({ state: "fail", message: "The test could not run. Check your connection." });
+    }
+  }
+
+  function changeUsage(field: "usagePercent" | "perReplyCost", raw: string) {
+    const value = Number(raw);
+    setSettings((current) => ({ ...current, [field]: Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : 0 }));
   }
 
   async function send(event?: FormEvent, prompt?: string) {
     event?.preventDefault();
     const content = (prompt || draft).trim();
     if (!content || busy || !activeThread) return;
+    if (settings.usagePercent <= 0) { setNotice("Usage balance is at 0%. Raise it in the Usage tab to continue."); setTab("usage"); return; }
     const updated = [...activeThread.messages, { role: "user", content } as Message];
-    updateThread(activeThread.id, updated); setDraft(""); setBusy(true); setNotice("");
+    updateThread(activeThread.id, updated);
+    setDraft(""); setBusy(true); setNotice("");
     try {
-      const response = await fetch("/api/assistant", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: settings.defaultModel, messages: updated, provider_key: config?.is_admin ? settings.providerKey : "", provider_url: config?.is_admin ? settings.providerUrl : "" }) });
+      const response = await fetch("/api/assistant", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: settings.defaultModel,
+          messages: updated,
+          provider_key: config?.is_admin ? settings.providerKey : "",
+          provider_url: config?.is_admin ? settings.providerUrl : "",
+        }),
+      });
       const value = await response.json();
-      if (!response.ok || !value?.ok) throw new Error(value?.code || "ASSISTANT_REQUEST_FAILED");
-      updateThread(activeThread.id, [...updated, { role: "assistant", content: value.text || "Done." }]);
+      if (!response.ok || !value?.ok) throw new Error(String(value?.code || "ASSISTANT_REQUEST_FAILED"));
+      updateThread(activeThread.id, [...updated, { role: "assistant", content: String(value.text || "Done.") }]);
       if (value.approval?.approval_token) setApproval({ token: value.approval.approval_token, summary: value.approval.summary || "Confirm this change." });
-      setSettings((s) => ({ ...s, usagePercent: Math.max(0, s.usagePercent - s.perReplyCost) }));
+      setSettings((current) => ({ ...current, usagePercent: Math.max(0, current.usagePercent - current.perReplyCost) }));
     } catch (error) {
       const code = error instanceof Error ? error.message : "";
-      setNotice(code === "ASSISTANT_MODEL_GATEWAY_NOT_CONFIGURED" ? "Add a model API key in the Models tab." : code === "ASSISTANT_MODEL_REQUEST_FAILED" ? "The model could not answer. Check the selected model and API key in Models." : code === "ASSISTANT_ADMIN_REQUIRED" ? "Model keys can only be used from the developer account." : "The request failed. Check your connection and model settings, then try again.");
+      setNotice(ERRORS[code] || "The request failed. Check your connection and model settings, then try again.");
     } finally { setBusy(false); }
   }
 
@@ -115,42 +266,143 @@ export function ProprietorAssistant() {
     try {
       const response = await fetch("/api/assistant", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ approval_token: approval.token }) });
       const value = await response.json();
-      if (!response.ok || !value?.ok) throw new Error(value?.code || "CHANGE_FAILED");
+      if (!response.ok || !value?.ok) throw new Error(String(value?.code || "CHANGE_FAILED"));
       if (activeThread) updateThread(activeThread.id, [...activeThread.messages, { role: "assistant", content: `${approval.summary}\n\nThe system returned: ${value.completed?.result?.code || "completed"}.` }]);
       setApproval(null);
-    } catch { setNotice("The confirmation failed. Please refresh the record before trying again."); }
+    } catch { setNotice("The confirmation failed. Refresh the record and try again."); }
     finally { setBusy(false); }
   }
 
-  function saveModel() {
-    const id = newModelId.trim(); if (!id) return;
-    const item = { id, label: newModelLabel.trim() || id, description: "Manually configured model" };
-    setSettings((current) => ({ ...current, models: [...current.models.filter((model) => model.id !== item.id), item], defaultModel: item.id }));
-    setNewModelId(""); setNewModelLabel("");
+  if (!config) {
+    return <main className="assistantGate">
+      <div className="assistantGateCard">
+        <img src="/images/logo.webp" alt="" />
+        <p className="assistantEyebrow">WAY TO SUCCESS</p>
+        <h1>{loadError ? "Access check" : "Opening your workspace"}</h1>
+        <p>{loadError || "Checking your signed-in account…"}</p>
+        {loadError && <a href="/portal/sign-in?return_to=%2Fassistant">Sign in to the Staff Portal</a>}
+      </div>
+    </main>;
   }
 
-  if (!config) return <main className="assistantSignIn"><img src="/images/logo.webp" alt=""/><h1>Sign in to continue</h1><p>{notice || "Checking your WTS account…"}</p><a href="/portal/sign-in?return_to=%2Fassistant">Sign in to the Staff Portal</a></main>;
-
   return <main className="assistantShell">
-    <aside className="assistantRail">
-      <div className="assistantBrand"><img src="/images/logo.webp" alt="Way to Success"/><div><strong>WTS</strong><span>School assistant</span></div></div>
-      <nav className="assistantTabs" aria-label="Workspace tabs"><button className={tab === "chats" ? "selected" : ""} onClick={() => setTab("chats")}>▤ <span>Chats</span></button><button className={tab === "models" ? "selected" : ""} onClick={() => setTab("models")}>✧ <span>Models</span></button><button className={tab === "usage" ? "selected" : ""} onClick={() => setTab("usage")}>◔ <span>Usage</span></button></nav>
-      <button className="assistantNew" type="button" onClick={newChat}>＋ New chat</button>
-      {tab === "chats" && <div className="assistantThreadList"><small>YOUR CHATS</small>{threads.map((thread) => <button className={activeId === thread.id ? "active" : ""} key={thread.id} onClick={() => { setActiveId(thread.id); setApproval(null); }}>{thread.title}</button>)}</div>}
-      <div className="assistantRailFooter"><span>{config.is_admin ? "Developer workspace · private chats" : "Proprietor workspace · private chats"}</span><a href="/workspace">Staff Portal</a></div>
+    <aside className={`assistantSidebar ${drawer ? "open" : ""}`}>
+      <div className="assistantBrand"><img src="/images/logo.webp" alt=""/><div><strong>Way to Success</strong><span>{config.is_admin ? "Developer workspace" : "Proprietor workspace"}</span></div></div>
+      <button className="assistantNew" type="button" onClick={newChat}><span>＋</span> New chat</button>
+
+      <nav className="assistantNav" aria-label="Workspace">
+        <button type="button" className={tab === "chats" ? "selected" : ""} onClick={() => setTab("chats")}>Chats</button>
+        {config.is_admin && <button type="button" className={tab === "models" ? "selected" : ""} onClick={() => setTab("models")}>Models</button>}
+        {config.is_admin && <button type="button" className={tab === "usage" ? "selected" : ""} onClick={() => setTab("usage")}>Usage</button>}
+      </nav>
+      <div className="assistantChatList">
+        <p className="assistantListLabel">Your chats</p>
+        {threads.map((thread) => <div key={thread.id} className={`assistantChatRow ${thread.id === activeId ? "active" : ""}`}>
+          <button type="button" className="assistantChatOpen" onClick={() => { setActiveId(thread.id); setApproval(null); setTab("chats"); setDrawer(false); }}>{thread.title || "New chat"}</button>
+          <button type="button" className="assistantChatDelete" aria-label="Delete chat" onClick={() => removeThread(thread.id)}>×</button>
+        </div>)}
+      </div>
+      <div className="assistantSidebarFoot">
+        <span>Chats are separate for every account.</span>
+        <a href="/workspace">Staff Portal</a>
+      </div>
     </aside>
-    <section className={`assistantMain ${config.is_admin ? "isDeveloper" : ""}`}>
-      <header className="assistantTopbar"><div><p className="assistantEyebrow">WAY TO SUCCESS · PRIVATE ASSISTANT</p><h1>{tab === "chats" ? `Good day, ${name}` : tab === "models" ? "Model settings" : "Usage controls"}</h1></div>{tab === "chats" && <div className="assistantModel"><label htmlFor="assistant-model">MODEL</label><select id="assistant-model" value={settings.defaultModel} onChange={(event) => setSettings((s) => ({ ...s, defaultModel: event.target.value }))}>{settings.models.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select><button className="assistantPrint" onClick={() => window.print()} type="button">Print</button></div>}</header>
-      {tab === "chats" ? <>
-        <div className="assistantConversation" aria-live="polite">
-          {!activeThread?.messages.length && <div className="assistantWelcome"><div className="assistantOrb">✦</div><p className="assistantEyebrow">CONNECTED TO WTS SYSTEMS</p><h2>What would you like to take care of?</h2><p className="assistantLead">Ask about school records, students, staff, and results. I’ll check live information and ask before making a change.</p><div className="assistantPrompts">{starters.map((prompt) => <button key={prompt} type="button" onClick={() => send(undefined, prompt)}>{prompt}<span>↗</span></button>)}</div></div>}
-          {activeThread?.messages.map((message, index) => <div className={`assistantMessage ${message.role}`} key={`${message.role}-${index}`}><div className="assistantAvatar">{message.role === "user" ? "You" : "WTS"}</div><div className="assistantBubble">{message.content.split("\n").map((line, lineIndex) => <p key={lineIndex}>{line || <>&nbsp;</>}</p>)}</div></div>)}
-          {busy && <div className="assistantMessage assistant"><div className="assistantAvatar">WTS</div><div className="assistantBubble assistantThinking"><i/><i/><i/></div></div>}
+    {drawer && <button className="assistantScrim" type="button" aria-label="Close menu" onClick={() => setDrawer(false)}/>}
+
+    <section className="assistantMain">
+      <header className="assistantTopbar">
+        <button className="assistantMenu" type="button" aria-label="Open chats" onClick={() => setDrawer((open) => !open)}>☰</button>
+        <div className="assistantTitles">
+          <p className="assistantEyebrow">PRIVATE ASSISTANT</p>
+          <h1>{tab === "chats" ? `Good day, ${name}` : tab === "models" ? "Models" : "Usage"}</h1>
+        </div>
+        {tab === "chats" && <label className="assistantModelPick">
+          <span>Model</span>
+          <select value={settings.defaultModel} onChange={(event) => setSettings((current) => ({ ...current, defaultModel: event.target.value }))} aria-label="Model">
+            {settings.models.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}
+          </select>
+        </label>}
+        {tab === "chats" && <button type="button" className="assistantGhost assistantPrint" onClick={() => window.print()}>Print</button>}
+      </header>
+
+      {tab === "chats" && <>
+        <div className="assistantConversation">
+          {!activeThread?.messages.length && <div className="assistantWelcome">
+            <span className="assistantOrb">✦</span>
+            <p className="assistantEyebrow">LIVE SCHOOL DATA · CONFIRMATION BEFORE CHANGES</p>
+            <h2>What should we handle?</h2>
+            <p>Ask about students, staff, classes, or results. I read live records and ask before saving a change.</p>
+            <div className="assistantStarters">{STARTERS.map((prompt) => <button key={prompt} type="button" onClick={() => send(undefined, prompt)}><span>{prompt}</span><b>↗</b></button>)}</div>
+          </div>}
+          {activeThread?.messages.map((message, index) => <article key={`${message.role}-${index}`} className={`assistantMessage ${message.role}`}>
+            <div className="assistantWho">{message.role === "user" ? "You" : "WTS"}</div>
+            <div className="assistantBubble">{message.content.split("\n").map((line, lineIndex) => <p key={lineIndex}>{line ? renderInline(line) : <>&nbsp;</>}</p>)}</div>
+          </article>)}
+          {busy && <article className="assistantMessage assistant"><div className="assistantWho">WTS</div><div className="assistantBubble assistantThinking"><i/><i/><i/></div></article>}
+          <div ref={endRef}/>
         </div>
         {approval && <div className="assistantApproval"><div><strong>Confirm this change</strong><span>{approval.summary}</span></div><div className="assistantApprovalActions"><button type="button" onClick={() => setApproval(null)}>Cancel</button><button type="button" onClick={confirm} disabled={busy}>Confirm</button></div></div>}
-        {notice && <div className="assistantNotice">{notice}</div>}
-        <form className="assistantComposer" onSubmit={send}><textarea value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Ask anything about Way to Success…" rows={1} aria-label="Message the assistant"/><button type="submit" disabled={busy || !draft.trim()} aria-label="Send">↑</button><small>Private to your signed-in account · confirmation before changes</small></form>
-      </> : tab === "models" ? <div className="assistantSettingsPane"><p>Choose a model or add one from its provider. API keys are kept in this signed-in browser profile and sent only for your requests.</p><label>Default model<select value={settings.defaultModel} onChange={(event) => setSettings((s) => ({ ...s, defaultModel: event.target.value }))}>{settings.models.map((item) => <option key={item.id} value={item.id}>{item.label} · {item.id}</option>)}</select></label><label>Provider API key<input type="password" autoComplete="new-password" placeholder="Paste a provider API key" value={settings.providerKey} onChange={(event) => setSettings((s) => ({ ...s, providerKey: event.target.value }))}/></label><div className="assistantModelAdd"><input placeholder="Model ID (for example deepseek-chat)" value={newModelId} onChange={(event) => setNewModelId(event.target.value)}/><input placeholder="Display name" value={newModelLabel} onChange={(event) => setNewModelLabel(event.target.value)}/><button type="button" onClick={saveModel}>Add model</button></div><div className="assistantConfiguredModels">{settings.models.map((item) => <div key={item.id}><span><b>{item.label}</b><small>{item.id}</small></span>{settings.models.length > 1 && <button type="button" onClick={() => setSettings((s) => { const models = s.models.filter((model) => model.id !== item.id); return { ...s, models, defaultModel: s.defaultModel === item.id ? models[0].id : s.defaultModel }; })}>Remove</button>}</div>)}</div><div className="assistantSettingsNote">{config.is_admin ? "Developer controls are private to your WTS account. The proprietor’s chat history and model settings use a separate account space." : "Model keys and custom model management are available only to the developer account."}</div></div> : <div className="assistantSettingsPane"><p>Set the starting balance and how much each assistant reply uses. This meter follows the limits you choose.</p><div className="assistantUsageMeter"><div className="assistantUsageCircle" style={{ "--usage": `${settings.usagePercent}%` } as React.CSSProperties}><span>{Math.round(settings.usagePercent)}%</span></div><div><strong>Remaining usage</strong><small>Manual balance for this account</small></div></div><label>Remaining percentage<input type="number" min="0" max="100" step="1" value={settings.usagePercent} onChange={(event) => setSettings((s) => ({ ...s, usagePercent: Math.max(0, Math.min(100, Number(event.target.value))) }))}/></label><label>Usage deducted per successful reply (%)<input type="number" min="0" max="100" step="0.1" value={settings.perReplyCost} onChange={(event) => setSettings((s) => ({ ...s, perReplyCost: Math.max(0, Math.min(100, Number(event.target.value))) }))}/></label><button className="assistantResetUsage" type="button" onClick={() => setSettings((s) => ({ ...s, usagePercent: 100 }))}>Reset balance to 100%</button></div>}
+        {notice && <div className="assistantNotice" role="status">{notice}</div>}
+        <form className="assistantComposer" onSubmit={send}>
+          <textarea value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Message the assistant…" rows={1} aria-label="Message"/>
+          <button type="submit" disabled={busy || !draft.trim()} aria-label="Send">↑</button>
+          <small>{settings.usagePercent.toFixed(0)}% usage left · answers use live school data</small>
+        </form>
+      </>}
+
+      {tab === "models" && <div className="assistantPane">
+        <div className="assistantCard">
+          <h2>Connection</h2>
+          <p className="assistantMuted">The key is kept on this device for your account only and sent only when you ask something. It is never shown to other accounts.</p>
+          <label><span>API key</span><div className="assistantKeyRow"><input type={showKey ? "text" : "password"} autoComplete="new-password" placeholder="Paste the provider key" value={form.key} onChange={(event) => setForm({ ...form, key: event.target.value })}/><button type="button" onClick={() => setShowKey((shown) => !shown)}>{showKey ? "Hide" : "Show"}</button></div></label>
+          <label><span>Endpoint</span><input type="url" inputMode="url" placeholder={DEFAULT_URL} value={form.url} onChange={(event) => setForm({ ...form, url: event.target.value })}/><em>Use the provider address, for example https://api.deepseek.com</em></label>
+          <div className="assistantPair">
+            <label><span>Model ID</span><input placeholder="deepseek-chat" value={form.id} onChange={(event) => setForm({ ...form, id: event.target.value })}/></label>
+            <label><span>Display name</span><input placeholder="DeepSeek Chat" value={form.label} onChange={(event) => setForm({ ...form, label: event.target.value })}/></label>
+          </div>
+          <div className="assistantActions">
+            <button type="button" className="assistantGhost" onClick={runTest} disabled={test.state === "running"}>{test.state === "running" ? "Testing…" : "Test connection"}</button>
+            <button type="button" className="assistantPrimary" onClick={saveModel}>Save model</button>
+          </div>
+          {test.state !== "idle" && <div className={`assistantTest ${test.state}`}>{test.message}</div>}
+          {savedFlash && <div className="assistantTest pass">Saved. It is now the model in use.</div>}
+        </div>
+        <div className="assistantCard">
+          <h2>Available models</h2>
+          <div className="assistantModelList">
+            {settings.models.map((model) => <div key={model.id} className="assistantModelRow">
+              <button type="button" className="assistantModelBody" onClick={() => setSettings((current) => ({ ...current, defaultModel: model.id }))}>
+                <b>{model.label}</b>
+                <small>{model.id}{model.id === settings.defaultModel ? " · in use" : ""}</small>
+              </button>
+              {settings.models.length > 1 && <button type="button" className="assistantRemove" onClick={() => removeModel(model.id)}>Remove</button>}
+            </div>)}
+          </div>
+          <p className="assistantMuted">Current endpoint: {settings.providerUrl || DEFAULT_URL}</p>
+        </div>
+      </div>}
+
+      {tab === "usage" && <div className="assistantPane">
+        <div className="assistantCard">
+          <h2>Usage balance</h2>
+          <p className="assistantMuted">The balance counts down from the level you set. Each answer costs the amount below.</p>
+          <div className="assistantMeter">
+            <div className="assistantRing" style={{ ["--usage" as string]: `${settings.usagePercent}%` }}><span>{Math.round(settings.usagePercent)}%</span></div>
+            <div><strong>{settings.usagePercent <= 0 ? "Empty" : "Remaining"}</strong><small>{settings.usagePercent <= 20 && settings.usagePercent > 0 ? "Running low" : "Manual balance for this account"}</small></div>
+          </div>
+          <div className="assistantPair">
+            <label><span>Balance (%)</span><input type="number" min="0" max="100" step="1" value={settings.usagePercent} onChange={(event) => changeUsage("usagePercent", event.target.value)}/></label>
+            <label><span>Cost per answer (%)</span><input type="number" min="0" max="100" step="0.5" value={settings.perReplyCost} onChange={(event) => changeUsage("perReplyCost", event.target.value)}/></label>
+          </div>
+          <div className="assistantActions"><button type="button" className="assistantPrimary" onClick={() => setSettings((current) => ({ ...current, usagePercent: 100 }))}>Reset to 100%</button></div>
+        </div>
+      </div>}
     </section>
+
+    <nav className="assistantTabbar" aria-label="Workspace">
+      <button type="button" className={tab === "chats" ? "selected" : ""} onClick={() => setTab("chats")}>Chats</button>
+      {config.is_admin && <button type="button" className={tab === "models" ? "selected" : ""} onClick={() => setTab("models")}>Models</button>}
+      {config.is_admin && <button type="button" className={tab === "usage" ? "selected" : ""} onClick={() => setTab("usage")}>Usage</button>}
+    </nav>
   </main>;
 }
