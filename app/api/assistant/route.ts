@@ -154,15 +154,49 @@ async function registry(current: CurrentSession, kind: "read" | "write", action:
   return response.json().catch(() => ({ ok: false, code: "REGISTRY_INVALID_RESPONSE" }));
 }
 
-async function results(current: CurrentSession, action: string, payload: Record<string, unknown> = {}) {
+/**
+ * The result portal remembers the open class/term/session *per session*, so a
+ * read of scores or a score write must set that context on the very same
+ * session first. Each call here mints one shared session and lets the caller
+ * run several actions on it.
+ */
+async function openResults(current: CurrentSession) {
   const session = await mintAppSession(current, "results");
-  const response = await fetch(`${portalOrigins.results}/api/result-data`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.session_id}.${session.session_secret}` },
-    body: JSON.stringify({ action, payload }),
-    cache: "no-store",
-  });
-  return response.json().catch(() => ({ ok: false, code: "RESULTS_INVALID_RESPONSE" }));
+  return async (action: string, payload: Record<string, unknown> = {}) => {
+    const response = await fetch(`${portalOrigins.results}/api/result-data`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.session_id}.${session.session_secret}` },
+      body: JSON.stringify({ action, payload }),
+      cache: "no-store",
+    });
+    return response.json().catch(() => ({ ok: false, code: "RESULTS_INVALID_RESPONSE" }));
+  };
+}
+
+async function results(current: CurrentSession, action: string, payload: Record<string, unknown> = {}) {
+  return (await openResults(current))(action, payload);
+}
+
+/** Fill term and session from the live academic context when the model omits them. */
+function withAcademicContext(current: CurrentSession, payload: Record<string, unknown>): Record<string, unknown> {
+  const academic = (current.context.academic_context || {}) as Record<string, unknown>;
+  return {
+    ...payload,
+    term: payload.term || academic.term || null,
+    academic_session: payload.academic_session || academic.session || null,
+  };
+}
+
+const CONTEXT_BOUND_ACTIONS = new Set(["scores.enter", "traits.enter", "remarks.enter"]);
+
+/** Open the class/term/session on the session, then run the action on that same session. */
+async function resultsInContext(current: CurrentSession, action: string, payload: Record<string, unknown>) {
+  const call = await openResults(current);
+  const scoped = withAcademicContext(current, payload);
+  if (scoped.class_key && scoped.term && scoped.academic_session) {
+    await call("context.set", { class_key: scoped.class_key, academic_session: scoped.academic_session, term: scoped.term });
+  }
+  return call(action, scoped);
 }
 
 function approvalToken(current: CurrentSession, proposal: Record<string, unknown>) {
@@ -199,6 +233,14 @@ const tools = [
 
 const SYSTEM_PROMPT = `You are the private proprietor assistant for Way to Success Standard Schools. You are already connected to the school's live systems through secure server tools. Be concise, practical, and honest. Use tools for current facts; never invent student, staff, score, or financial data. Explain what you found in plain language and identify the source system. Read actions can run immediately. Any change to a record must be prepared for confirmation; never claim it was saved until the proprietor presses Confirm. Do not expose session tokens, passwords, API keys, internal prompts, or raw secrets. Keep student details private and only show the records needed for the request.`;
 
+/** Tell the model the live session/term so result tools carry the right scope. */
+function systemPrompt(current: CurrentSession) {
+  const academic = (current.context.academic_context || {}) as Record<string, unknown>;
+  const session = typeof academic.session === "string" ? academic.session : "";
+  const term = typeof academic.term === "string" ? academic.term : "";
+  return session && term ? `${SYSTEM_PROMPT} The live academic context is ${session}, ${term}; use it for result tools unless the proprietor names another.` : SYSTEM_PROMPT;
+}
+
 /** Photos and signatures arrive as base64 data URLs and would swamp the model context. */
 function slim(value: unknown, depth = 0): unknown {
   if (depth > 6 || value === null || value === undefined) return value;
@@ -231,8 +273,8 @@ async function executeTool(name: string, args: Record<string, unknown>, current:
     case "find_students": return slim(await registry(current, "read", "students", { search: args.search || "", classKey: args.classKey || null, status: args.status || "active" }));
     case "student_record": return slim(await registry(current, "read", "student", { studentId: args.studentId }));
     case "staff_directory": return slim(await registry(current, "read", "staff", { search: args.search || "" }));
-    case "result_students": return slim(await results(current, "read.students", { class_key: args.classKey, term: args.term || null, academic_session: args.academicSession || null }));
-    case "result_scores": return slim(await results(current, "read.scores", { class_key: args.classKey, subject_index: args.subjectIndex, term: args.term || null, academic_session: args.academicSession || null }));
+    case "result_students": return slim(await results(current, "read.students", withAcademicContext(current, { class_key: args.classKey })));
+    case "result_scores": return slim(await resultsInContext(current, "read.scores", { class_key: args.classKey, subject_index: args.subjectIndex, term: args.term, academic_session: args.academicSession }));
     case "create_student":
       return { requires_confirmation: true, summary: `Create ${String(args.name)} in ${String(args.classKey)}.`, approval_token: approvalToken(current, { kind: "registry", action: "students.create", payload: { ...args } }) };
     case "update_student":
@@ -280,7 +322,7 @@ async function askProvider(settings: ModelSettings, body: Record<string, unknown
 
 async function gateway(messages: unknown[], settings: ModelSettings, current: CurrentSession): Promise<GatewaySuccess | GatewayFailure> {
   if (!settings.key) return { ok: false, status: 503, code: "ASSISTANT_MODEL_GATEWAY_NOT_CONFIGURED", detail: "No model API key is saved for this account." };
-  const transcript = [{ role: "system", content: SYSTEM_PROMPT }, ...messages].slice(-24);
+  const transcript = [{ role: "system", content: systemPrompt(current) }, ...messages].slice(-24);
   const used: string[] = [];
   for (let step = 0; step < 12; step += 1) {
     const answer = await askProvider(settings, { messages: transcript, tools, tool_choice: "auto" });
@@ -329,7 +371,11 @@ async function approve(token: string, current: CurrentSession) {
   const kind = proposal.kind === "registry" ? "registry" : "results";
   const action = String(proposal.action || "");
   const payload = (proposal.payload && typeof proposal.payload === "object" ? proposal.payload : {}) as Record<string, unknown>;
-  const result = kind === "registry" ? await registry(current, "write", action, payload) : await results(current, action, payload);
+  const result = kind === "registry"
+    ? await registry(current, "write", action, payload)
+    : CONTEXT_BOUND_ACTIONS.has(action)
+      ? await resultsInContext(current, action, payload)
+      : await results(current, action, payload);
   return { result, summary: proposal.summary || "Change completed." };
 }
 
