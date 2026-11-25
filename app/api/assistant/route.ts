@@ -424,6 +424,8 @@ async function reportCard(current: CurrentSession, args: Record<string, unknown>
     const rosterHits = async () => {
       const ctx = await withAcademicContext(current, { class_key: args.classKey });
       if (!ctx.class_key) return [];
+      // The portal only reads the class it has open on this session.
+      await call("context.set", { class_key: ctx.class_key, academic_session: ctx.academic_session, term: ctx.term });
       const roster = await call("read.students", ctx);
       return Array.isArray(roster?.rows) ? match(roster.rows as Record<string, unknown>[]) : [];
     };
@@ -449,11 +451,18 @@ async function reportCard(current: CurrentSession, args: Record<string, unknown>
     return { ok: false, code: "RESULT_ACADEMIC_CONTEXT_REQUIRED", detail: "A class, term and session are needed." };
   }
   const contextReady = call("context.set", { class_key: payload.class_key, academic_session: payload.academic_session, term: payload.term });
+  // A read can start before the context lands, so a mismatch waits for it and tries once more.
+  const read = async (name: string, body: Record<string, unknown>) => {
+    const first = await call(name, body);
+    if (first?.ok || first?.code !== "RESULT_CONTEXT_MISMATCH") return first;
+    await contextReady;
+    return call(name, body);
+  };
   const [summary, subjectsCall, traits, remarks, settings] = await Promise.all([
-    call("read.result_summary", payload),
-    call("read.subjects", { class_key: payload.class_key }),
-    call("read.traits", payload),
-    call("read.remarks", payload),
+    read("read.result_summary", payload),
+    read("read.subjects", { class_key: payload.class_key }),
+    read("read.traits", payload),
+    read("read.remarks", payload),
     call("settings.read", {}),
   ]);
   await contextReady;
