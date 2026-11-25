@@ -235,7 +235,18 @@ export function ProprietorAssistant() {
   tabRef.current = tab; activeRef.current = activeId; notifyRef.current = notify;
 
   useEffect(() => {
-    fetch("/api/assistant", { credentials: "same-origin", cache: "no-store" })
+    // A slow database must not leave the gate spinning forever; one retry, then a real message.
+    const openWorkspace = async () => {
+      for (let attempt = 0; ; attempt += 1) {
+        try {
+          return await fetch("/api/assistant", { credentials: "same-origin", cache: "no-store", signal: AbortSignal.timeout(35000) });
+        } catch {
+          if (attempt >= 1) throw new Error("ASSISTANT_UNAVAILABLE");
+          await new Promise((ready) => { window.setTimeout(ready, 1200); });
+        }
+      }
+    };
+    openWorkspace()
       .then(async (response) => {
         const value = await response.json();
         if (!response.ok || !value?.ok) throw new Error(String(value?.code || "ASSISTANT_UNAVAILABLE"));
@@ -282,7 +293,11 @@ export function ProprietorAssistant() {
           setThreads([fresh]); setActiveId(fresh.id);
           return;
         }
-        setLoadError(code === "PROPRIETOR_ACCESS_REQUIRED" ? "This account does not have proprietor or developer access." : "Your session could not be verified. Please sign in to the Staff Portal.");
+        setLoadError(code === "PROPRIETOR_ACCESS_REQUIRED"
+          ? "ACCESS:This account does not have proprietor or developer access."
+          : code === "ASSISTANT_UNAVAILABLE"
+            ? "SLOW:The school records are slow right now."
+            : "Your session could not be verified. Please sign in to the Staff Portal.");
       });
   }, []);
 
@@ -718,8 +733,10 @@ export function ProprietorAssistant() {
         <img src="/images/logo.webp" alt="" />
         <p className="assistantEyebrow">WAY TO SUCCESS</p>
         <h1>{loadError ? "Access check" : "Opening your workspace"}</h1>
-        <p>{loadError || "Checking your signed-in account…"}</p>
-        {loadError && <a href="/portal/sign-in?return_to=%2Fassistant">Sign in to the Staff Portal</a>}
+        <p>{(loadError || "Checking your signed-in account…").replace(/^(ACCESS|SLOW):/, "")}</p>
+        {loadError.startsWith("SLOW:") && <button type="button" onClick={() => window.location.reload()}>Try again</button>}
+        {loadError && !loadError.startsWith("SLOW:") && <a href="/portal/sign-in?return_to=%2Fassistant">Sign in to the Staff Portal</a>}
+        {loadError.startsWith("SLOW:") && <a href="/portal/sign-in?return_to=%2Fassistant">Sign in again instead</a>}
       </div>
     </main>;
   }

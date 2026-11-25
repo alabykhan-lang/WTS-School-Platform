@@ -11,10 +11,17 @@ export async function GET(request: NextRequest) {
     if (origin && !isSameOrigin(request)) throw new IdentityApiError("ORIGIN_NOT_ALLOWED", 403);
     const current = workspaceSessionFromRequest(request);
     if (!current) return Response.json({ ok: false, code: "STAFF_SESSION_REQUIRED" }, { status: 401, headers: { ...noStoreHeaders(), "Set-Cookie": clearWorkspaceSessionCookie() } });
-    const result = await callPrivilegedRpc<Record<string, unknown>>("school_staff_workspace_read_session_api", {
+    const readSession = () => callPrivilegedRpc<Record<string, unknown>>("school_staff_workspace_read_session_api", {
       p_session_id: current.id,
       p_session_secret: current.secret,
     });
+    // A shed statement under load should not look like a signed-out account.
+    let result: Record<string, unknown>;
+    try {
+      result = await readSession();
+    } catch {
+      result = await readSession();
+    }
     if (!result?.ok) return Response.json(result, { status: 401, headers: { ...noStoreHeaders(), "Set-Cookie": clearWorkspaceSessionCookie() } });
     let portfolios: unknown[] = [];
     try {
