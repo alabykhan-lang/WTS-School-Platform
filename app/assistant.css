@@ -130,6 +130,12 @@
 .assistantModelBody { flex: 1; min-width: 0; border: 0; background: transparent; text-align: left; padding: 9px; cursor: pointer; }
 .assistantModelBody b { display: block; font-size: 13px; color: var(--wts-ink); }
 .assistantModelBody small { display: block; margin-top: 3px; font-size: 11px; color: #86999f; word-break: break-all; }
+.assistantModelRow.works { border-color: #9ccfba; background: #f4fbf7; }
+.assistantModelRow.failed { border-color: #e5bdb8; background: #fff7f6; }
+.assistantModelPick, .assistantModelTest { flex: none; border: 1px solid #c8d8d4; background: #fff; color: #2c5566; border-radius: 8px; padding: 6px 10px; font: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer; }
+.assistantModelTest { color: #0b5a44; }
+.assistantModelPick:hover, .assistantModelTest:hover { border-color: #0b5a44; }
+.assistantModelTest:disabled { opacity: .6; }
 .assistantRemove { border: 0; background: transparent; color: #a44944; font-weight: 700; font-size: 11.5px; cursor: pointer; }
 .assistantMeter { display: flex; align-items: center; gap: 16px; border-radius: 12px; background: #f4f9f7; padding: 15px; margin-bottom: 18px; }
 .assistantRing { --usage: 100%; position: relative; width: 78px; height: 78px; border-radius: 50%; background: conic-gradient(var(--wts-green) var(--usage), #dbe7e3 0); display: grid; place-items: center; flex: none; }
@@ -184,12 +190,9 @@
   .assistantTitles h1 { font-size: 18px; white-space: normal; }
   .assistantEyebrow { font-size: 8.5px; }
   .assistantPrint { order: 3; margin-left: auto; }
-  .assistantModelPick { order: 4; width: 100%; margin-left: 0; }
-  .assistantModelPick select { flex: 1; max-width: none; }
+  .assistantModelRow { gap: 6px; }
+  .assistantModelPick, .assistantModelTest { padding: 5px 8px; }
   .assistantConversation { min-height: 0; }
-  .assistantModelPick { padding: 3px; }
-  .assistantModelPick span { display: none; }
-  .assistantModelPick select { font-size: 11.5px; }
   .assistantGhost { padding: 8px 10px; font-size: 11.5px; }
   .assistantConversation { padding: 18px 14px 12px; }
   .assistantStarters { grid-template-columns: 1fr; }

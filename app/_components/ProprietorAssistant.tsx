@@ -53,6 +53,8 @@ type Stored = {
   effort: Effort;
   usagePercent: number;
   perReplyCost: number;
+  usageDays: number;
+  usageUntil: number;
 };
 
 const PROVIDERS = [
@@ -94,6 +96,8 @@ function readStored(key: string, config: AssistantConfig): Stored {
     effort: "low",
     usagePercent: 100,
     perReplyCost: 1,
+    usageDays: 30,
+    usageUntil: 0,
   };
   try {
     const saved = JSON.parse(localStorage.getItem(key) || "null") as Partial<Stored> | null;
@@ -109,6 +113,8 @@ function readStored(key: string, config: AssistantConfig): Stored {
       effort: saved.effort === "medium" || saved.effort === "high" ? saved.effort : "low",
       usagePercent: Number.isFinite(saved.usagePercent) ? Math.max(0, Math.min(100, Number(saved.usagePercent))) : 100,
       perReplyCost: Number.isFinite(saved.perReplyCost) ? Math.max(0, Math.min(100, Number(saved.perReplyCost))) : 1,
+      usageDays: Number.isFinite(saved.usageDays) ? Math.max(1, Math.min(365, Number(saved.usageDays))) : 30,
+      usageUntil: Number.isFinite(saved.usageUntil) ? Number(saved.usageUntil) : 0,
     };
   } catch {
     return fallback;
@@ -154,7 +160,7 @@ export function ProprietorAssistant() {
   const [config, setConfig] = useState<AssistantConfig | null>(null);
   const [loadError, setLoadError] = useState("");
   const [stored, setStoredKey] = useState("");
-  const [settings, setSettings] = useState<Stored>({ models: FALLBACK_MODELS, defaultModel: FALLBACK_MODELS[0].id, providerKey: "", providerUrl: DEFAULT_URL, providerId: "yeta", effort: "low", usagePercent: 100, perReplyCost: 1 });
+  const [settings, setSettings] = useState<Stored>({ models: FALLBACK_MODELS, defaultModel: FALLBACK_MODELS[0].id, providerKey: "", providerUrl: DEFAULT_URL, providerId: "yeta", effort: "low", usagePercent: 100, perReplyCost: 1, usageDays: 30, usageUntil: 0 });
   const [threads, setThreads] = useState<Thread[]>([]);
   const [activeId, setActiveId] = useState("");
   const [tab, setTab] = useState<"chats" | "models" | "usage">("chats");
@@ -169,6 +175,7 @@ export function ProprietorAssistant() {
   const [savedFlash, setSavedFlash] = useState(false);
   const [modelList, setModelList] = useState<string[]>([]);
   const [fetchingModels, setFetchingModels] = useState(false);
+  const [probe, setProbe] = useState<Record<string, "testing" | "works" | "failed">>({});
   const endRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -182,6 +189,13 @@ export function ProprietorAssistant() {
         const chatKey = `wts-assistant-chats:${personId}`;
         setStoredKey(settingsKey);
         const loaded = readStored(settingsKey, value as AssistantConfig);
+        const shared = (value as { usage?: { percent?: number; cost?: number; days?: number; until?: number } }).usage;
+        if (shared && typeof shared === "object") {
+          if (typeof shared.percent === "number") loaded.usagePercent = shared.percent;
+          if (typeof shared.cost === "number") loaded.perReplyCost = shared.cost;
+          if (typeof shared.days === "number") loaded.usageDays = shared.days;
+          if (typeof shared.until === "number") loaded.usageUntil = shared.until;
+        }
         setSettings(loaded);
         setForm({ id: "", label: "", url: loaded.providerUrl, key: loaded.providerKey, provider: loaded.providerId, effort: loaded.effort });
         let list: Thread[] = [];
@@ -280,6 +294,38 @@ export function ProprietorAssistant() {
     window.setTimeout(clear, 4000);
   }
 
+  async function testModel(id: string) {
+    const key = form.key.trim() || settings.providerKey;
+    const url = form.url.trim() || settings.providerUrl || DEFAULT_URL;
+    if (!key) { setTest({ state: "fail", message: "Paste the API key first." }); return; }
+    setProbe((current) => ({ ...current, [id]: "testing" }));
+    try {
+      const response = await fetch("/api/assistant", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "test", model: id, provider_key: key, provider_url: url }) });
+      const value = await response.json();
+      setProbe((current) => ({ ...current, [id]: value?.ok ? "works" : "failed" }));
+    } catch { setProbe((current) => ({ ...current, [id]: "failed" })); }
+  }
+
+  function useModel(id: string) {
+    setForm((current) => ({ ...current, id }));
+  }
+
+  function pushUsage(next: Stored) {
+    fetch("/api/assistant", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "usage", usage: { percent: next.usagePercent, cost: next.perReplyCost, days: next.usageDays, until: next.usageUntil } }),
+    }).catch(() => null);
+  }
+
+  function startAllowance() {
+    const days = Math.max(1, Math.min(365, Number(settings.usageDays) || 30));
+    const next = { ...settings, usagePercent: 100, usageDays: days, usageUntil: Date.now() + days * 86400000 };
+    setSettings(next); pushUsage(next);
+    setNotice(`Allowance reset to 100% and set to last ${days} day${days === 1 ? "" : "s"}.`);
+  }
+
   function removeKey() {
     setSettings((current) => ({ ...current, providerKey: "" }));
     setForm((current) => ({ ...current, key: "" }));
@@ -337,14 +383,18 @@ export function ProprietorAssistant() {
 
   function changeUsage(field: "usagePercent" | "perReplyCost", raw: string) {
     const value = Number(raw);
-    setSettings((current) => ({ ...current, [field]: Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : 0 }));
+    setSettings((current) => {
+      const next = { ...current, [field]: Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : 0 };
+      pushUsage(next);
+      return next;
+    });
   }
 
   async function send(event?: FormEvent, prompt?: string) {
     event?.preventDefault();
     const content = (prompt || draft).trim();
     if (!content || busy || !activeThread) return;
-    if (settings.usagePercent <= 0) { setNotice("Usage balance is at 0%. Raise it in the Usage tab to continue."); setTab("usage"); return; }
+    if (!config?.is_admin && settings.usagePercent <= 0) { setNotice("The allowance is empty. Reset it in Usage to continue."); setTab("usage"); return; }
     const threadId = activeThread.id;
     const host = hostOf(settings.providerUrl || DEFAULT_URL);
     const updated = [...activeThread.messages, { role: "user", content } as Message];
@@ -374,7 +424,11 @@ export function ProprietorAssistant() {
       }
       updateThread(threadId, [...updated, { role: "assistant", content: String(value.text || "Done."), document: value.document === true }]);
       if (value.approval?.approval_token) setApproval({ token: value.approval.approval_token, summary: value.approval.summary || "Confirm this change." });
-      setSettings((current) => ({ ...current, usagePercent: Math.max(0, current.usagePercent - current.perReplyCost) }));
+      if (!config?.is_admin) setSettings((current) => {
+        const next = { ...current, usagePercent: Math.max(0, current.usagePercent - current.perReplyCost) };
+        pushUsage(next);
+        return next;
+      });
     } catch (error) {
       const failed = controller.signal.aborted
         ? `${host} did not answer within 100 seconds, so the request was stopped. Try again.`
@@ -425,7 +479,7 @@ export function ProprietorAssistant() {
       <nav className="assistantNav" aria-label="Workspace">
         <button type="button" className={tab === "chats" ? "selected" : ""} onClick={() => setTab("chats")}>Chats</button>
         {config.is_admin && <button type="button" className={tab === "models" ? "selected" : ""} onClick={() => { setTab("models"); setForm((current) => ({ ...current, id: current.id || settings.defaultModel, provider: settings.providerId, effort: settings.effort })); }}>Models</button>}
-        {config.is_admin && <button type="button" className={tab === "usage" ? "selected" : ""} onClick={() => setTab("usage")}>Usage</button>}
+        {<button type="button" className={tab === "usage" ? "selected" : ""} onClick={() => setTab("usage")}>Usage</button>}
       </nav>
       <div className="assistantChatList">
         <p className="assistantListLabel">Your chats</p>
@@ -472,7 +526,7 @@ export function ProprietorAssistant() {
         <form className="assistantComposer" onSubmit={send}>
           <textarea value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Message the assistant…" rows={1} aria-label="Message"/>
           <button type="submit" disabled={busy || !draft.trim()} aria-label="Send">↑</button>
-          <small>{settings.usagePercent.toFixed(0)}% usage left · answers use live school data</small>
+          <small>{config.is_admin ? "Developer chats are not counted" : `${settings.usagePercent.toFixed(0)}% allowance left${settings.usageUntil ? ` · until ${new Date(settings.usageUntil).toLocaleDateString()}` : ""}`} · answers use live school data</small>
         </form>
       </>}
 
@@ -484,7 +538,8 @@ export function ProprietorAssistant() {
           <div className="assistantPair">
             <label><span>Provider</span><select value={form.provider} onChange={(event) => {
               const provider = PROVIDERS.find((item) => item.id === event.target.value);
-              setForm((current) => ({ ...current, provider: event.target.value, url: provider?.url || current.url }));
+              setForm((current) => ({ ...current, provider: event.target.value, url: provider?.url || current.url, id: "" }));
+              setModelList([]); setProbe({}); setTest({ state: "idle", message: "" });
             }}>{PROVIDERS.map((provider) => <option key={provider.id} value={provider.id}>{provider.label}</option>)}</select></label>
             <label><span>Model</span><input list="assistantModelChoices" placeholder={config?.default_model || "deepseek-v4.1-flash"} value={form.id} onChange={(event) => setForm({ ...form, id: event.target.value })}/><datalist id="assistantModelChoices">{modelList.map((id) => <option key={id} value={id} />)}</datalist></label>
           </div>
@@ -504,14 +559,19 @@ export function ProprietorAssistant() {
         </div>
         <div className="assistantCard">
           <h2>Available models</h2>
+          <p className="assistantMuted">List models to see what this key can reach, then test any of them. A green Works mark means that model answered.</p>
           <div className="assistantModelList">
-            {settings.models.map((model) => <div key={model.id} className="assistantModelRow">
-              <button type="button" className="assistantModelBody" onClick={() => setSettings((current) => ({ ...current, defaultModel: model.id }))}>
-                <b>{model.label}</b>
-                <small>{model.id}{model.id === settings.defaultModel ? " · in use" : ""}</small>
-              </button>
-              {settings.models.length > 1 && <button type="button" className="assistantRemove" onClick={() => removeModel(model.id)}>Remove</button>}
-            </div>)}
+            {(modelList.length ? modelList.map((id) => ({ id, label: settings.models.find((model) => model.id === id)?.label || id })) : settings.models).map((model) => {
+              const state = probe[model.id];
+              return <div key={model.id} className={`assistantModelRow ${state || ""}`}>
+                <div className="assistantModelBody">
+                  <b>{model.label}</b>
+                  <small>{model.id}{form.id === model.id ? " · chosen" : settings.defaultModel === model.id ? " · in use" : ""}{state === "works" ? " · works" : state === "failed" ? " · failed" : ""}</small>
+                </div>
+                <button type="button" className="assistantModelPick" onClick={() => useModel(model.id)}>{form.id === model.id ? "Chosen" : "Use"}</button>
+                <button type="button" className="assistantModelTest" onClick={() => testModel(model.id)} disabled={state === "testing"}>{state === "testing" ? "…" : "Test"}</button>
+              </div>;
+            })}
           </div>
           <p className="assistantMuted">Current endpoint: {settings.providerUrl || DEFAULT_URL}</p>
         </div>
@@ -526,10 +586,12 @@ export function ProprietorAssistant() {
             <div><strong>{settings.usagePercent <= 0 ? "Empty" : "Remaining"}</strong><small>{settings.usagePercent <= 20 && settings.usagePercent > 0 ? "Running low" : "Manual balance for this account"}</small></div>
           </div>
           <div className="assistantPair">
-            <label><span>Balance (%)</span><input type="number" min="0" max="100" step="1" value={settings.usagePercent} onChange={(event) => changeUsage("usagePercent", event.target.value)}/></label>
-            <label><span>Cost per answer (%)</span><input type="number" min="0" max="100" step="0.5" value={settings.perReplyCost} onChange={(event) => changeUsage("perReplyCost", event.target.value)}/></label>
+            <label><span>Balance (%)</span><input type="number" min="0" max="100" step="1" value={settings.usagePercent} onChange={(event) => changeUsage("usagePercent", event.target.value)} /></label>
+            <label><span>Cost per answer (%)</span><input type="number" min="0" max="100" step="0.5" value={settings.perReplyCost} onChange={(event) => changeUsage("perReplyCost", event.target.value)} /></label>
           </div>
-          <div className="assistantActions"><button type="button" className="assistantPrimary" onClick={() => setSettings((current) => ({ ...current, usagePercent: 100 }))}>Reset to 100%</button></div>
+          <label><span>Lasts for (days)</span><input type="number" min="1" max="365" step="1" value={settings.usageDays} onChange={(event) => setSettings((current) => ({ ...current, usageDays: Math.max(1, Math.min(365, Number(event.target.value) || 1)) }))} /></label>
+          <p className="assistantMuted">{settings.usageUntil ? `This allowance runs until ${new Date(settings.usageUntil).toLocaleDateString()} (${Math.max(0, Math.ceil((settings.usageUntil - Date.now()) / 86400000))} day(s) left).` : "No end date set yet. Start the allowance to date it."} It is shared, so a reset here applies everywhere. Developer chats are free; only the proprietor's answers use it.</p>
+          <div className="assistantActions"><button type="button" className="assistantPrimary" onClick={startAllowance}>Start fresh at 100%</button><button type="button" className="assistantGhost" onClick={() => { const next = { ...settings, usagePercent: 100 }; setSettings(next); pushUsage(next); }}>Set balance to 100%</button></div>
         </div>
       </div>}
     </section>
@@ -537,7 +599,7 @@ export function ProprietorAssistant() {
     <nav className="assistantTabbar" aria-label="Workspace">
       <button type="button" className={tab === "chats" ? "selected" : ""} onClick={() => setTab("chats")}>Chats</button>
       {config.is_admin && <button type="button" className={tab === "models" ? "selected" : ""} onClick={() => { setTab("models"); setForm((current) => ({ ...current, id: current.id || settings.defaultModel, provider: settings.providerId, effort: settings.effort })); }}>Models</button>}
-      {config.is_admin && <button type="button" className={tab === "usage" ? "selected" : ""} onClick={() => setTab("usage")}>Usage</button>}
+      {<button type="button" className={tab === "usage" ? "selected" : ""} onClick={() => setTab("usage")}>Usage</button>}
     </nav>
   </main>;
 }

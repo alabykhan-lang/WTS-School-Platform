@@ -32,19 +32,31 @@ function modelOptions(): ModelOption[] {
   });
 }
 
-/** Only https chat-completions endpoints are accepted, so a saved provider key cannot be sent in the clear. */
+/** Known provider hosts that need a path before chat/completions, e.g. Google's OpenAI bridge. */
+const PROVIDER_BASES: Record<string, string> = {
+  "generativelanguage.googleapis.com": "/v1beta/openai",
+  "api.openai.com": "/v1",
+  "api.deepseek.com": "/v1",
+  "platform.yeta.ai": "/v1",
+  "api.xingchiapi.com": "/v1",
+  "openrouter.ai": "/api/v1",
+  "api.mistral.ai": "/v1",
+  "api.groq.com": "/openai/v1",
+};
+
+/** Only https chat-completions endpoints are accepted, and a bare provider address is completed for the user. */
 function readProviderUrl(value: unknown) {
   const raw = typeof value === "string" ? value.trim() : "";
   if (!raw) return "";
   let parsed: URL;
   try { parsed = new URL(raw); } catch { throw new IdentityApiError("ASSISTANT_PROVIDER_URL_INVALID", 400); }
-  const normalised = parsed.toString().replace(/\/+$/, "");
   if (parsed.protocol !== "https:") throw new IdentityApiError("ASSISTANT_PROVIDER_URL_INVALID", 400);
+  const normalised = parsed.toString().replace(/\/+$/, "");
   const path = parsed.pathname.replace(/\/+$/, "");
   if (/\/(chat\/completions|responses)$/.test(path)) return normalised;
-  if (path === "") return `${normalised}/v1/chat/completions`;
-  if (/\/v\d+$/.test(path)) return `${normalised}/chat/completions`;
-  throw new IdentityApiError("ASSISTANT_PROVIDER_URL_INVALID", 400);
+  const base = path === "" ? PROVIDER_BASES[parsed.hostname] || "/v1" : "";
+  if (base) return `${parsed.origin}${base}/chat/completions`;
+  return `${normalised}/chat/completions`;
 }
 
 function authorityIsAdmin(context: Record<string, unknown>) {
@@ -428,6 +440,44 @@ async function reportCard(current: CurrentSession, args: Record<string, unknown>
     remarks: remarks?.rows || [],
     note: "Print this as it is. Numbers come straight from the results portal.",
   };
+}
+
+
+type Usage = { percent: number; cost: number; days: number; until: number };
+
+function cleanUsage(raw: unknown): Usage | null {
+  const value = raw as Record<string, unknown> | null;
+  if (!value || typeof value !== "object") return null;
+  const num = (input: unknown, min: number, max: number, fallback: number) => {
+    const parsed = Number(input);
+    return Number.isFinite(parsed) ? Math.max(min, Math.min(max, parsed)) : fallback;
+  };
+  return {
+    percent: num(value.percent, 0, 100, 100),
+    cost: num(value.cost, 0, 100, 1),
+    days: num(value.days, 1, 365, 30),
+    until: num(value.until, 0, Date.now() + 400 * 86400000, 0),
+  };
+}
+
+/** The allowance is kept with the school settings so both accounts see the same meter. */
+async function readUsage(current: CurrentSession) {
+  try {
+    const read = await results(current, "settings.read", {});
+    const config = (read?.settings?.app_config || {}) as Record<string, unknown>;
+    return cleanUsage(config.assistant_usage);
+  } catch {
+    return null;
+  }
+}
+
+async function saveUsage(current: CurrentSession, raw: unknown) {
+  const usage = cleanUsage(raw);
+  if (!usage) return { ok: false, code: "ASSISTANT_USAGE_INVALID" };
+  const read = await results(current, "settings.read", {});
+  if (!read?.ok) return read;
+  const config = ((read.settings || {}) as Record<string, unknown>).app_config as Record<string, unknown> | undefined;
+  return results(current, "settings.app_config.update", { config: { ...(config || {}), assistant_usage: usage } });
 }
 
 function approvalToken(current: CurrentSession, proposal: Record<string, unknown>) {
@@ -820,7 +870,9 @@ export async function GET(request: NextRequest) {
     if (!sameOriginOrMissing(request)) return error("ORIGIN_NOT_ALLOWED", 403);
     const current = await currentSession(request);
     const person = current.context.person && typeof current.context.person === "object" ? current.context.person as Record<string, unknown> : {};
+    const usage = await readUsage(current);
     return Response.json({
+      usage,
       ok: true,
       configured: Boolean(DEEPSEEK_KEY || GATEWAY_KEY),
       models: modelOptions(),
@@ -846,6 +898,12 @@ export async function POST(request: NextRequest) {
     }
 
     const isAdmin = authorityIsAdmin(current.context);
+
+    if (body.action === "usage") {
+      const saved = await saveUsage(current, body.usage);
+      return Response.json(saved, { headers: noStoreHeaders() });
+    }
+
     const suppliedKey = typeof body.provider_key === "string" ? body.provider_key.trim() : "";
     const suppliedUrl = readProviderUrl(body.provider_url);
     const suppliedModel = typeof body.model === "string" ? body.model.trim() : "";
