@@ -287,15 +287,17 @@ export function ProprietorAssistant() {
   useEffect(() => { baseTitle.current = baseTitle.current || document.title; }, []);
   useEffect(() => { if (!busy) document.title = baseTitle.current; }, [tab, busy]);
   useEffect(() => {
-    if (!config?.person?.id || resumed.current) return;
+    // Wait for the saved chats, so the restarted answer lands in a real thread.
+    if (!config?.person?.id || !threads.length || resumed.current) return;
     resumed.current = true;
     let job: Job | null = null;
     try { job = JSON.parse(localStorage.getItem(`wts-assistant-job:${config.person.id}`) || "null"); } catch { job = null; }
     if (!job?.threadId || !Array.isArray(job.messages) || !job.messages.length) return;
     setActiveId(job.threadId);
-    setNotice("Picking up the job you left running…");
+    setTab("chats");
     void run(job.threadId, job.messages);
-  }, [config]);
+    setNotice("Picking up the job you left running…");
+  }, [config, threads.length]);
   useEffect(() => {
     const back = () => { if (!document.hidden && !busy) document.title = baseTitle.current; };
     document.addEventListener("visibilitychange", back);
@@ -314,11 +316,14 @@ export function ProprietorAssistant() {
   }
 
   function updateThread(id: string, messages: Message[]) {
-    setThreads((current) => current
-      .map((thread) => thread.id === id
-        ? { ...thread, messages, title: thread.title === "New chat" && messages[0]?.role === "user" ? messages[0].content.slice(0, 46) : thread.title, updatedAt: Date.now() }
-        : thread)
-      .sort((a, b) => b.updatedAt - a.updatedAt));
+    const title = messages[0]?.role === "user" ? messages[0].content.slice(0, 46) : "New chat";
+    setThreads((current) => {
+      const known = current.some((thread) => thread.id === id);
+      const next = known
+        ? current.map((thread) => thread.id === id ? { ...thread, messages, title: thread.title === "New chat" ? title : thread.title, updatedAt: Date.now() } : thread)
+        : [{ id, title, messages, updatedAt: Date.now() }, ...current];
+      return next.sort((a, b) => b.updatedAt - a.updatedAt);
+    });
   }
 
   function removeThread(id: string) {
@@ -545,6 +550,7 @@ export function ProprietorAssistant() {
         pushUsage(next);
         return next;
       });
+      setNotice("");
       announce(threadId, doc ? `Report card ready${doc.name ? `: ${doc.name}` : ""}` : "Answer ready", answer);
     } catch (error) {
       const failed = controller.signal.aborted
