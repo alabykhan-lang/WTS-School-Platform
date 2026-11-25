@@ -1305,7 +1305,7 @@ export async function POST(request: NextRequest) {
             steps: ["report_card"],
             document: { student: String(person.id || ""), classKey: String(person.class_key || ask.classKey), term: String(made.term || ""), session: String(made.academic_session || ""), name: String(person.name || "") },
           }, { headers: noStoreHeaders() });
-        }
+        } else { fastError = `${made.code}: ${made.detail || ""}`; }
       } catch (caught) { fastError = (caught as Error)?.message || String(caught); }
     }
 
