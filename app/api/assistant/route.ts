@@ -433,7 +433,7 @@ async function reportCard(current: CurrentSession, args: Record<string, unknown>
       const found = await registry(current, "read", "students", { search: wanted, classKey: args.classKey ? classKeyOf(args.classKey) : null, status: "active" });
       return match(Array.isArray(found?.students) ? found.students as Record<string, unknown>[] : []);
     };
-    let hits: Record<string, unknown>[] = args.classKey ? await rosterHits() : await find();
+    let hits = await find();
     if (!hits.length) hits = await find();
     if (!hits.length) hits = await rosterHits();
     const exact = hits.find((row) => String(row.admno || "").toLowerCase() === wanted.toLowerCase()) || hits.find((row) => String(row.name || "").toLowerCase() === wanted.toLowerCase());
