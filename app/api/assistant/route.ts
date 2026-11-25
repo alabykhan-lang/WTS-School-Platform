@@ -311,6 +311,11 @@ function classKeyOf(value: unknown) {
   return aliases[slug] || slug;
 }
 
+/** "ss2-science" reads as "SS2 Science" when no display name is saved. */
+function classLabel(key: string) {
+  return key.split("-").filter(Boolean).map((part, index) => (index === 0 ? part.toUpperCase() : part.charAt(0).toUpperCase() + part.slice(1))).join(" ");
+}
+
 async function withAcademicContext(current: CurrentSession, payload: Record<string, unknown>): Promise<Record<string, unknown>> {
   const live = await liveAcademic(current);
   return {
@@ -1129,7 +1134,7 @@ async function cardDocument(current: CurrentSession, request: NextRequest) {
   const data: CardData = {
     student,
     classKey: String(payload.class_key),
-    dept: deptMap[String(payload.class_key)]?.label || String(payload.class_key),
+    dept: deptMap[String(payload.class_key)]?.label || classLabel(String(payload.class_key)),
     term: String(payload.term),
     session: String(payload.academic_session),
     school: {
