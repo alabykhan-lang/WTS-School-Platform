@@ -20,7 +20,13 @@ const DEFAULT_MODEL = process.env.WTS_ASSISTANT_DEFAULT_MODEL?.trim() || (GATEWA
 
 type ModelOption = { id: string; label: string; description: string };
 type AppSession = { session_id: string; session_secret: string };
-type CurrentSession = { id: string; secret: string; context: Record<string, unknown> };
+type CurrentSession = { id: string; secret: string; context: Record<string, unknown>; deadline?: number };
+
+/** How long a bridge call may wait, never past the turn's own deadline. */
+function bridgeTimeout(current: CurrentSession, cap = 45000) {
+  if (!current.deadline) return cap;
+  return Math.max(7000, Math.min(cap, current.deadline - Date.now() - 4000));
+}
 
 function modelOptions(): ModelOption[] {
   const configured = process.env.WTS_ASSISTANT_MODELS?.split(",").map((entry) => entry.trim()).filter(Boolean) || [];
@@ -181,7 +187,7 @@ async function openRegistry(current: CurrentSession) {
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.session_id}.${session.session_secret}` },
       body: JSON.stringify({ kind, action, payload }),
       cache: "no-store",
-      signal: AbortSignal.timeout(45000),
+      signal: AbortSignal.timeout(bridgeTimeout(current, 30000)),
     });
     return response.json().catch(() => ({ ok: false, code: "REGISTRY_INVALID_RESPONSE" }));
   };
@@ -271,7 +277,7 @@ async function openResults(current: CurrentSession) {
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.session_id}.${session.session_secret}` },
       body: JSON.stringify({ action, payload }),
       cache: "no-store",
-      signal: AbortSignal.timeout(45000),
+      signal: AbortSignal.timeout(bridgeTimeout(current)),
     });
     return response.json().catch(() => ({ ok: false, code: "RESULTS_INVALID_RESPONSE" }));
   };
@@ -880,6 +886,7 @@ async function gateway(messages: unknown[], settings: ModelSettings, current: Cu
   let retriedStyle = false;
   const started = Date.now();
   const totalBudget = 118000;
+  current.deadline = started + totalBudget;
   let partial = "";
   let ranOut = false;
   for (let step = 0; step < 12; step += 1) {
@@ -908,6 +915,9 @@ async function gateway(messages: unknown[], settings: ModelSettings, current: Cu
       const cached = seen.get(key);
       if (cached) { history.push({ role: "tool", callId: call.id, content: cached }); continue; }
       const result = await executeTool(call.name, args, current);
+      if ((result as Record<string, unknown>).ok === false) {
+        (result as Record<string, unknown>).hint = "This call failed. Do not repeat it with the same arguments: use another tool or tell the proprietor plainly what could not be read.";
+      }
       if (call.name === "report_card" && (result as Record<string, unknown>).ok === true) {
         const made = result as Record<string, unknown>;
         const person = (made.student || {}) as Record<string, unknown>;
@@ -988,6 +998,7 @@ class CardProblem extends Error {
 /** The report card page the assistant opens itself, in the portal's own design. */
 async function cardDocument(current: CurrentSession, request: NextRequest) {
   const params = request.nextUrl.searchParams;
+  current.deadline = Date.now() + 60000;
   const studentId = String(params.get("card") || "");
   const classKey = String(params.get("class") || "");
   const payload = await withAcademicContext(current, {

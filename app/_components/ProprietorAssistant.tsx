@@ -440,23 +440,31 @@ export function ProprietorAssistant() {
       const response = await fetch(file.url);
       if (!response.ok) throw new Error(String(response.status));
       const blob = await response.blob();
-      const pdf = new File([blob], file.name, { type: "application/pdf" });
-      if (navigator.canShare?.({ files: [pdf] })) {
-        await navigator.share({ files: [pdf], title: file.name });
-        setNotice("Choose Save to Files, or a printer, in the share sheet.");
-        return;
-      }
-      const href = URL.createObjectURL(pdf);
-      const a = document.createElement("a");
-      a.href = href;
-      a.download = file.name;
-      a.style.display = "none";
-      document.body.appendChild(a);
-      a.click();
-      window.setTimeout(() => { a.remove(); URL.revokeObjectURL(href); }, 20000);
+      const objectUrl = URL.createObjectURL(blob);
+      // A plain download lands in Downloads with no sheet and no tab. The share
+      // sheet loses the tap gesture after the fetch, so it is only the fallback.
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = file.name;
+      link.rel = "noopener";
+      link.style.display = "none";
+      document.body.appendChild(link);
+      link.click();
+      window.setTimeout(() => { link.remove(); URL.revokeObjectURL(objectUrl); }, 30000);
       setNotice(`Saved ${file.name}. If it did not arrive, tap Open to print.`);
     } catch (caught) {
       if ((caught as Error)?.name === "AbortError") return;
+      try {
+        // Some installed apps block downloads; offer the share sheet instead.
+        const retry = await fetch(file.url);
+        const again = await retry.blob();
+        const pdf = new File([again], file.name, { type: "application/pdf" });
+        if (navigator.canShare?.({ files: [pdf] })) {
+          await navigator.share({ files: [pdf], title: file.name });
+          setNotice("Choose Save to Files, or a printer, in the share sheet.");
+          return;
+        }
+      } catch { /* fall through to the plain message */ }
       setNotice("The card could not be saved. Tap Open to print instead.");
     }
   }
