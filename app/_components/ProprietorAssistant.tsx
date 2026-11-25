@@ -293,11 +293,13 @@ export function ProprietorAssistant() {
     let job: Job | null = null;
     try { job = JSON.parse(localStorage.getItem(`wts-assistant-job:${config.person.id}`) || "null"); } catch { job = null; }
     if (!job?.threadId || !Array.isArray(job.messages) || !job.messages.length) return;
-    const unanswered = threads.find((thread) => thread.id === job.threadId)?.messages.slice(-1)[0]?.role === "user";
-    if (!unanswered) { try { localStorage.removeItem(`wts-assistant-job:${config.person.id}`); } catch { /* ignore */ } return; }
+    const thread = threads.find((item) => item.id === job.threadId);
+    if (thread?.messages.slice(-1)[0]?.role !== "user") { try { localStorage.removeItem(`wts-assistant-job:${config.person.id}`); } catch { /* ignore */ } return; }
+    // The saved thread can hold more history than the job record, so keep the longer one.
+    const messages = thread && thread.messages.length > job.messages.length ? thread.messages : job.messages;
     setActiveId(job.threadId);
     setTab("chats");
-    void run(job.threadId, job.messages);
+    void run(job.threadId, messages);
     setNotice("Picking up the job you left running…");
   }, [config, threads.length]);
   useEffect(() => {
