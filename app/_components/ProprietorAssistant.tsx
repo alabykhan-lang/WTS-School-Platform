@@ -431,7 +431,7 @@ export function ProprietorAssistant() {
     else setNotice("Allow pop-ups to open the report card.");
   }
 
-  /** Saves the card the way the phone prefers: the share sheet first, then a download. */
+  /** Saves the card straight into Downloads; the share sheet is only the fallback. */
   async function saveCard(doc?: CardDoc) {
     if (!doc?.student) return;
     const file = cardFile(doc);

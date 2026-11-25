@@ -918,6 +918,8 @@ async function gateway(messages: unknown[], settings: ModelSettings, current: Cu
       const result = await executeTool(call.name, args, current);
       if ((result as Record<string, unknown>).ok === false) {
         (result as Record<string, unknown>).hint = "This call failed. Do not repeat it with the same arguments: use another tool or tell the proprietor plainly what could not be read.";
+      } else if (/\[\]/.test(JSON.stringify(result)) && JSON.stringify(result).length < 400) {
+        (result as Record<string, unknown>).hint = "Nothing came back for this. Change the arguments or use another tool rather than repeating it.";
       }
       if (call.name === "report_card" && (result as Record<string, unknown>).ok === true) {
         const made = result as Record<string, unknown>;
