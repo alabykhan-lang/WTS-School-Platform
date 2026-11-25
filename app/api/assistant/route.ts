@@ -1008,17 +1008,25 @@ async function cardDocument(current: CurrentSession, request: NextRequest) {
   const scoped = { ...payload, student_id: String(student.id) };
   // Several reads at once can be shed by the database, so each gets one retry.
   const attempt = async (name: string, body: Record<string, unknown>) => {
+    const t0 = Date.now();
     let got = await call(name, body);
     if (!got?.ok) got = await call(name, body);
+    console.log("card-read", name, Date.now() - t0, got?.ok, got?.code || "");
     return got;
   };
-  const [summary, subjectsCall, traitsCall, remarksCall, feesCall, settings] = await Promise.all([
-    attempt("read.result_summary", payload),
-    attempt("read.subjects", { class_key: payload.class_key }),
-    attempt("read.traits", scoped),
-    attempt("read.remarks", scoped),
-    attempt("read.fees", scoped),
-    attempt("settings.read", {}),
+  // The card sections decide which extra reads are worth making at all.
+  const summaryCall = attempt("read.result_summary", payload);
+  const subjectsRequest = attempt("read.subjects", { class_key: payload.class_key });
+  const settings = await attempt("settings.read", {});
+  const wanted: Record<string, boolean> = {};
+  for (const key of CARD_SECTIONS) wanted[key] = true;
+  Object.assign(wanted, ((((settings?.settings || {}) as Record<string, unknown>).app_config as Record<string, unknown> | undefined)?.sections || {}) as Record<string, boolean>);
+  const [summary, subjectsCall, traitsCall, remarksCall, feesCall] = await Promise.all([
+    summaryCall,
+    subjectsRequest,
+    wanted.showAffective || wanted.showPsycho ? attempt("read.traits", scoped) : Promise.resolve(null),
+    wanted.showAttendance ? attempt("read.remarks", scoped) : Promise.resolve(null),
+    wanted.showFees || wanted.showNextTerm ? attempt("read.fees", scoped) : Promise.resolve(null),
   ]);
   if (!summary.ok) throw new CardProblem(String(summary.code || "RESULT_SUMMARY_FAILED"), String(summary.detail || "The results portal did not return the class scores."));
   const config = ((settings?.settings || {}) as Record<string, unknown>).app_config as Record<string, unknown> | undefined;
