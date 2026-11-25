@@ -435,7 +435,7 @@ async function reportCard(current: CurrentSession, args: Record<string, unknown>
     ok: true,
     document: "report_card",
     school: "Way to Success Standard Schools",
-    student: { name: String(student.name || ""), admno: String(student.admno || ""), class_key: String(student.class_key || ""), gender: String(student.gender || ""), house: String(student.house || "") },
+    student: { id: String(student.id || studentId), name: String(student.name || ""), admno: String(student.admno || ""), class_key: String(student.class_key || ""), gender: String(student.gender || ""), house: String(student.house || "") },
     term: payload.term,
     academic_session: payload.academic_session,
     weights,
@@ -601,7 +601,8 @@ async function executeTool(name: string, args: Record<string, unknown>, current:
 }
 
 type GatewayFailure = { ok: false; status: number; code: string; detail: string };
-type GatewaySuccess = { ok: true; text: string; usage: unknown; approval?: Record<string, unknown>; steps?: string[]; truncated?: boolean; document?: boolean };
+type CardDoc = { student: string; classKey: string; term: string; session: string; name: string };
+type GatewaySuccess = { ok: true; text: string; usage: unknown; approval?: Record<string, unknown>; steps?: string[]; truncated?: boolean; document?: CardDoc };
 type ModelSettings = { key: string; url: string; model: string; label: string; effort?: string };
 
 function providerFailure(status: number, detail: string): GatewayFailure {
@@ -792,6 +793,8 @@ async function gateway(messages: unknown[], settings: ModelSettings, current: Cu
     else if (item.role === "user") history.push({ role: "user", content: item.content });
   }
   const used: string[] = [];
+  /** Details of the last report card built, so the client can open it on the portal itself. */
+  let doc: CardDoc | null = null;
   const seen = new Map<string, string>();
   let retriedStyle = false;
   const started = Date.now();
@@ -813,7 +816,7 @@ async function gateway(messages: unknown[], settings: ModelSettings, current: Cu
       return answer.failure;
     }
     const turn = answer.turn as Turn;
-    if (!turn.calls.length) return { ok: true, text: turn.text || "I could not produce a response.", usage: turn.usage, steps: used, document: used.includes("report_card") || undefined };
+    if (!turn.calls.length) return { ok: true, text: turn.text || "I could not produce a response.", usage: turn.usage, steps: used, document: doc || undefined };
     if (turn.text) partial = turn.text;
     history.push({ role: "assistant", text: turn.text, calls: turn.calls });
     for (const call of turn.calls) {
@@ -824,6 +827,17 @@ async function gateway(messages: unknown[], settings: ModelSettings, current: Cu
       const cached = seen.get(key);
       if (cached) { history.push({ role: "tool", callId: call.id, content: cached }); continue; }
       const result = await executeTool(call.name, args, current);
+      if (call.name === "report_card" && (result as Record<string, unknown>).ok === true) {
+        const made = result as Record<string, unknown>;
+        const person = (made.student || {}) as Record<string, unknown>;
+        doc = {
+          student: String(person.id || ""),
+          classKey: String(person.class_key || args.classKey || ""),
+          term: String(made.term || ""),
+          session: String(made.academic_session || ""),
+          name: String(person.name || ""),
+        };
+      }
       if ((result as Record<string, unknown>).requires_confirmation === true) {
         return { ok: true, text: (result as Record<string, unknown>).summary as string, usage: null, approval: result as Record<string, unknown>, steps: used };
       }
@@ -892,6 +906,7 @@ export async function GET(request: NextRequest) {
       usage,
       ok: true,
       configured: Boolean(DEEPSEEK_KEY || GATEWAY_KEY),
+      results_url: portalOrigins.results,
       models: modelOptions(),
       default_model: DEFAULT_MODEL,
       default_url: DEEPSEEK_BASE,

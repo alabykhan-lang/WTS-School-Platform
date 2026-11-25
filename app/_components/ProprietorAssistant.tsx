@@ -2,12 +2,14 @@
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
-type Message = { role: "user" | "assistant"; content: string; failed?: boolean; document?: boolean };
+type CardDoc = { student: string; classKey: string; term: string; session: string; name?: string };
+type Message = { role: "user" | "assistant"; content: string; failed?: boolean; doc?: CardDoc; document?: boolean };
 type Model = { id: string; label: string; description?: string; url?: string; providerId?: string };
 type Thread = { id: string; title: string; messages: Message[]; updatedAt: number };
 type Person = { id?: string; full_name?: string };
-type AssistantConfig = { configured: boolean; models: Model[]; default_model: string; default_url: string; is_admin: boolean; person?: Person };
+type AssistantConfig = { configured: boolean; models: Model[]; default_model: string; default_url: string; results_url?: string; is_admin: boolean; person?: Person };
 type TestState = { state: "idle" | "running" | "pass" | "fail"; message: string };
+type Job = { threadId: string; messages: Message[]; started: number };
 
 const DEFAULT_URL = "https://api.deepseek.com";
 
@@ -212,6 +214,8 @@ export function ProprietorAssistant() {
   const [drawer, setDrawer] = useState(false);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
+  const [busyThread, setBusyThread] = useState("");
+  const [notify, setNotify] = useState<"off" | "on" | "denied">("off");
   const [notice, setNotice] = useState("");
   const [approval, setApproval] = useState<{ token: string; summary: string } | null>(null);
   const [form, setForm] = useState({ id: "", label: "", url: DEFAULT_URL, key: "", provider: "yeta", effort: "low" as Effort });
@@ -222,6 +226,7 @@ export function ProprietorAssistant() {
   const [fetchingModels, setFetchingModels] = useState(false);
   const [probe, setProbe] = useState<Record<string, "testing" | "works" | "failed" | "busy">>({});
   const endRef = useRef<HTMLDivElement | null>(null);
+  const resumed = useRef(false);
 
   useEffect(() => {
     fetch("/api/assistant", { credentials: "same-origin", cache: "no-store" })
@@ -242,6 +247,10 @@ export function ProprietorAssistant() {
           if (typeof shared.until === "number") loaded.usageUntil = shared.until;
         }
         setSettings(loaded);
+        try {
+          const wanted = localStorage.getItem(`wts-assistant-notify:${personId}`);
+          setNotify(wanted === "on" && "Notification" in window && Notification.permission === "granted" ? "on" : wanted === "denied" ? "denied" : "off");
+        } catch { setNotify("off"); }
         setForm({ id: "", label: "", url: loaded.providerUrl, key: loaded.providerKey, provider: loaded.providerId, effort: loaded.effort });
         let list: Thread[] = [];
         try {
@@ -274,6 +283,22 @@ export function ProprietorAssistant() {
     localStorage.setItem(`wts-assistant-chats:${config.person.id}`, JSON.stringify(threads));
   }, [threads, config]);
   useEffect(() => { endRef.current?.scrollIntoView({ block: "end" }); }, [activeId, threads]);
+  useEffect(() => { document.title = "WTS Assistant"; }, [tab]);
+  useEffect(() => {
+    if (!config?.person?.id || resumed.current) return;
+    resumed.current = true;
+    let job: Job | null = null;
+    try { job = JSON.parse(localStorage.getItem(`wts-assistant-job:${config.person.id}`) || "null"); } catch { job = null; }
+    if (!job?.threadId || !Array.isArray(job.messages) || !job.messages.length) return;
+    setActiveId(job.threadId);
+    setNotice("Picking up the job you left running…");
+    void run(job.threadId, job.messages);
+  }, [config]);
+  useEffect(() => {
+    const back = () => { if (!document.hidden && !busy) document.title = "WTS Assistant"; };
+    document.addEventListener("visibilitychange", back);
+    return () => document.removeEventListener("visibilitychange", back);
+  }, [busy]);
 
   const activeThread = threads.find((thread) => thread.id === activeId) || threads[0];
   const name = useMemo(() => config?.person?.full_name?.split(" ")[0] || "there", [config]);
@@ -347,6 +372,16 @@ export function ProprietorAssistant() {
     window.addEventListener("afterprint", clear);
     window.print();
     window.setTimeout(clear, 4000);
+  }
+
+  /** The card is built and printed by the portal itself, in the portal's own design. */
+  function openCard(doc?: CardDoc) {
+    if (!doc?.student) { printDocument(); return; }
+    const base = config?.results_url || "https://wts-result-system.vercel.app";
+    const query = new URLSearchParams({ card: doc.student, class: doc.classKey, term: doc.term || "", session: doc.session || "", print: "1" });
+    const win = window.open(`${base.replace(/\/$/, "")}/portal_core.html?${query}`, "_blank");
+    if (win) win.opener = null;
+    else setNotice("Allow pop-ups to open the report card.");
   }
 
   async function testModel(model: Model) {
@@ -462,13 +497,24 @@ export function ProprietorAssistant() {
     const content = (prompt || draft).trim();
     if (!content || busy || !activeThread) return;
     if (!config?.is_admin && settings.usagePercent <= 0) { setNotice("The allowance is empty. Reset it in Usage to continue."); setTab("usage"); return; }
-    const threadId = activeThread.id;
-    const host = hostOf(settings.providerUrl || DEFAULT_URL);
     const updated = [...activeThread.messages, { role: "user", content } as Message];
-    updateThread(threadId, updated);
-    setDraft(""); setBusy(true); setNotice("");
+    updateThread(activeThread.id, updated);
+    setDraft("");
+    await run(activeThread.id, updated);
+  }
+
+  function jobKey() {
+    return config?.person?.id ? `wts-assistant-job:${config.person.id}` : "";
+  }
+
+  /** The job is kept on the device, so leaving or reloading does not lose the work. */
+  async function run(threadId: string, messages: Message[]) {
+    const key = jobKey();
+    if (key) localStorage.setItem(key, JSON.stringify({ threadId, messages, started: Date.now() } satisfies Job));
+    setBusy(true); setBusyThread(threadId); setNotice("");
+    const host = hostOf(settings.providerUrl || DEFAULT_URL);
     const controller = new AbortController();
-    const stop = window.setTimeout(() => controller.abort(), 100000);
+    const stop = window.setTimeout(() => controller.abort(), 150000);
     try {
       const response = await fetch("/api/assistant", {
         method: "POST",
@@ -477,7 +523,7 @@ export function ProprietorAssistant() {
         signal: controller.signal,
         body: JSON.stringify({
           model: settings.defaultModel,
-          messages: updated,
+          messages,
           provider_key: config?.is_admin ? settings.providerKey : "",
           provider_url: config?.is_admin ? settings.providerUrl : "",
           effort: settings.effort,
@@ -488,22 +534,58 @@ export function ProprietorAssistant() {
         const code = String(value?.code || "ASSISTANT_REQUEST_FAILED");
         throw new Error(`${ERRORS[code] || "The request failed."}${saidText(value?.detail)}`);
       }
-      updateThread(threadId, [...updated, { role: "assistant", content: String(value.text || "Done."), document: value.document === true }]);
+      const answer = String(value.text || "Done.");
+      const doc = value.document && typeof value.document === "object" ? value.document as CardDoc : undefined;
+      updateThread(threadId, [...messages, { role: "assistant", content: answer, doc }]);
       if (value.approval?.approval_token) setApproval({ token: value.approval.approval_token, summary: value.approval.summary || "Confirm this change." });
       if (!config?.is_admin) setSettings((current) => {
         const next = { ...current, usagePercent: Math.max(0, current.usagePercent - current.perReplyCost) };
         pushUsage(next);
         return next;
       });
+      announce(threadId, doc ? `Report card ready${doc.name ? `: ${doc.name}` : ""}` : "Answer ready", answer);
     } catch (error) {
       const failed = controller.signal.aborted
-        ? `${host} did not answer within 100 seconds, so the request was stopped. Try again.`
+        ? `${host} did not answer within 150 seconds, so the request was stopped. Try again.`
         : error instanceof Error && error.message && !error.message.startsWith("ASSISTANT_")
           ? error.message
           : `${ERRORS["ASSISTANT_REQUEST_FAILED"]} The server was ${host}.`;
       setNotice("The last answer failed. Send it again, or pick another model in Models.");
-      updateThread(threadId, [...updated, { role: "assistant", content: failed, failed: true }]);
-    } finally { window.clearTimeout(stop); setBusy(false); }
+      updateThread(threadId, [...messages, { role: "assistant", content: failed, failed: true }]);
+    } finally {
+      window.clearTimeout(stop);
+      if (key) localStorage.removeItem(key);
+      setBusy(false); setBusyThread("");
+    }
+  }
+
+  /** Tells the proprietor outside the page when an answer lands while they are away. */
+  function announce(threadId: string, title: string, body: string) {
+    const away = document.hidden || tab !== "chats" || activeId !== threadId;
+    if (!away) return;
+    document.title = `● ${title} · WTS Assistant`;
+    if (notify !== "on" || !("Notification" in window) || Notification.permission !== "granted") return;
+    const clean = body.replace(/[#*_`>]/g, "").replace(/\s+/g, " ").trim().slice(0, 140);
+    try {
+      const note = new Notification(title, { body: clean, tag: "wts-assistant", icon: "/images/logo.webp" });
+      note.onclick = () => { window.focus(); note.close(); };
+    } catch {
+      navigator.serviceWorker?.ready.then((ready) => ready.showNotification(title, { body: clean, tag: "wts-assistant" })).catch(() => {});
+    }
+  }
+
+  async function toggleNotify() {
+    if (!("Notification" in window)) { setNotice("This browser cannot show notifications."); return; }
+    if (notify === "on") {
+      setNotify("off");
+      if (config?.person?.id) localStorage.setItem(`wts-assistant-notify:${config.person.id}`, "off");
+      return;
+    }
+    const permission = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
+    if (permission !== "granted") { setNotify("denied"); setNotice("The browser blocked notifications. Allow them in the site settings."); return; }
+    setNotify("on");
+    if (config?.person?.id) localStorage.setItem(`wts-assistant-notify:${config.person.id}`, "on");
+    setNotice("Notifications are on. You will be told here when an answer is ready.");
   }
 
   async function confirm() {
@@ -550,7 +632,7 @@ export function ProprietorAssistant() {
       <div className="assistantChatList">
         <p className="assistantListLabel">Your chats</p>
         {threads.map((thread) => <div key={thread.id} className={`assistantChatRow ${thread.id === activeId ? "active" : ""}`}>
-          <button type="button" className="assistantChatOpen" onClick={() => { setActiveId(thread.id); setApproval(null); setTab("chats"); setDrawer(false); }}>{thread.title || "New chat"}</button>
+          <button type="button" className="assistantChatOpen" onClick={() => { setActiveId(thread.id); setApproval(null); setTab("chats"); setDrawer(false); }}>{thread.id === busyThread && <i className="assistantWorkDot" aria-label="Working"/>}{thread.title || "New chat"}</button>
           <button type="button" className="assistantChatDelete" aria-label="Delete chat" onClick={() => removeThread(thread.id)}>×</button>
         </div>)}
       </div>
@@ -579,12 +661,13 @@ export function ProprietorAssistant() {
             <p>Ask about students, staff, classes, or results. I read live records and ask before saving a change.</p>
             <div className="assistantStarters">{STARTERS.map((prompt) => <button key={prompt} type="button" onClick={() => send(undefined, prompt)}><span>{prompt}</span><b>↗</b></button>)}</div>
           </div>}
-          {activeThread?.messages.map((message, index) => <article key={`${message.role}-${index}`} className={`assistantMessage ${message.role}${message.document ? " printable" : ""}`}>
+          {activeThread?.messages.map((message, index) => <article key={`${message.role}-${index}`} className={`assistantMessage ${message.role}${message.doc || message.document ? " printable" : ""}`}>
             <div className="assistantWho">{message.role === "user" ? "You" : "WTS"}</div>
             <div className={`assistantBubble${message.failed ? " failed" : ""}`}>{renderBlocks(message.content)}</div>
-            {message.document && <button type="button" className="assistantDocPrint" onClick={printDocument}>Print this document</button>}
+            {(message.doc || message.document) && <button type="button" className="assistantDocPrint" onClick={() => openCard(message.doc)}>Print the report card</button>}
           </article>)}
-          {busy && <article className="assistantMessage assistant"><div className="assistantWho">WTS</div><div className="assistantBubble assistantThinking"><i/><i/><i/></div></article>}
+          {busy && busyThread === activeThread?.id && <article className="assistantMessage assistant"><div className="assistantWho">WTS</div><div className="assistantBubble assistantThinking"><i/><i/><i/></div></article>}
+          {busy && busyThread && busyThread !== activeThread?.id && <p className="assistantMuted assistantElsewhere">Still working in another chat. You can keep reading here.</p>}
           <div ref={endRef}/>
         </div>
         {approval && <div className="assistantApproval"><div><strong>Confirm this change</strong><span>{approval.summary}</span></div><div className="assistantApprovalActions"><button type="button" onClick={() => setApproval(null)}>Cancel</button><button type="button" onClick={confirm} disabled={busy}>Confirm</button></div></div>}
@@ -593,6 +676,7 @@ export function ProprietorAssistant() {
           <textarea value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Message the assistant…" rows={1} aria-label="Message"/>
           <button type="submit" disabled={busy || !draft.trim()} aria-label="Send">↑</button>
           <small>{config.is_admin ? "Developer chats are not counted" : `${settings.usagePercent.toFixed(0)}% allowance left${settings.usageUntil ? ` · until ${new Date(settings.usageUntil).toLocaleDateString()}` : ""}`} · answers use live school data</small>
+          <button type="button" className={`assistantBell${notify === "on" ? " on" : ""}`} onClick={toggleNotify} aria-pressed={notify === "on"} title="Tell me here when the answer is ready">{notify === "on" ? "🔔 Notify me" : "🔕 Notify me"}</button>
         </form>
       </>}
 
