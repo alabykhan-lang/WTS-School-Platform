@@ -285,7 +285,7 @@ export function ProprietorAssistant() {
   }, [threads, config]);
   useEffect(() => { endRef.current?.scrollIntoView({ block: "end" }); }, [activeId, threads]);
   useEffect(() => { baseTitle.current = baseTitle.current || document.title; }, []);
-  useEffect(() => { if (!busy) document.title = baseTitle.current; }, [tab, busy]);
+  useEffect(() => { if (!busy && !document.hidden) document.title = baseTitle.current; }, [tab, busy]);
   useEffect(() => {
     // Wait for the saved chats, so the restarted answer lands in a real thread.
     if (!config?.person?.id || !threads.length || resumed.current) return;
