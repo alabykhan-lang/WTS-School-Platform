@@ -292,6 +292,11 @@ export function ProprietorAssistant() {
   }, [threads, config]);
   useEffect(() => { endRef.current?.scrollIntoView({ block: "end" }); }, [activeId, threads]);
   useEffect(() => { baseTitle.current = baseTitle.current || document.title; }, []);
+  // The page worker shows the "answer ready" notice, also from the background.
+  useEffect(() => {
+    if (!("serviceWorker" in navigator)) return;
+    navigator.serviceWorker.register("/assistant-sw.js").catch(() => { /* notices fall back to the page */ });
+  }, []);
   useEffect(() => { if (!busy && !document.hidden) document.title = baseTitle.current; }, [tab, busy]);
   useEffect(() => {
     // Wait for the saved chats, so the restarted answer lands in a real thread.
@@ -601,14 +606,25 @@ export function ProprietorAssistant() {
     document.title = `● ${title} · WTS Assistant`;
     if (notifyRef.current !== "on") return;
     try { navigator.vibrate?.([120, 70, 120]); } catch { /* ignore */ }
-    if (!("Notification" in window) || Notification.permission !== "granted") return;
+    if ("Notification" in window && Notification.permission !== "granted") return;
     const clean = body.replace(/[#*_`>]/g, "").replace(/\s+/g, " ").trim().slice(0, 140);
-    try {
-      const note = new Notification(title, { body: clean, tag: "wts-assistant", icon: "/images/logo.webp" });
-      note.onclick = () => { window.focus(); note.close(); };
-    } catch {
-      navigator.serviceWorker?.ready.then((ready) => ready.showNotification(title, { body: clean, tag: "wts-assistant" })).catch(() => {});
-    }
+    show(title, clean, threadId).catch(() => { /* the title and the buzz already told them */ });
+  }
+
+  /** A real phone notice, through the page worker first so it also shows when the app is in the background. */
+  async function show(title: string, body: string, threadId: string) {
+    const options: NotificationOptions = {
+      body,
+      tag: "wts-assistant",
+      icon: "/images/logo.webp",
+      data: { url: `/assistant?chat=${threadId}` },
+    };
+    const ready = "serviceWorker" in navigator
+      ? await navigator.serviceWorker.getRegistration("/assistant-sw.js").catch(() => undefined)
+      : undefined;
+    if (ready) { await ready.showNotification(title, options); return; }
+    const note = new Notification(title, options);
+    note.onclick = () => { window.focus(); note.close(); };
   }
 
   async function toggleNotify() {
@@ -620,14 +636,24 @@ export function ProprietorAssistant() {
     if (!("Notification" in window)) {
       setNotify("on");
       if (config?.person?.id) localStorage.setItem(`wts-assistant-notify:${config.person.id}`, "on");
-      setNotice("Alerts are on. This browser has no pop-up notices, so the tab title flags the answer and the phone buzzes.");
+      try {
+        await show("Alerts are on", "You will be told here when an answer is ready.", activeRef.current || "");
+        setNotice("Notifications are on. An answer that lands while you are away now shows a phone notice.");
+      } catch {
+        setNotice("Alerts are on. This browser has no pop-up notices, so the tab title flags the answer and the phone buzzes.");
+      }
       return;
     }
     const permission = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
     if (permission !== "granted") { setNotify("denied"); setNotice("The browser blocked notifications. Allow them in the site settings."); return; }
     setNotify("on");
     if (config?.person?.id) localStorage.setItem(`wts-assistant-notify:${config.person.id}`, "on");
-    setNotice("Notifications are on. You will be told here when an answer is ready.");
+    try {
+      await show("Alerts are on", "You will be told here when an answer is ready.", activeRef.current || "");
+      setNotice("Notifications are on. An answer that lands while you are away now shows a phone notice.");
+    } catch {
+      setNotice("Alerts are on. The tab title flags the answer and the phone buzzes.");
+    }
   }
 
   async function confirm() {
