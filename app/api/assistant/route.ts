@@ -1006,18 +1006,19 @@ async function cardDocument(current: CurrentSession, request: NextRequest) {
     || students.find((row) => String(row.name || "").toLowerCase().includes(lower));
   if (!student) throw new CardProblem("RESULT_STUDENT_NOT_IN_CLASS", "The student is not in that class for this term.");
   const scoped = { ...payload, student_id: String(student.id) };
-  const readSummary = async () => {
-    let got = await call("read.result_summary", payload);
-    if (!got?.ok) got = await call("read.result_summary", payload);
+  // Several reads at once can be shed by the database, so each gets one retry.
+  const attempt = async (name: string, body: Record<string, unknown>) => {
+    let got = await call(name, body);
+    if (!got?.ok) got = await call(name, body);
     return got;
   };
   const [summary, subjectsCall, traitsCall, remarksCall, feesCall, settings] = await Promise.all([
-    readSummary(),
-    call("read.subjects", { class_key: payload.class_key }),
-    call("read.traits", scoped),
-    call("read.remarks", scoped),
-    call("read.fees", scoped),
-    call("settings.read", {}),
+    attempt("read.result_summary", payload),
+    attempt("read.subjects", { class_key: payload.class_key }),
+    attempt("read.traits", scoped),
+    attempt("read.remarks", scoped),
+    attempt("read.fees", scoped),
+    attempt("settings.read", {}),
   ]);
   if (!summary.ok) throw new CardProblem(String(summary.code || "RESULT_SUMMARY_FAILED"), String(summary.detail || "The results portal did not return the class scores."));
   const config = ((settings?.settings || {}) as Record<string, unknown>).app_config as Record<string, unknown> | undefined;
