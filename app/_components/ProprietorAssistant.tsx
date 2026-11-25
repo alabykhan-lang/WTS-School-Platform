@@ -227,6 +227,7 @@ export function ProprietorAssistant() {
   const [probe, setProbe] = useState<Record<string, "testing" | "works" | "failed" | "busy">>({});
   const endRef = useRef<HTMLDivElement | null>(null);
   const resumed = useRef(false);
+  const [elapsed, setElapsed] = useState(0);
   const baseTitle = useRef("");
   const tabRef = useRef(tab);
   const activeRef = useRef(activeId);
@@ -291,6 +292,12 @@ export function ProprietorAssistant() {
     localStorage.setItem(`wts-assistant-chats:${config.person.id}`, JSON.stringify(threads));
   }, [threads, config]);
   useEffect(() => { endRef.current?.scrollIntoView({ block: "end" }); }, [activeId, threads]);
+  // A visible count, so a slow answer never looks stuck.
+  useEffect(() => {
+    if (!busy) { setElapsed(0); return; }
+    const tick = window.setInterval(() => setElapsed((value) => value + 1), 1000);
+    return () => window.clearInterval(tick);
+  }, [busy]);
   useEffect(() => { baseTitle.current = baseTitle.current || document.title; }, []);
   // The page worker shows the "answer ready" notice, also from the background.
   useEffect(() => {
@@ -407,6 +414,36 @@ export function ProprietorAssistant() {
     const win = window.open(href, "_blank");
     if (win) win.opener = null;
     else setNotice("Allow pop-ups to open the report card.");
+  }
+
+  /** Saves the card the way the phone prefers: the share sheet first, then a download. */
+  async function saveCard(doc?: CardDoc) {
+    if (!doc?.student) return;
+    const file = cardFile(doc);
+    setNotice("Preparing the PDF…");
+    try {
+      const response = await fetch(file.url);
+      if (!response.ok) throw new Error(String(response.status));
+      const blob = await response.blob();
+      const pdf = new File([blob], file.name, { type: "application/pdf" });
+      if (navigator.canShare?.({ files: [pdf] })) {
+        await navigator.share({ files: [pdf], title: file.name });
+        setNotice("Choose Save to Files, or a printer, in the share sheet.");
+        return;
+      }
+      const href = URL.createObjectURL(pdf);
+      const a = document.createElement("a");
+      a.href = href;
+      a.download = file.name;
+      a.style.display = "none";
+      document.body.appendChild(a);
+      a.click();
+      window.setTimeout(() => { a.remove(); URL.revokeObjectURL(href); }, 20000);
+      setNotice(`Saved ${file.name} to your downloads.`);
+    } catch (caught) {
+      if ((caught as Error)?.name === "AbortError") return;
+      setNotice("The card could not be saved. Tap Open to print instead.");
+    }
   }
 
   /** The card as a real file link, so the phone saves it into Downloads itself. */
@@ -736,14 +773,14 @@ export function ProprietorAssistant() {
               <div className={`assistantBubble${message.failed ? " failed" : ""}`}>{renderBlocks(message.content)}</div>
               {(message.doc || message.document) && <div className="assistantDocActions">
                 {doc?.student
-                  ? <a className="assistantDocPrint" href={cardFile(doc).url} download={cardFile(doc).name} onClick={() => setNotice(`Saving ${cardFile(doc).name}. It is a PDF, ready to print or share.`)}>Download report card</a>
+                  ? <button type="button" className="assistantDocPrint" onClick={() => saveCard(doc)}>Save report card</button>
                   : <button type="button" className="assistantDocPrint" onClick={() => openCard(doc)}>Print the report card</button>}
                 {doc?.student && <button type="button" className="assistantDocLink" onClick={() => openCard(doc)}>Open to print</button>}
                 {doc?.student && <button type="button" className="assistantDocLink" onClick={() => openCard(doc, true)}>Open in portal</button>}
               </div>}
             </article>;
           })}
-          {busy && busyThread === activeThread?.id && <article className="assistantMessage assistant"><div className="assistantWho">WTS</div><div className="assistantBubble assistantThinking"><i/><i/><i/></div></article>}
+          {busy && busyThread === activeThread?.id && <article className="assistantMessage assistant"><div className="assistantWho">WTS</div><div className="assistantBubble assistantThinking"><i/><i/><i/><span className="assistantWait">{elapsed < 5 ? "Working" : `Working · ${elapsed}s`}</span></div></article>}
           {busy && busyThread && busyThread !== activeThread?.id && <p className="assistantMuted assistantElsewhere">Still working in another chat. You can keep reading here.</p>}
           <div ref={endRef}/>
         </div>

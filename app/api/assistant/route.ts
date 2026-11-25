@@ -8,6 +8,7 @@ import type { CardData } from "./card";
 import { cardPdf } from "./card-pdf";
 
 export const runtime = "nodejs";
+export const maxDuration = 160;
 export const dynamic = "force-dynamic";
 
 const GATEWAY_KEY = process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_AI_GATEWAY_API_KEY || "";
@@ -173,7 +174,7 @@ async function openRegistry(current: CurrentSession) {
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.session_id}.${session.session_secret}` },
       body: JSON.stringify({ kind, action, payload }),
       cache: "no-store",
-      signal: AbortSignal.timeout(20000),
+      signal: AbortSignal.timeout(45000),
     });
     return response.json().catch(() => ({ ok: false, code: "REGISTRY_INVALID_RESPONSE" }));
   };
@@ -200,7 +201,7 @@ async function guardiansFor(call: (kind: "read" | "write", action: string, paylo
 /** Every guardian and phone contact for a class, gathered for a whole roster in one tool call. */
 async function classGuardians(current: CurrentSession, args: Record<string, unknown>) {
   const call = await openRegistry(current);
-  const roster = await call("read", "students", { classKey: args.classKey || null, status: "active" });
+  const roster = await call("read", "students", { classKey: args.classKey ? classKeyOf(args.classKey) : null, status: "active" });
   if (!roster.ok) return roster;
   const all = (Array.isArray(roster.students) ? roster.students : []) as Record<string, unknown>[];
   const limit = Math.max(1, Math.min(200, Number(args.limit) || 200));
@@ -263,7 +264,7 @@ async function openResults(current: CurrentSession) {
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.session_id}.${session.session_secret}` },
       body: JSON.stringify({ action, payload }),
       cache: "no-store",
-      signal: AbortSignal.timeout(20000),
+      signal: AbortSignal.timeout(45000),
     });
     return response.json().catch(() => ({ ok: false, code: "RESULTS_INVALID_RESPONSE" }));
   };
@@ -288,10 +289,20 @@ async function liveAcademic(current: CurrentSession) {
   return { session, term };
 }
 
+/** Class keys are lowercase slugs, but people type "SS2 Science", so settle it here. */
+function classKeyOf(value: unknown) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw) return "";
+  const slug = raw.replace(/[\s_]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
+  const aliases: Record<string, string> = { ss1: "ss1-general", ss2: "ss2-general", ss3: "ss3-general" };
+  return aliases[slug] || slug;
+}
+
 async function withAcademicContext(current: CurrentSession, payload: Record<string, unknown>): Promise<Record<string, unknown>> {
   const live = await liveAcademic(current);
   return {
     ...payload,
+    class_key: payload.class_key ? classKeyOf(payload.class_key) : payload.class_key,
     term: payload.term || live.term || null,
     academic_session: payload.academic_session || live.session || null,
   };
@@ -394,7 +405,7 @@ async function reportCard(current: CurrentSession, args: Record<string, unknown>
     const wanted = String(args.search || "").trim();
     if (!wanted) return { ok: false, code: "RESULT_STUDENT_REQUIRED", detail: "Pass the student's name or admission number." };
     const find = async () => {
-      const found = await registry(current, "read", "students", { search: wanted, classKey: args.classKey || null, status: "active" });
+      const found = await registry(current, "read", "students", { search: wanted, classKey: args.classKey ? classKeyOf(args.classKey) : null, status: "active" });
       return (Array.isArray(found?.students) ? found.students : []) as Record<string, unknown>[];
     };
     // The registry read occasionally comes back empty, and the results roster is a
@@ -624,7 +635,7 @@ async function executeTool(name: string, args: Record<string, unknown>, current:
       ]);
       return slim({ workspace, dashboard });
     }
-    case "find_students": return slim(await registry(current, "read", "students", { search: args.search || "", classKey: args.classKey || null, status: args.status || "active" }));
+    case "find_students": return slim(await registry(current, "read", "students", { search: args.search || "", classKey: args.classKey ? classKeyOf(args.classKey) : null, status: args.status || "active" }));
     case "student_record": {
       const call = await openRegistry(current);
       const [record, guardians] = await Promise.all([
@@ -860,7 +871,7 @@ async function gateway(messages: unknown[], settings: ModelSettings, current: Cu
   const seen = new Map<string, string>();
   let retriedStyle = false;
   const started = Date.now();
-  const totalBudget = 62000;
+  const totalBudget = 118000;
   let partial = "";
   let ranOut = false;
   for (let step = 0; step < 12; step += 1) {
@@ -978,26 +989,24 @@ async function cardDocument(current: CurrentSession, request: NextRequest) {
   });
   if (!payload.class_key || !payload.term || !payload.academic_session) throw new CardProblem("RESULT_ACADEMIC_CONTEXT_REQUIRED", "A class, term and session are needed before a card can be built.");
   const call = await openResults(current);
-  await call("context.set", { class_key: payload.class_key, academic_session: payload.academic_session, term: payload.term });
-  const roster = await call("read.students", payload);
-  const students = (Array.isArray(roster?.rows) ? roster.rows : []) as Record<string, unknown>[];
-  if (params.get("debug") === "1") {
-    const tries: Record<string, Record<string, unknown>> = {
-      a: { class_key: payload.class_key, academic_session: payload.academic_session },
-      b: { class_key: payload.class_key, academic_session: payload.academic_session, term: payload.term },
-      c: { class_key: payload.class_key },
-      d: { class_key: payload.class_key, status: "active" },
-      e: { search: "", class_key: payload.class_key },
-    };
-    const out: Record<string, unknown> = { roster: { ok: roster?.ok, code: roster?.code, n: students.length } };
-    const classes = await call("read.classes", { academic_session: payload.academic_session });
-    out.classes = classes;
-    for (const [key, value] of Object.entries(tries)) {
-      const got = await call("read.students", value).catch((error) => ({ ok: false, code: String(error) }));
-      out[key] = { ok: got?.ok, code: got?.code, n: Array.isArray(got?.rows) ? got.rows.length : 0, keys: got && typeof got === "object" ? Object.keys(got) : null, sample: Array.isArray(got?.rows) ? got.rows[0] : got?.students };
-    }
-    return Response.json(out);
+  const contextReady = call("context.set", { class_key: payload.class_key, academic_session: payload.academic_session, term: payload.term });
+  // Several reads at once can be shed by the database, so each gets one retry.
+  const attempt = async (name: string, body: Record<string, unknown>) => {
+    let got = await call(name, body);
+    if (!got?.ok) got = await call(name, body);
+    return got;
+  };
+
+  // The summary already carries the class roster, so no extra roster read first.
+  const summary = await attempt("read.result_summary", payload);
+  if (!summary.ok) throw new CardProblem(String(summary.code || "RESULT_SUMMARY_FAILED"), String(summary.detail || "The results portal did not return the class scores."));
+  const bag = (summary.summary || {}) as { students?: Record<string, unknown>[]; scores?: Record<string, unknown>[] };
+  let students = bag.students || [];
+  if (!students.length) {
+    const roster = await call("read.students", payload);
+    students = (Array.isArray(roster?.rows) ? roster.rows : []) as Record<string, unknown>[];
   }
+
   // The link may carry the id, the admission number, or the name.
   const lower = studentId.toLowerCase();
   const student = students.find((row) => String(row.id) === studentId)
@@ -1006,32 +1015,17 @@ async function cardDocument(current: CurrentSession, request: NextRequest) {
     || students.find((row) => String(row.name || "").toLowerCase().includes(lower));
   if (!student) throw new CardProblem("RESULT_STUDENT_NOT_IN_CLASS", "The student is not in that class for this term.");
   const scoped = { ...payload, student_id: String(student.id) };
-  // Several reads at once can be shed by the database, so each gets one retry.
-  const attempt = async (name: string, body: Record<string, unknown>) => {
-    const t0 = Date.now();
-    let got = await call(name, body);
-    if (!got?.ok) got = await call(name, body);
-    console.log("card-read", name, Date.now() - t0, got?.ok, got?.code || "");
-    return got;
-  };
-  // The card sections decide which extra reads are worth making at all.
-  const summaryCall = attempt("read.result_summary", payload);
-  const subjectsRequest = attempt("read.subjects", { class_key: payload.class_key });
-  const settings = await attempt("settings.read", {});
-  const wanted: Record<string, boolean> = {};
-  for (const key of CARD_SECTIONS) wanted[key] = true;
-  Object.assign(wanted, ((((settings?.settings || {}) as Record<string, unknown>).app_config as Record<string, unknown> | undefined)?.sections || {}) as Record<string, boolean>);
-  const [summary, subjectsCall, traitsCall, remarksCall, feesCall] = await Promise.all([
-    summaryCall,
-    subjectsRequest,
-    wanted.showAffective || wanted.showPsycho ? attempt("read.traits", scoped) : Promise.resolve(null),
-    wanted.showAttendance ? attempt("read.remarks", scoped) : Promise.resolve(null),
-    wanted.showFees || wanted.showNextTerm ? attempt("read.fees", scoped) : Promise.resolve(null),
+
+  const [subjectsCall, traitsCall, remarksCall, feesCall, settings] = await Promise.all([
+    attempt("read.subjects", { class_key: payload.class_key }),
+    attempt("read.traits", scoped),
+    attempt("read.remarks", scoped),
+    attempt("read.fees", scoped),
+    attempt("settings.read", {}),
   ]);
-  if (!summary.ok) throw new CardProblem(String(summary.code || "RESULT_SUMMARY_FAILED"), String(summary.detail || "The results portal did not return the class scores."));
+  await contextReady;
   const config = ((settings?.settings || {}) as Record<string, unknown>).app_config as Record<string, unknown> | undefined;
-  const bag = (summary.summary || {}) as { students?: Record<string, unknown>[]; scores?: Record<string, unknown>[] };
-  const classStudents = students.length ? students : (bag.students || []);
+  const classStudents = students;
 
   const names = new Map<number, string>();
   for (const row of (Array.isArray(subjectsCall?.rows) ? subjectsCall.rows : []) as Record<string, unknown>[]) {

@@ -88,6 +88,7 @@
 .assistantThinking i { width: 6px; height: 6px; border-radius: 50%; background: #7fa99b; animation: assistantPulse 1s infinite; }
 .assistantThinking i:nth-child(2) { animation-delay: .15s; }
 .assistantThinking i:nth-child(3) { animation-delay: .3s; }
+.assistantThinking .assistantWait { margin-left: 6px; font-size: 11px; color: #5b7a70; letter-spacing: .02em; }
 @keyframes assistantPulse { 0%, 100% { opacity: .25; transform: translateY(0); } 50% { opacity: 1; transform: translateY(-3px); } }
 
 .assistantApproval { width: min(860px, calc(100% - 28px)); margin: 0 auto 10px; display: flex; justify-content: space-between; align-items: center; gap: 14px; border: 1px solid #e8cf95; background: #fffaec; border-radius: 12px; padding: 12px 14px; color: #6a4c17; }
