@@ -375,7 +375,7 @@ export function cardPage(data: CardData, options: { autoPrint?: boolean; message
 <div class="bar"><a class="back" id="back" href="/assistant">← Back</a><strong>${esc(data.student.name)} · ${esc(data.term)} · ${esc(data.session)}${options.message ? ` — ${esc(options.message)}` : ""}</strong>
 <div class="acts"><button type="button" id="openForm">Card form</button>
 <button type="button" id="openSig">Signature</button>
-<button type="button" onclick="window.print()"><span class="lbl-full">Print / Save as PDF</span><span class="lbl-short">Print</span></button></div></div>
+<button type="button" id="printBtn"><span class="lbl-full">Print / Save as PDF</span><span class="lbl-short">Print</span></button></div></div>
 <div class="panel" id="panel" hidden>
   <div class="row"><strong>Card form</strong>
     <label>CA columns
@@ -466,8 +466,14 @@ export function cardPage(data: CardData, options: { autoPrint?: boolean; message
   var back=document.getElementById('back');
   var chat=new URLSearchParams(location.search).get('chat');
   if(chat)back.href='/assistant?chat='+encodeURIComponent(chat);
+  var printBtn=document.getElementById('printBtn');
   window.addEventListener('beforeprint',function(){document.body.classList.add('printing');});
   window.addEventListener('afterprint',function(){document.body.classList.remove('printing');});
+  printBtn.addEventListener('click',function(){
+    document.body.classList.add('printing');
+    setTimeout(function(){window.print();},80);
+    setTimeout(function(){document.body.classList.remove('printing');},45000);
+  });
   ${options.autoPrint ? "window.addEventListener('load',function(){var go=function(){document.body.classList.add('printing');setTimeout(function(){window.print();},250);};if(document.fonts&&document.fonts.ready)document.fonts.ready.then(go);else go();});" : ""}
 })();
 </script>
