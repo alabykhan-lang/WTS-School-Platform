@@ -4,6 +4,8 @@ import { callPrivilegedRpc, IdentityApiError, isSameOrigin, noStoreHeaders, resu
 import { workspaceSessionFromRequest } from "../workspace-session/_lib";
 import { portalOrigins } from "../../../data/portal-config";
 import { autoRemark, cardErrorPage, cardPage, CARD_SECTION_LABELS, CARD_SECTIONS, gradeOf, totalOf, dateText } from "./card";
+import type { CardData } from "./card";
+import { cardPdf } from "./card-pdf";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -1089,7 +1091,7 @@ async function cardDocument(current: CurrentSession, request: NextRequest) {
     remark: rawForm.remark !== false,
   };
 
-  const html = cardPage({
+  const data: CardData = {
     student,
     classKey: String(payload.class_key),
     dept: deptMap[String(payload.class_key)]?.label || String(payload.class_key),
@@ -1119,11 +1121,26 @@ async function cardDocument(current: CurrentSession, request: NextRequest) {
     resume: dateText(resumeValue),
     fees: (feeRows[0] || {}) as Record<string, unknown>,
     logo: "/images/wts-logo.png",
-  }, { autoPrint: params.get("print") === "1" });
+  };
+
+  const who = String(student.name || "student").replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "");
+  const stem = `report-card-${who}-${String(payload.term || "").replace(/[^a-z0-9]+/gi, "")}`;
+
+  // A real PDF saves straight to a phone's downloads and prints without a dialog.
+  if (params.get("format") === "pdf") {
+    const pdf = await cardPdf({ ...data, logo: `${request.nextUrl.origin}/images/wts-logo.png` });
+    return new Response(new Uint8Array(pdf), {
+      headers: {
+        ...noStoreHeaders(),
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `attachment; filename="${stem}.pdf"`,
+      },
+    });
+  }
+
+  const html = cardPage(data, { autoPrint: params.get("print") === "1" });
   if (params.get("download") === "1") {
-    const who = String(student.name || "student").replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "");
-    const name = `report-card-${who}-${String(payload.term || "").replace(/[^a-z0-9]+/gi, "")}.html`;
-    return new Response(html, { headers: { ...noStoreHeaders(), "Content-Type": "text/html; charset=utf-8", "Content-Disposition": `attachment; filename="${name}"` } });
+    return new Response(html, { headers: { ...noStoreHeaders(), "Content-Type": "text/html; charset=utf-8", "Content-Disposition": `attachment; filename="${stem}.html"` } });
   }
   return new Response(html, { headers: { ...noStoreHeaders(), "Content-Type": "text/html; charset=utf-8" } });
 }

@@ -407,9 +407,9 @@ export function ProprietorAssistant() {
   /** The card as a real file link, so the phone saves it into Downloads itself. */
   function cardFile(doc: CardDoc) {
     const clean = (value: string) => value.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "");
-    const query = new URLSearchParams({ card: doc.student, class: doc.classKey, term: doc.term || "", session: doc.session || "", download: "1" });
+    const query = new URLSearchParams({ card: doc.student, class: doc.classKey, term: doc.term || "", session: doc.session || "", format: "pdf" });
     return {
-      name: `report-card-${clean(doc.name || doc.student)}-${clean(doc.term || "")}.html`,
+      name: `report-card-${clean(doc.name || doc.student)}-${clean(doc.term || "")}.pdf`,
       url: `/api/assistant?${query}`,
     };
   }
@@ -710,7 +710,7 @@ export function ProprietorAssistant() {
               <div className={`assistantBubble${message.failed ? " failed" : ""}`}>{renderBlocks(message.content)}</div>
               {(message.doc || message.document) && <div className="assistantDocActions">
                 {doc?.student
-                  ? <a className="assistantDocPrint" href={cardFile(doc).url} download={cardFile(doc).name} onClick={() => setNotice(`Saving ${cardFile(doc).name}. Open it and tap Print to print or save as PDF.`)}>Download report card</a>
+                  ? <a className="assistantDocPrint" href={cardFile(doc).url} download={cardFile(doc).name} onClick={() => setNotice(`Saving ${cardFile(doc).name}. It is a PDF, ready to print or share.`)}>Download report card</a>
                   : <button type="button" className="assistantDocPrint" onClick={() => openCard(doc)}>Print the report card</button>}
                 {doc?.student && <button type="button" className="assistantDocLink" onClick={() => openCard(doc)}>Open to print</button>}
                 {doc?.student && <button type="button" className="assistantDocLink" onClick={() => openCard(doc, true)}>Open in portal</button>}
