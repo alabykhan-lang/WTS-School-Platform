@@ -227,6 +227,7 @@ export function ProprietorAssistant() {
   const [probe, setProbe] = useState<Record<string, "testing" | "works" | "failed" | "busy">>({});
   const endRef = useRef<HTMLDivElement | null>(null);
   const resumed = useRef(false);
+  const baseTitle = useRef("");
 
   useEffect(() => {
     fetch("/api/assistant", { credentials: "same-origin", cache: "no-store" })
@@ -283,7 +284,8 @@ export function ProprietorAssistant() {
     localStorage.setItem(`wts-assistant-chats:${config.person.id}`, JSON.stringify(threads));
   }, [threads, config]);
   useEffect(() => { endRef.current?.scrollIntoView({ block: "end" }); }, [activeId, threads]);
-  useEffect(() => { document.title = "WTS Assistant"; }, [tab]);
+  useEffect(() => { baseTitle.current = baseTitle.current || document.title; }, []);
+  useEffect(() => { if (!busy) document.title = baseTitle.current; }, [tab, busy]);
   useEffect(() => {
     if (!config?.person?.id || resumed.current) return;
     resumed.current = true;
@@ -295,7 +297,7 @@ export function ProprietorAssistant() {
     void run(job.threadId, job.messages);
   }, [config]);
   useEffect(() => {
-    const back = () => { if (!document.hidden && !busy) document.title = "WTS Assistant"; };
+    const back = () => { if (!document.hidden && !busy) document.title = baseTitle.current; };
     document.addEventListener("visibilitychange", back);
     return () => document.removeEventListener("visibilitychange", back);
   }, [busy]);
