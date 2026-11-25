@@ -404,29 +404,14 @@ export function ProprietorAssistant() {
     else setNotice("Allow pop-ups to open the report card.");
   }
 
-  /** Saves the card straight into the phone's downloads, without leaving the chat. */
-  async function downloadCard(doc?: CardDoc) {
-    if (!doc?.student) return;
+  /** The card as a real file link, so the phone saves it into Downloads itself. */
+  function cardFile(doc: CardDoc) {
+    const clean = (value: string) => value.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "");
     const query = new URLSearchParams({ card: doc.student, class: doc.classKey, term: doc.term || "", session: doc.session || "", download: "1" });
-    setNotice("Saving the card to your downloads…");
-    try {
-      const response = await fetch(`/api/assistant?${query}`, { credentials: "same-origin" });
-      if (!response.ok) throw new Error(String(response.status));
-      const html = await response.text();
-      const clean = (value: string) => value.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "");
-      const name = `report-card-${clean(doc.name || doc.student)}-${clean(doc.term || "")}.html`;
-      const href = URL.createObjectURL(new Blob([html], { type: "text/html;charset=utf-8" }));
-      const a = document.createElement("a");
-      a.href = href;
-      a.download = name;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.setTimeout(() => URL.revokeObjectURL(href), 20000);
-      setNotice(`Saved ${name} to your downloads. Open it and tap Print to print or save as PDF.`);
-    } catch {
-      setNotice("The card could not be saved. Check the connection and try again.");
-    }
+    return {
+      name: `report-card-${clean(doc.name || doc.student)}-${clean(doc.term || "")}.html`,
+      url: `/api/assistant?${query}`,
+    };
   }
 
   async function testModel(model: Model) {
@@ -718,17 +703,20 @@ export function ProprietorAssistant() {
             <p>Ask about students, staff, classes, or results. I read live records and ask before saving a change.</p>
             <div className="assistantStarters">{STARTERS.map((prompt) => <button key={prompt} type="button" onClick={() => send(undefined, prompt)}><span>{prompt}</span><b>↗</b></button>)}</div>
           </div>}
-          {activeThread?.messages.map((message, index) => <article key={`${message.role}-${index}`} className={`assistantMessage ${message.role}${message.doc || message.document ? " printable" : ""}`}>
-            <div className="assistantWho">{message.role === "user" ? "You" : "WTS"}</div>
-            <div className={`assistantBubble${message.failed ? " failed" : ""}`}>{renderBlocks(message.content)}</div>
-            {(message.doc || message.document) && <div className="assistantDocActions">
-              {message.doc?.student
-                ? <button type="button" className="assistantDocPrint" onClick={() => downloadCard(message.doc)}>Download report card</button>
-                : <button type="button" className="assistantDocPrint" onClick={() => openCard(message.doc)}>Print the report card</button>}
-              {message.doc?.student && <button type="button" className="assistantDocLink" onClick={() => openCard(message.doc)}>Open to print</button>}
-              {message.doc?.student && <button type="button" className="assistantDocLink" onClick={() => openCard(message.doc, true)}>Open in portal</button>}
-            </div>}
-          </article>)}
+          {activeThread?.messages.map((message, index) => {
+            const doc = message.doc;
+            return <article key={`${message.role}-${index}`} className={`assistantMessage ${message.role}${message.doc || message.document ? " printable" : ""}`}>
+              <div className="assistantWho">{message.role === "user" ? "You" : "WTS"}</div>
+              <div className={`assistantBubble${message.failed ? " failed" : ""}`}>{renderBlocks(message.content)}</div>
+              {(message.doc || message.document) && <div className="assistantDocActions">
+                {doc?.student
+                  ? <a className="assistantDocPrint" href={cardFile(doc).url} download={cardFile(doc).name} onClick={() => setNotice(`Saving ${cardFile(doc).name}. Open it and tap Print to print or save as PDF.`)}>Download report card</a>
+                  : <button type="button" className="assistantDocPrint" onClick={() => openCard(doc)}>Print the report card</button>}
+                {doc?.student && <button type="button" className="assistantDocLink" onClick={() => openCard(doc)}>Open to print</button>}
+                {doc?.student && <button type="button" className="assistantDocLink" onClick={() => openCard(doc, true)}>Open in portal</button>}
+              </div>}
+            </article>;
+          })}
           {busy && busyThread === activeThread?.id && <article className="assistantMessage assistant"><div className="assistantWho">WTS</div><div className="assistantBubble assistantThinking"><i/><i/><i/></div></article>}
           {busy && busyThread && busyThread !== activeThread?.id && <p className="assistantMuted assistantElsewhere">Still working in another chat. You can keep reading here.</p>}
           <div ref={endRef}/>
