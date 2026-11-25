@@ -431,40 +431,26 @@ export function ProprietorAssistant() {
     else setNotice("Allow pop-ups to open the report card.");
   }
 
-  /** Saves the card straight into Downloads; the share sheet is only the fallback. */
+  /**
+   * Saves the card into Downloads. The phone app cannot download a blob URL (its
+   * download manager only takes http), so the link is the real endpoint; the app
+   * hands that to its download manager, a browser saves it directly.
+   */
   async function saveCard(doc?: CardDoc) {
     if (!doc?.student) return;
     const file = cardFile(doc);
     setNotice("Preparing the PDF…");
     try {
-      const response = await fetch(file.url);
-      if (!response.ok) throw new Error(String(response.status));
-      const blob = await response.blob();
-      const objectUrl = URL.createObjectURL(blob);
-      // A plain download lands in Downloads with no sheet and no tab. The share
-      // sheet loses the tap gesture after the fetch, so it is only the fallback.
       const link = document.createElement("a");
-      link.href = objectUrl;
+      link.href = file.url;
       link.download = file.name;
       link.rel = "noopener";
       link.style.display = "none";
       document.body.appendChild(link);
       link.click();
-      window.setTimeout(() => { link.remove(); URL.revokeObjectURL(objectUrl); }, 30000);
-      setNotice(`Saved ${file.name}. If it did not arrive, tap Open to print.`);
-    } catch (caught) {
-      if ((caught as Error)?.name === "AbortError") return;
-      try {
-        // Some installed apps block downloads; offer the share sheet instead.
-        const retry = await fetch(file.url);
-        const again = await retry.blob();
-        const pdf = new File([again], file.name, { type: "application/pdf" });
-        if (navigator.canShare?.({ files: [pdf] })) {
-          await navigator.share({ files: [pdf], title: file.name });
-          setNotice("Choose Save to Files, or a printer, in the share sheet.");
-          return;
-        }
-      } catch { /* fall through to the plain message */ }
+      window.setTimeout(() => link.remove(), 30000);
+      setNotice(`Saving ${file.name} to Downloads. If nothing arrives, tap Open to print.`);
+    } catch {
       setNotice("The card could not be saved. Tap Open to print instead.");
     }
   }
