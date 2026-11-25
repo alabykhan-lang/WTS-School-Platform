@@ -405,16 +405,28 @@ export function ProprietorAssistant() {
   }
 
   /** Saves the card straight into the phone's downloads, without leaving the chat. */
-  function downloadCard(doc?: CardDoc) {
+  async function downloadCard(doc?: CardDoc) {
     if (!doc?.student) return;
     const query = new URLSearchParams({ card: doc.student, class: doc.classKey, term: doc.term || "", session: doc.session || "", download: "1" });
-    const a = document.createElement("a");
-    a.href = `/api/assistant?${query}`;
-    a.download = "";
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setNotice("Saving the card to your downloads.");
+    setNotice("Saving the card to your downloads…");
+    try {
+      const response = await fetch(`/api/assistant?${query}`, { credentials: "same-origin" });
+      if (!response.ok) throw new Error(String(response.status));
+      const html = await response.text();
+      const clean = (value: string) => value.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "");
+      const name = `report-card-${clean(doc.name || doc.student)}-${clean(doc.term || "")}.html`;
+      const href = URL.createObjectURL(new Blob([html], { type: "text/html;charset=utf-8" }));
+      const a = document.createElement("a");
+      a.href = href;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.setTimeout(() => URL.revokeObjectURL(href), 20000);
+      setNotice(`Saved ${name} to your downloads. Open it and tap Print to print or save as PDF.`);
+    } catch {
+      setNotice("The card could not be saved. Check the connection and try again.");
+    }
   }
 
   async function testModel(model: Model) {
