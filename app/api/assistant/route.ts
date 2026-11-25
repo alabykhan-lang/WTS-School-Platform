@@ -3,6 +3,7 @@ import { NextRequest } from "next/server";
 import { callPrivilegedRpc, IdentityApiError, isSameOrigin, noStoreHeaders, resultErrorResponse } from "../identity/_lib";
 import { workspaceSessionFromRequest } from "../workspace-session/_lib";
 import { portalOrigins } from "../../../data/portal-config";
+import { autoRemark, cardErrorPage, cardPage, CARD_SECTIONS, gradeOf, totalOf, dateText } from "./card";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -910,10 +911,179 @@ async function approve(token: string, current: CurrentSession) {
   return { result, summary: proposal.summary || "Change completed." };
 }
 
+class CardProblem extends Error {
+  code: string;
+  constructor(code: string, message: string) {
+    super(message);
+    this.code = code;
+  }
+}
+
+/** The report card page the assistant opens itself, in the portal's own design. */
+async function cardDocument(current: CurrentSession, request: NextRequest) {
+  const params = request.nextUrl.searchParams;
+  const studentId = String(params.get("card") || "");
+  const classKey = String(params.get("class") || "");
+  const payload = await withAcademicContext(current, {
+    class_key: classKey || null,
+    term: params.get("term") || null,
+    academic_session: params.get("session") || null,
+  });
+  if (!payload.class_key || !payload.term || !payload.academic_session) throw new CardProblem("RESULT_ACADEMIC_CONTEXT_REQUIRED", "A class, term and session are needed before a card can be built.");
+  const call = await openResults(current);
+  await call("context.set", { class_key: payload.class_key, academic_session: payload.academic_session, term: payload.term });
+  const roster = await call("read.students", payload);
+  const students = (Array.isArray(roster?.rows) ? roster.rows : []) as Record<string, unknown>[];
+  if (params.get("debug") === "1") {
+    const tries: Record<string, Record<string, unknown>> = {
+      a: { class_key: payload.class_key, academic_session: payload.academic_session },
+      b: { class_key: payload.class_key, academic_session: payload.academic_session, term: payload.term },
+      c: { class_key: payload.class_key },
+      d: { class_key: payload.class_key, status: "active" },
+      e: { search: "", class_key: payload.class_key },
+    };
+    const out: Record<string, unknown> = { roster: { ok: roster?.ok, code: roster?.code, n: students.length } };
+    const classes = await call("read.classes", { academic_session: payload.academic_session });
+    out.classes = classes;
+    for (const [key, value] of Object.entries(tries)) {
+      const got = await call("read.students", value).catch((error) => ({ ok: false, code: String(error) }));
+      out[key] = { ok: got?.ok, code: got?.code, n: Array.isArray(got?.rows) ? got.rows.length : 0, keys: got && typeof got === "object" ? Object.keys(got) : null, sample: Array.isArray(got?.rows) ? got.rows[0] : got?.students };
+    }
+    return Response.json(out);
+  }
+  // The link may carry the id, the admission number, or the name.
+  const lower = studentId.toLowerCase();
+  const student = students.find((row) => String(row.id) === studentId)
+    || students.find((row) => String(row.admno || "").toLowerCase() === lower)
+    || students.find((row) => String(row.name || "").toLowerCase() === lower)
+    || students.find((row) => String(row.name || "").toLowerCase().includes(lower));
+  if (!student) throw new CardProblem("RESULT_STUDENT_NOT_IN_CLASS", "The student is not in that class for this term.");
+  const scoped = { ...payload, student_id: String(student.id) };
+  const readSummary = async () => {
+    let got = await call("read.result_summary", payload);
+    if (!got?.ok) got = await call("read.result_summary", payload);
+    return got;
+  };
+  const [summary, subjectsCall, traitsCall, remarksCall, feesCall, settings] = await Promise.all([
+    readSummary(),
+    call("read.subjects", { class_key: payload.class_key }),
+    call("read.traits", scoped),
+    call("read.remarks", scoped),
+    call("read.fees", scoped),
+    call("settings.read", {}),
+  ]);
+  if (!summary.ok) throw new CardProblem(String(summary.code || "RESULT_SUMMARY_FAILED"), String(summary.detail || "The results portal did not return the class scores."));
+  const config = ((settings?.settings || {}) as Record<string, unknown>).app_config as Record<string, unknown> | undefined;
+  const bag = (summary.summary || {}) as { students?: Record<string, unknown>[]; scores?: Record<string, unknown>[] };
+  const classStudents = students.length ? students : (bag.students || []);
+
+  const names = new Map<number, string>();
+  for (const row of (Array.isArray(subjectsCall?.rows) ? subjectsCall.rows : []) as Record<string, unknown>[]) {
+    names.set(Number(row.subject_index), String(row.subject_name || ""));
+  }
+  const scores = (bag.scores || []) as Record<string, unknown>[];
+  const own = new Map<number, Record<string, unknown>>();
+  for (const row of scores) if (String(row.student_id) === String(student.id)) own.set(Number(row.subject_index), row);
+
+  // Class figures, straight from the same term's score sheet.
+  const classTotals = new Map<number, number[]>();
+  const studentGrand = new Map<string, number[]>();
+  for (const row of scores) {
+    const total = totalOf(row);
+    if (total === "") continue;
+    const index = Number(row.subject_index);
+    classTotals.set(index, [...(classTotals.get(index) || []), total]);
+    const owner = String(row.student_id);
+    studentGrand.set(owner, [...(studentGrand.get(owner) || []), total]);
+  }
+  const round1 = (value: number) => Math.round(value * 10) / 10;
+  const averages = [...studentGrand.values()].map((list) => round1(list.reduce((a, b) => a + b, 0) / list.length));
+
+  // Every subject with a mark, published or not.
+  const indexes = [...own.keys()].filter((index) => totalOf(own.get(index) as Record<string, unknown>) !== "")
+    .sort((a, b) => a - b);
+  const rows = indexes.map((index) => {
+    const row = own.get(index) as Record<string, unknown>;
+    const mine = totalOf(row);
+    const list = classTotals.get(index) || [];
+    return {
+      index,
+      name: names.get(index) || `Subject ${index}`,
+      ca1: row.ca1, ca2: row.ca2, ca3: row.ca3, exam: row.exam,
+      total: mine,
+      grade: gradeOf(mine),
+      classAvg: list.length ? round1(list.reduce((a, b) => a + b, 0) / list.length) : "" as const,
+      highest: list.length ? Math.max(...list) : "" as const,
+    };
+  });
+  const grand = rows.reduce((sum, row) => sum + (row.total === "" ? 0 : row.total), 0);
+  const studentAvg = rows.length ? round1(grand / rows.length) : "";
+  const schools = (config?.school || {}) as Record<string, string>;
+  const deptMap = (config?.depts || {}) as Record<string, { label?: string }>;
+  const sections: Record<string, boolean> = {};
+  for (const key of CARD_SECTIONS) sections[key] = true;
+  Object.assign(sections, (config?.sections || {}) as Record<string, boolean>);
+  const remarkRows = (Array.isArray(remarksCall?.rows) ? remarksCall.rows : []) as Record<string, unknown>[];
+  const remark = remarkRows[0] || {};
+  const traitRows = (Array.isArray(traitsCall?.rows) ? traitsCall.rows : []) as Record<string, unknown>[];
+  const affective: Record<string, string> = {};
+  const psychomotor: Record<string, string> = {};
+  for (const row of traitRows) {
+    const target = String(row.trait_type || "").toLowerCase().startsWith("psych") ? psychomotor : affective;
+    if (row.trait_name) target[String(row.trait_name)] = String(row.rating ?? "");
+  }
+  const feeRows = (Array.isArray(feesCall?.rows) ? feesCall.rows : []) as Record<string, unknown>[];
+  const resumeValue = feeRows[0]?.resume_date || feeRows[0]?.resume || config?.resumption;
+  const passed = rows.filter((row) => row.total !== "" && Number(row.total) >= 40).length;
+
+  const html = cardPage({
+    student,
+    classKey: String(payload.class_key),
+    dept: deptMap[String(payload.class_key)]?.label || String(payload.class_key),
+    term: String(payload.term),
+    session: String(payload.academic_session),
+    school: {
+      name: schools.name || "WAY TO SUCCESS STANDARD SCHOOLS",
+      addr: schools.addr || "Ifedapo Community, Oko/Ijado Road, Ejigbo, Osun State, Nigeria",
+      phone: schools.phone || "07036521734",
+      email: schools.email || "sambour12@gmail.com",
+    },
+    sections,
+    signature: (config?.signature || {}) as Record<string, string>,
+    rows,
+    count: classStudents.length,
+    studentAvg,
+    classAvg: averages.length ? round1(averages.reduce((a, b) => a + b, 0) / averages.length) : "",
+    lowestAvg: averages.length ? Math.min(...averages) : "",
+    highestAvg: averages.length ? Math.max(...averages) : "",
+    grand: grand || "",
+    passed: rows.length ? passed : "",
+    affective,
+    psychomotor,
+    attendance: { opened: remark.days_opened || "", present: remark.days_present || "", absent: Number(remark.days_opened) ? Number(remark.days_opened) - Number(remark.days_present || 0) : "" },
+    remark: autoRemark(studentAvg, config?.remarks),
+    resume: dateText(resumeValue),
+    fees: (feeRows[0] || {}) as Record<string, unknown>,
+    logo: "/images/wts-logo.png",
+  }, { autoPrint: params.get("print") === "1" });
+  return new Response(html, { headers: { ...noStoreHeaders(), "Content-Type": "text/html; charset=utf-8" } });
+}
+
 export async function GET(request: NextRequest) {
   try {
     if (!sameOriginOrMissing(request)) return error("ORIGIN_NOT_ALLOWED", 403);
     const current = await currentSession(request);
+    if (request.nextUrl.searchParams.get("card")) {
+      try {
+        return await cardDocument(current, request);
+      } catch (caught) {
+        const failure = caught instanceof CardProblem ? caught : null;
+        return new Response(cardErrorPage(failure?.message || "The results portal did not answer. Check that the class, term and session are right.", failure?.code || ""), {
+          status: 200,
+          headers: { ...noStoreHeaders(), "Content-Type": "text/html; charset=utf-8" },
+        });
+      }
+    }
     const person = current.context.person && typeof current.context.person === "object" ? current.context.person as Record<string, unknown> : {};
     const usage = await readUsage(current);
     return Response.json({

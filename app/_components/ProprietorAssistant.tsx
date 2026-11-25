@@ -389,12 +389,14 @@ export function ProprietorAssistant() {
     window.setTimeout(clear, 4000);
   }
 
-  /** The card is built and printed by the portal itself, in the portal's own design. */
-  function openCard(doc?: CardDoc) {
+  /** The assistant serves the card itself, in the portal's design, and prints it. */
+  function openCard(doc?: CardDoc, portal = false) {
     if (!doc?.student) { printDocument(); return; }
-    const base = config?.results_url || "https://wts-result-system.vercel.app";
     const query = new URLSearchParams({ card: doc.student, class: doc.classKey, term: doc.term || "", session: doc.session || "", print: "1" });
-    const win = window.open(`${base.replace(/\/$/, "")}/portal_core.html?${query}`, "_blank");
+    const href = portal
+      ? `${(config?.results_url || "https://wts-result-system.vercel.app").replace(/\/$/, "")}/portal_core.html?${query}`
+      : `/api/assistant?${query}`;
+    const win = window.open(href, "_blank");
     if (win) win.opener = null;
     else setNotice("Allow pop-ups to open the report card.");
   }
@@ -684,7 +686,10 @@ export function ProprietorAssistant() {
           {activeThread?.messages.map((message, index) => <article key={`${message.role}-${index}`} className={`assistantMessage ${message.role}${message.doc || message.document ? " printable" : ""}`}>
             <div className="assistantWho">{message.role === "user" ? "You" : "WTS"}</div>
             <div className={`assistantBubble${message.failed ? " failed" : ""}`}>{renderBlocks(message.content)}</div>
-            {(message.doc || message.document) && <button type="button" className="assistantDocPrint" onClick={() => openCard(message.doc)}>Print the report card</button>}
+            {(message.doc || message.document) && <div className="assistantDocActions">
+              <button type="button" className="assistantDocPrint" onClick={() => openCard(message.doc)}>Print the report card</button>
+              {message.doc?.student && <button type="button" className="assistantDocLink" onClick={() => openCard(message.doc, true)}>Open in portal</button>}
+            </div>}
           </article>)}
           {busy && busyThread === activeThread?.id && <article className="assistantMessage assistant"><div className="assistantWho">WTS</div><div className="assistantBubble assistantThinking"><i/><i/><i/></div></article>}
           {busy && busyThread && busyThread !== activeThread?.id && <p className="assistantMuted assistantElsewhere">Still working in another chat. You can keep reading here.</p>}

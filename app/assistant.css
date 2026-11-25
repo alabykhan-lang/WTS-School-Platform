@@ -45,8 +45,10 @@
 .assistantTable td:not(:first-child), .assistantTable th:not(:first-child) { white-space: nowrap; }
 .assistantTable th { background: #f1f7f4; font-weight: 650; }
 .assistantTable tr:nth-child(even) td { background: #fbfdfc; }
-.assistantDocPrint { grid-column: 1 / -1; justify-self: start; margin: 4px 0 0 46px; border: 1px solid #c6d8d2; background: #fff; color: #0b5a44; border-radius: 9px; padding: 6px 12px; font: inherit; font-size: 12px; font-weight: 650; cursor: pointer; }
+.assistantDocActions { grid-column: 1 / -1; display: flex; gap: 8px; margin: 4px 0 0 46px; align-items: center; }
+.assistantDocPrint { justify-self: start; border: 1px solid #c6d8d2; background: #fff; color: #0b5a44; border-radius: 9px; padding: 6px 12px; font: inherit; font-size: 12px; font-weight: 650; cursor: pointer; }
 .assistantDocPrint:hover { border-color: #0b5a44; }
+.assistantDocLink { border: 0; background: none; padding: 4px 2px; font: inherit; font-size: 11.5px; color: #5d7b83; text-decoration: underline; cursor: pointer; }
 .assistantEyebrow { margin: 0 0 5px; font-size: 9.5px; letter-spacing: .16em; font-weight: 800; color: var(--wts-green); }
 .assistantTitles h1 { margin: 0; font-family: Georgia, "Times New Roman", serif; font-size: clamp(20px, 2.4vw, 26px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .assistantModelPick { display: flex; margin-left: auto; align-items: center; gap: 7px; border: 1px solid var(--wts-line); border-radius: 9px; padding: 4px 4px 4px 10px; background: #fbfdfc; }
@@ -168,7 +170,7 @@
   .assistantMessage { break-inside: avoid; margin-bottom: 12px; }
   .assistantBubble { box-shadow: none; border: 1px solid #c8c8c8; color: #000; max-width: 100%; background: #fff; }
   .assistantWho { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
-  .assistantDocPrint { display: none !important; }
+  .assistantDocPrint, .assistantDocLink { display: none !important; }
   body.printDoc .assistantTopbar, body.printDoc .assistantChatList { display: none !important; }
   body.printDoc .assistantMessage:not(.printable) { display: none !important; }
   body.printDoc .assistantMessage.printable { margin: 0; display: block; }
