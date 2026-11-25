@@ -1120,6 +1120,11 @@ async function cardDocument(current: CurrentSession, request: NextRequest) {
     fees: (feeRows[0] || {}) as Record<string, unknown>,
     logo: "/images/wts-logo.png",
   }, { autoPrint: params.get("print") === "1" });
+  if (params.get("download") === "1") {
+    const who = String(student.name || "student").replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "");
+    const name = `report-card-${who}-${String(payload.term || "").replace(/[^a-z0-9]+/gi, "")}.html`;
+    return new Response(html, { headers: { ...noStoreHeaders(), "Content-Type": "text/html; charset=utf-8", "Content-Disposition": `attachment; filename="${name}"` } });
+  }
   return new Response(html, { headers: { ...noStoreHeaders(), "Content-Type": "text/html; charset=utf-8" } });
 }
 

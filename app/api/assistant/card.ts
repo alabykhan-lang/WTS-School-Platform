@@ -474,7 +474,7 @@ export function cardPage(data: CardData, options: { autoPrint?: boolean; message
     setTimeout(function(){window.print();},80);
     setTimeout(function(){document.body.classList.remove('printing');},45000);
   });
-  ${options.autoPrint ? "window.addEventListener('load',function(){var go=function(){document.body.classList.add('printing');setTimeout(function(){window.print();},250);};if(document.fonts&&document.fonts.ready)document.fonts.ready.then(go);else go();});" : ""}
+  ${options.autoPrint ? "window.addEventListener('load',function(){var go=function(){document.body.classList.add('printing');setTimeout(function(){window.print();},250);setTimeout(function(){document.body.classList.remove('printing');},1800);};if(document.fonts&&document.fonts.ready)document.fonts.ready.then(go);else go();});" : ""}
 })();
 </script>
 </body></html>`;

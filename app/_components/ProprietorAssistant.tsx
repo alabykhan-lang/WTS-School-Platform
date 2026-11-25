@@ -254,7 +254,7 @@ export function ProprietorAssistant() {
         setSettings(loaded);
         try {
           const wanted = localStorage.getItem(`wts-assistant-notify:${personId}`);
-          setNotify(wanted === "on" && "Notification" in window && Notification.permission === "granted" ? "on" : wanted === "denied" ? "denied" : "off");
+          setNotify(wanted === "on" && (!("Notification" in window) || Notification.permission === "granted") ? "on" : wanted === "denied" ? "denied" : "off");
         } catch { setNotify("off"); }
         setForm({ id: "", label: "", url: loaded.providerUrl, key: loaded.providerKey, provider: loaded.providerId, effort: loaded.effort });
         let list: Thread[] = [];
@@ -402,6 +402,19 @@ export function ProprietorAssistant() {
     const win = window.open(href, "_blank");
     if (win) win.opener = null;
     else setNotice("Allow pop-ups to open the report card.");
+  }
+
+  /** Saves the card straight into the phone's downloads, without leaving the chat. */
+  function downloadCard(doc?: CardDoc) {
+    if (!doc?.student) return;
+    const query = new URLSearchParams({ card: doc.student, class: doc.classKey, term: doc.term || "", session: doc.session || "", download: "1" });
+    const a = document.createElement("a");
+    a.href = `/api/assistant?${query}`;
+    a.download = "";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setNotice("Saving the card to your downloads.");
   }
 
   async function testModel(model: Model) {
@@ -589,7 +602,9 @@ export function ProprietorAssistant() {
     const away = document.hidden || tabRef.current !== "chats" || activeRef.current !== threadId;
     if (!away) return;
     document.title = `● ${title} · WTS Assistant`;
-    if (notifyRef.current !== "on" || !("Notification" in window) || Notification.permission !== "granted") return;
+    if (notifyRef.current !== "on") return;
+    try { navigator.vibrate?.([120, 70, 120]); } catch { /* ignore */ }
+    if (!("Notification" in window) || Notification.permission !== "granted") return;
     const clean = body.replace(/[#*_`>]/g, "").replace(/\s+/g, " ").trim().slice(0, 140);
     try {
       const note = new Notification(title, { body: clean, tag: "wts-assistant", icon: "/images/logo.webp" });
@@ -600,10 +615,15 @@ export function ProprietorAssistant() {
   }
 
   async function toggleNotify() {
-    if (!("Notification" in window)) { setNotice("This browser cannot show notifications."); return; }
     if (notify === "on") {
       setNotify("off");
       if (config?.person?.id) localStorage.setItem(`wts-assistant-notify:${config.person.id}`, "off");
+      return;
+    }
+    if (!("Notification" in window)) {
+      setNotify("on");
+      if (config?.person?.id) localStorage.setItem(`wts-assistant-notify:${config.person.id}`, "on");
+      setNotice("Alerts are on. This browser has no pop-up notices, so the tab title flags the answer and the phone buzzes.");
       return;
     }
     const permission = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
@@ -690,7 +710,10 @@ export function ProprietorAssistant() {
             <div className="assistantWho">{message.role === "user" ? "You" : "WTS"}</div>
             <div className={`assistantBubble${message.failed ? " failed" : ""}`}>{renderBlocks(message.content)}</div>
             {(message.doc || message.document) && <div className="assistantDocActions">
-              <button type="button" className="assistantDocPrint" onClick={() => openCard(message.doc)}>Print the report card</button>
+              {message.doc?.student
+                ? <button type="button" className="assistantDocPrint" onClick={() => downloadCard(message.doc)}>Download report card</button>
+                : <button type="button" className="assistantDocPrint" onClick={() => openCard(message.doc)}>Print the report card</button>}
+              {message.doc?.student && <button type="button" className="assistantDocLink" onClick={() => openCard(message.doc)}>Open to print</button>}
               {message.doc?.student && <button type="button" className="assistantDocLink" onClick={() => openCard(message.doc, true)}>Open in portal</button>}
             </div>}
           </article>)}
