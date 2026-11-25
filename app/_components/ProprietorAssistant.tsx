@@ -293,6 +293,8 @@ export function ProprietorAssistant() {
     let job: Job | null = null;
     try { job = JSON.parse(localStorage.getItem(`wts-assistant-job:${config.person.id}`) || "null"); } catch { job = null; }
     if (!job?.threadId || !Array.isArray(job.messages) || !job.messages.length) return;
+    const unanswered = threads.find((thread) => thread.id === job.threadId)?.messages.slice(-1)[0]?.role === "user";
+    if (!unanswered) { try { localStorage.removeItem(`wts-assistant-job:${config.person.id}`); } catch { /* ignore */ } return; }
     setActiveId(job.threadId);
     setTab("chats");
     void run(job.threadId, job.messages);
@@ -518,6 +520,7 @@ export function ProprietorAssistant() {
   async function run(threadId: string, messages: Message[]) {
     const key = jobKey();
     if (key) localStorage.setItem(key, JSON.stringify({ threadId, messages, started: Date.now() } satisfies Job));
+    let answered = false;
     setBusy(true); setBusyThread(threadId); setNotice("");
     const host = hostOf(settings.providerUrl || DEFAULT_URL);
     const controller = new AbortController();
@@ -550,6 +553,7 @@ export function ProprietorAssistant() {
         pushUsage(next);
         return next;
       });
+      answered = true;
       setNotice("");
       announce(threadId, doc ? `Report card ready${doc.name ? `: ${doc.name}` : ""}` : "Answer ready", answer);
     } catch (error) {
@@ -562,7 +566,9 @@ export function ProprietorAssistant() {
       updateThread(threadId, [...messages, { role: "assistant", content: failed, failed: true }]);
     } finally {
       window.clearTimeout(stop);
-      if (key) localStorage.removeItem(key);
+      // A reload aborts the request just before the new page reads the job, so the
+      // record stays until an answer exists; a resumed job replaces it.
+      if (key && answered) localStorage.removeItem(key);
       setBusy(false); setBusyThread("");
     }
   }
