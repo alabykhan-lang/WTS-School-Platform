@@ -441,6 +441,7 @@ async function reportCard(current: CurrentSession, args: Record<string, unknown>
         : { ok: false, code: "RESULT_STUDENT_NOT_FOUND", detail: `No active student matches "${wanted}"${args.classKey ? ` in ${String(args.classKey)}` : ""}.` };
     }
     studentId = String(pick.id);
+    if (!args.classKey && pick.class_key) args = { ...args, classKey: pick.class_key };
   }
   const payload = await withAcademicContext(current, { class_key: args.classKey, student_id: studentId });
   if (!payload.class_key || !payload.term || !payload.academic_session) {
@@ -1206,14 +1207,14 @@ export async function GET(request: NextRequest) {
  */
 function cardAsk(text: string): { classKey: string; label: string; search: string } | null {
   if (!/\b(report\s*card|result\s*card|print\s+(the\s+)?card|card)\b/i.test(text)) return null;
-  const cls = text.match(/\b(creche|kg\s*1|kg1|kg\s*2|kg2|nursery\s*[12]|primary\s*[1-6]|pry\s*[1-6]|basic\s*[1-6]|jss\s*[1-3][a-z]?|ss\s*[1-3][a-z]?(?:\s*(?:science|arts|commercial|general))?)\b/i);
-  if (!cls) return null;
   const adm = text.match(/\bWTS[\/ ]?STU[\/ ]?(\d{3,7})\b/i);
+  const cls = text.match(/\b(creche|kg\s*1|kg1|kg\s*2|kg2|nursery\s*[12]|primary\s*[1-6]|pry\s*[1-6]|basic\s*[1-6]|jss\s*[1-3][a-z]?|ss\s*[1-3][a-z]?(?:\s*(?:science|arts|commercial|general))?)\b/i);
+  if (!cls && !adm) return null;
   const after = text.match(/\b(?:for|of)\s+([a-z][a-z'.\- ]{2,60}?)(?=\s+(?:in|from|at|of)\b|[,.;?]|$)/i);
   let search = adm ? `WTS/STU/${adm[1]}` : after ? after[1] : "";
   if (!search) {
     search = text
-      .replace(cls[0], " ")
+      .replace(cls ? cls[0] : "$&", " ")
       .replace(/\b(report|result|print|the|a|card|cards|please|kindly|for|of|in|my|term|session)\b/gi, " ")
       .replace(/\b\d(st|nd|rd|th)\b/gi, " ")
       .replace(/[0-9]{4}\/[0-9]{4}/g, " ")
@@ -1223,7 +1224,7 @@ function cardAsk(text: string): { classKey: string; label: string; search: strin
   }
   search = search.replace(/\s+/g, " ").trim();
   if (search.length < 3) return null;
-  return { classKey: cls[0], label: cls[0].replace(/\s+/g, " ").toUpperCase(), search };
+  return { classKey: cls ? cls[0] : "", label: cls ? cls[0].replace(/\s+/g, " ").toUpperCase() : "", search };
 }
 
 export async function POST(request: NextRequest) {
@@ -1290,7 +1291,8 @@ export async function POST(request: NextRequest) {
         if (made.ok === true) {
           const person = (made.student || {}) as Record<string, unknown>;
           const blank = !((made.rows || []) as Record<string, unknown>[]).some((row) => Number(row.exam) > 0);
-          const text = `${person.name} — ${ask.label}, ${made.term} ${made.academic_session}. Total ${made.total}${blank ? ", CA only since exam marks are still blank" : ""}. The card is ready: tap Save report card.`;
+          const where = ask.label || String(person.class_key || "").replace(/-/g, " ").toUpperCase();
+          const text = `${person.name} — ${where}, ${made.term} ${made.academic_session}. Total ${made.total}${blank ? ", CA only since exam marks are still blank" : ""}. The card is ready: tap Save report card.`;
           return Response.json({
             ok: true,
             model: settings.model,
