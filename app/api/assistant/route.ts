@@ -390,8 +390,22 @@ async function reportCard(current: CurrentSession, args: Record<string, unknown>
   if (!studentId) {
     const wanted = String(args.search || "").trim();
     if (!wanted) return { ok: false, code: "RESULT_STUDENT_REQUIRED", detail: "Pass the student's name or admission number." };
-    const found = await registry(current, "read", "students", { search: wanted, classKey: args.classKey || null, status: "active" });
-    const hits = (Array.isArray(found?.students) ? found.students : []) as Record<string, unknown>[];
+    const find = async () => {
+      const found = await registry(current, "read", "students", { search: wanted, classKey: args.classKey || null, status: "active" });
+      return (Array.isArray(found?.students) ? found.students : []) as Record<string, unknown>[];
+    };
+    // The registry read occasionally comes back empty, and the results roster is a
+    // second, independent way to the same child.
+    let hits = await find();
+    if (!hits.length) hits = await find();
+    if (!hits.length) {
+      const ctx = await withAcademicContext(current, { class_key: args.classKey });
+      if (ctx.class_key) {
+        const roster = await call("read.students", ctx);
+        const rows = (Array.isArray(roster?.rows) ? roster.rows : []) as Record<string, unknown>[];
+        hits = rows.filter((row) => String(row.name || "").toLowerCase().includes(wanted.toLowerCase()) || String(row.admno || "").toLowerCase() === wanted.toLowerCase());
+      }
+    }
     const exact = hits.find((row) => String(row.admno || "").toLowerCase() === wanted.toLowerCase()) || hits.find((row) => String(row.name || "").toLowerCase() === wanted.toLowerCase());
     const pick = exact || (hits.length === 1 ? hits[0] : null);
     if (!pick) {
