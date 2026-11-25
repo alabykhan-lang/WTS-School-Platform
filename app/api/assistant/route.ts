@@ -417,22 +417,23 @@ async function reportCard(current: CurrentSession, args: Record<string, unknown>
   if (!studentId) {
     const wanted = String(args.search || "").trim();
     if (!wanted) return { ok: false, code: "RESULT_STUDENT_REQUIRED", detail: "Pass the student's name or admission number." };
+    const lower = wanted.toLowerCase();
+    const match = (rows: Record<string, unknown>[]) => rows.filter((row) => String(row.admno || "").toLowerCase() === lower || String(row.name || "").toLowerCase().includes(lower));
+    // With a class named, the class roster is the surest and quickest way to the
+    // child; the registry search is the second, independent route.
+    const rosterHits = async () => {
+      const ctx = await withAcademicContext(current, { class_key: args.classKey });
+      if (!ctx.class_key) return [];
+      const roster = await call("read.students", ctx);
+      return Array.isArray(roster?.rows) ? match(roster.rows as Record<string, unknown>[]) : [];
+    };
     const find = async () => {
       const found = await registry(current, "read", "students", { search: wanted, classKey: args.classKey ? classKeyOf(args.classKey) : null, status: "active" });
-      return (Array.isArray(found?.students) ? found.students : []) as Record<string, unknown>[];
+      return match(Array.isArray(found?.students) ? found.students as Record<string, unknown>[] : []);
     };
-    // The registry read occasionally comes back empty, and the results roster is a
-    // second, independent way to the same child.
-    let hits = await find();
+    let hits: Record<string, unknown>[] = args.classKey ? await rosterHits() : await find();
     if (!hits.length) hits = await find();
-    if (!hits.length) {
-      const ctx = await withAcademicContext(current, { class_key: args.classKey });
-      if (ctx.class_key) {
-        const roster = await call("read.students", ctx);
-        const rows = (Array.isArray(roster?.rows) ? roster.rows : []) as Record<string, unknown>[];
-        hits = rows.filter((row) => String(row.name || "").toLowerCase().includes(wanted.toLowerCase()) || String(row.admno || "").toLowerCase() === wanted.toLowerCase());
-      }
-    }
+    if (!hits.length) hits = await rosterHits();
     const exact = hits.find((row) => String(row.admno || "").toLowerCase() === wanted.toLowerCase()) || hits.find((row) => String(row.name || "").toLowerCase() === wanted.toLowerCase());
     const pick = exact || (hits.length === 1 ? hits[0] : null);
     if (!pick) {
