@@ -32,6 +32,10 @@ function modelOptions(): ModelOption[] {
   });
 }
 
+function hostOfUrl(value: string) {
+  try { return new URL(value).hostname; } catch { return ""; }
+}
+
 /** Known provider hosts that need a path before chat/completions, e.g. Google's OpenAI bridge. */
 const PROVIDER_BASES: Record<string, string> = {
   "generativelanguage.googleapis.com": "/v1beta/openai",
@@ -925,8 +929,10 @@ export async function POST(request: NextRequest) {
     if (suppliedModel && suppliedModel.length > 120) throw new IdentityApiError("ASSISTANT_MODEL_NOT_AVAILABLE", 400);
 
     const effort = ["low", "medium", "high"].includes(String(body.effort || "")) ? String(body.effort) : "";
+    // The school's own key only fits the school's own provider host.
+    const anotherHost = Boolean(suppliedUrl) && hostOfUrl(suppliedUrl) !== hostOfUrl(PROVIDER_URL);
     const settings: ModelSettings = {
-      key: suppliedKey || DEEPSEEK_KEY || GATEWAY_KEY,
+      key: suppliedKey || (anotherHost ? "" : DEEPSEEK_KEY || GATEWAY_KEY),
       url: suppliedUrl || PROVIDER_URL,
       model: suppliedModel || DEFAULT_MODEL,
       label: suppliedModel || DEFAULT_MODEL,

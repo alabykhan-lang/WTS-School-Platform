@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 type Message = { role: "user" | "assistant"; content: string; failed?: boolean; document?: boolean };
-type Model = { id: string; label: string; description?: string };
+type Model = { id: string; label: string; description?: string; url?: string; providerId?: string };
 type Thread = { id: string; title: string; messages: Message[]; updatedAt: number };
 type Person = { id?: string; full_name?: string };
 type AssistantConfig = { configured: boolean; models: Model[]; default_model: string; default_url: string; is_admin: boolean; person?: Person };
@@ -62,6 +62,7 @@ type Stored = {
   models: Model[];
   defaultModel: string;
   providerKey: string;
+  keys: Record<string, string>;
   providerUrl: string;
   providerId: string;
   effort: Effort;
@@ -95,16 +96,40 @@ function sanitiseModels(value: unknown, fallback: Model[]): Model[] {
   const list = Array.isArray(value) ? value : [];
   const clean = list
     .filter((item) => item && typeof item === "object")
-    .map((item) => ({ id: String((item as Model).id || "").trim(), label: String((item as Model).label || "").trim(), description: String((item as Model).description || "") }))
+    .map((item) => ({
+      id: String((item as Model).id || "").trim(),
+      label: String((item as Model).label || "").trim(),
+      description: String((item as Model).description || ""),
+      url: typeof (item as Model).url === "string" ? (item as Model).url : "",
+      providerId: typeof (item as Model).providerId === "string" ? (item as Model).providerId : "",
+    }))
     .filter((item) => item.id);
   return clean.length ? clean : fallback;
 }
 
+/** Keys are kept per provider so switching back to an old provider still works. */
+function readKeys(saved: Partial<Stored>) {
+  const raw = saved.keys;
+  const clean: Record<string, string> = {};
+  if (raw && typeof raw === "object") {
+    for (const [id, value] of Object.entries(raw)) {
+      if (typeof value === "string" && value.trim()) clean[id] = value.trim();
+    }
+  }
+  if (!Object.keys(clean).length && typeof saved.providerKey === "string" && saved.providerKey) {
+    clean[saved.providerId || providerOf(saved.providerUrl || "")] = saved.providerKey;
+  }
+  return clean;
+}
+
 function readStored(key: string, config: AssistantConfig): Stored {
+  // A fresh account starts with the one model in use, not the whole provider list.
+  const seed = config.default_model ? [{ id: config.default_model, label: config.default_model }] : FALLBACK_MODELS.slice(0, 1);
   const fallback: Stored = {
-    models: config.models?.length ? config.models : FALLBACK_MODELS,
+    models: seed,
     defaultModel: config.default_model || FALLBACK_MODELS[0].id,
     providerKey: "",
+    keys: {},
     providerUrl: config.default_url || DEFAULT_URL,
     providerId: providerOf(config.default_url || DEFAULT_URL),
     effort: "low",
@@ -122,6 +147,7 @@ function readStored(key: string, config: AssistantConfig): Stored {
       models,
       defaultModel,
       providerKey: typeof saved.providerKey === "string" ? saved.providerKey : "",
+      keys: readKeys(saved),
       providerUrl: typeof saved.providerUrl === "string" && saved.providerUrl ? saved.providerUrl : fallback.providerUrl,
       providerId: typeof saved.providerId === "string" && PROVIDERS.some((provider) => provider.id === saved.providerId) ? saved.providerId : providerOf(saved.providerUrl || fallback.providerUrl),
       effort: saved.effort === "medium" || saved.effort === "high" ? saved.effort : "low",
@@ -174,7 +200,7 @@ export function ProprietorAssistant() {
   const [config, setConfig] = useState<AssistantConfig | null>(null);
   const [loadError, setLoadError] = useState("");
   const [stored, setStoredKey] = useState("");
-  const [settings, setSettings] = useState<Stored>({ models: FALLBACK_MODELS, defaultModel: FALLBACK_MODELS[0].id, providerKey: "", providerUrl: DEFAULT_URL, providerId: "yeta", effort: "low", usagePercent: 100, perReplyCost: 1, usageDays: 30, usageUntil: 0 });
+  const [settings, setSettings] = useState<Stored>({ models: FALLBACK_MODELS, defaultModel: FALLBACK_MODELS[0].id, providerKey: "", providerUrl: DEFAULT_URL, providerId: "yeta", effort: "low", usagePercent: 100, perReplyCost: 1, usageDays: 30, usageUntil: 0, keys: {} });
   const [threads, setThreads] = useState<Thread[]>([]);
   const [activeId, setActiveId] = useState("");
   const [tab, setTab] = useState<"chats" | "models" | "usage">("chats");
@@ -287,11 +313,21 @@ export function ProprietorAssistant() {
     const label = form.label.trim() || id;
     const url = form.url.trim() || DEFAULT_URL;
     const key = form.key.trim();
-    const next = [...settings.models.filter((model) => model.id !== id), { id, label, description: "Added by you" }];
-    if (!key && !settings.providerKey) { setTest({ state: "fail", message: "Paste the API key for this provider." }); return; }
-    setSettings((current) => ({ ...current, models: next, defaultModel: id, providerUrl: url, providerKey: key || current.providerKey, providerId: form.provider, effort: form.effort }));
+    const next = [...settings.models.filter((model) => model.id !== id), { id, label, description: "Added by you", url, providerId: form.provider }];
+    const stored = key || keyFor(form.provider);
+    if (!stored && !config?.configured) { setTest({ state: "fail", message: "Paste the API key for this provider." }); return; }
+    setSettings((current) => ({ ...current, models: next, defaultModel: id, providerUrl: url, providerKey: stored, keys: stored ? { ...current.keys, [form.provider]: stored } : current.keys, providerId: form.provider, effort: form.effort }));
     setSavedFlash(true); window.setTimeout(() => setSavedFlash(false), 1600);
     setTest({ state: "idle", message: "" });
+  }
+
+  function addModel(id: string) {
+    const url = form.url.trim() || settings.providerUrl || DEFAULT_URL;
+    const providerId = form.provider;
+    const key = form.key.trim() || keyFor(providerId);
+    const next = [...settings.models.filter((model) => model.id !== id), { id, label: id, description: "Added by you", url, providerId }];
+    setSettings((current) => ({ ...current, models: next, keys: key ? { ...current.keys, [providerId]: key } : current.keys }));
+    setProbe((current) => { const copy = { ...current }; delete copy[id]; return copy; });
   }
 
   function removeModel(id: string) {
@@ -308,9 +344,11 @@ export function ProprietorAssistant() {
     window.setTimeout(clear, 4000);
   }
 
-  async function testModel(id: string) {
-    const key = form.key.trim() || settings.providerKey;
-    const url = form.url.trim() || settings.providerUrl || DEFAULT_URL;
+  async function testModel(model: Model) {
+    const id = model.id;
+    const providerId = model.providerId || settings.providerId;
+    const key = (form.id === id ? form.key.trim() : "") || keyFor(providerId);
+    const url = model.url || settings.providerUrl || DEFAULT_URL;
     if (!key) { setTest({ state: "fail", message: "Paste the API key first." }); return; }
     setProbe((current) => ({ ...current, [id]: "testing" }));
     try {
@@ -320,8 +358,18 @@ export function ProprietorAssistant() {
     } catch { setProbe((current) => ({ ...current, [id]: "failed" })); }
   }
 
-  function useModel(id: string) {
-    setForm((current) => ({ ...current, id }));
+  function keyFor(providerId: string) {
+    return settings.keys?.[providerId] || (settings.providerId === providerId ? settings.providerKey : "");
+  }
+
+  function useModel(model: Model) {
+    const providerId = model.providerId || settings.providerId;
+    const url = model.url || settings.providerUrl;
+    // No key for that provider means the school server's own key is used.
+    const key = keyFor(providerId);
+    setSettings((current) => ({ ...current, defaultModel: model.id, providerId, providerUrl: url, providerKey: key }));
+    setForm((current) => ({ ...current, id: model.id, provider: providerId, url, key: "" }));
+    setSavedFlash(true); window.setTimeout(() => setSavedFlash(false), 1600);
   }
 
   function pushUsage(next: Stored) {
@@ -364,7 +412,7 @@ export function ProprietorAssistant() {
   }
 
   async function fetchModels() {
-    const key = form.key.trim() || settings.providerKey;
+    const key = form.key.trim() || keyFor(form.provider) || settings.providerKey;
     const url = form.url.trim() || settings.providerUrl || DEFAULT_URL;
     if (!key) { setTest({ state: "fail", message: "Paste the API key first." }); return; }
     setFetchingModels(true);
@@ -551,7 +599,7 @@ export function ProprietorAssistant() {
           <div className="assistantPair">
             <label><span>Provider</span><select value={form.provider} onChange={(event) => {
               const provider = PROVIDERS.find((item) => item.id === event.target.value);
-              setForm((current) => ({ ...current, provider: event.target.value, url: provider?.url || current.url, id: "" }));
+              setForm((current) => ({ ...current, provider: event.target.value, url: provider?.url || current.url, id: "", key: "" }));
               setModelList([]); setProbe({}); setTest({ state: "idle", message: "" });
             }}>{PROVIDERS.map((provider) => <option key={provider.id} value={provider.id}>{provider.label}</option>)}</select></label>
             <label><span>Model</span><input list="assistantModelChoices" placeholder={config?.default_model || "deepseek-v4.1-flash"} value={form.id} onChange={(event) => setForm({ ...form, id: event.target.value })}/><datalist id="assistantModelChoices">{modelList.map((id) => <option key={id} value={id} />)}</datalist></label>
@@ -571,22 +619,36 @@ export function ProprietorAssistant() {
           {savedFlash && <div className="assistantTest pass">Saved. It is now the model in use.</div>}
         </div>
         <div className="assistantCard">
-          <h2>Available models</h2>
-          <p className="assistantMuted">List models to see what this key can reach, then test any of them. Green means that model answered; amber means the provider is busy, so try again later.</p>
+          <h2>Your models</h2>
+          <p className="assistantMuted">Only the models you pick stay here. Use powers the assistant; Test checks that route. Green answered, amber is busy, red failed.</p>
+          {!settings.models.length && <p className="assistantTest fail">No model saved yet. Add one below, or type a model above and press Save.</p>}
           <div className="assistantModelList">
-            {(modelList.length ? modelList.map((id) => ({ id, label: settings.models.find((model) => model.id === id)?.label || id })) : settings.models).map((model) => {
+            {settings.models.map((model) => {
               const state = probe[model.id];
               return <div key={model.id} className={`assistantModelRow ${state || ""}`}>
                 <div className="assistantModelBody">
                   <b>{model.label}</b>
-                  <small>{model.id}{form.id === model.id ? " · chosen" : settings.defaultModel === model.id ? " · in use" : ""}{state === "works" ? " · works" : state === "busy" ? " · busy, try again" : state === "failed" ? " · failed" : ""}</small>
+                  <small>{model.id} · {hostOf(model.url || settings.providerUrl || DEFAULT_URL)}{settings.defaultModel === model.id ? " · in use" : ""}{state === "works" ? " · works" : state === "busy" ? " · busy, try again" : state === "failed" ? " · failed" : ""}</small>
                 </div>
-                <button type="button" className="assistantModelPick" onClick={() => useModel(model.id)}>{form.id === model.id ? "Chosen" : "Use"}</button>
-                <button type="button" className="assistantModelTest" onClick={() => testModel(model.id)} disabled={state === "testing"}>{state === "testing" ? "…" : "Test"}</button>
+                <button type="button" className="assistantModelPick" onClick={() => useModel(model)} disabled={settings.defaultModel === model.id}>{settings.defaultModel === model.id ? "In use" : "Use"}</button>
+                <button type="button" className="assistantModelTest" onClick={() => testModel(model)} disabled={state === "testing"}>{state === "testing" ? "…" : "Test"}</button>
+                {settings.models.length > 1 && <button type="button" className="assistantRemove" onClick={() => removeModel(model.id)}>Remove</button>}
               </div>;
             })}
           </div>
           <p className="assistantMuted">Current endpoint: {settings.providerUrl || DEFAULT_URL}</p>
+        </div>
+        <div className="assistantCard">
+          <h2>Add a model from this key</h2>
+          <p className="assistantMuted">List what {hostOf(form.url || settings.providerUrl || DEFAULT_URL)} reaches, then add the one you want. Nothing else is added.</p>
+          <div className="assistantActions"><button type="button" className="assistantGhost" onClick={fetchModels} disabled={fetchingModels}>{fetchingModels ? "Listing…" : "List models"}</button></div>
+          {!!modelList.length && <div className="assistantModelList">
+            {modelList.filter((id) => !settings.models.some((model) => model.id === id && (model.providerId || settings.providerId) === form.provider)).map((id) => <div key={id} className="assistantModelRow">
+              <div className="assistantModelBody"><b>{id}</b><small>{hostOf(form.url || settings.providerUrl || DEFAULT_URL)}</small></div>
+              <button type="button" className="assistantModelPick" onClick={() => addModel(id)}>Add</button>
+            </div>)}
+            {modelList.every((id) => settings.models.some((model) => model.id === id && (model.providerId || settings.providerId) === form.provider)) && <p className="assistantMuted">Every model this key returned is already in your list.</p>}
+          </div>}
         </div>
       </div>}
 
