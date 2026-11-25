@@ -228,6 +228,10 @@ export function ProprietorAssistant() {
   const endRef = useRef<HTMLDivElement | null>(null);
   const resumed = useRef(false);
   const baseTitle = useRef("");
+  const tabRef = useRef(tab);
+  const activeRef = useRef(activeId);
+  const notifyRef = useRef(notify);
+  tabRef.current = tab; activeRef.current = activeId; notifyRef.current = notify;
 
   useEffect(() => {
     fetch("/api/assistant", { credentials: "same-origin", cache: "no-store" })
@@ -577,10 +581,10 @@ export function ProprietorAssistant() {
 
   /** Tells the proprietor outside the page when an answer lands while they are away. */
   function announce(threadId: string, title: string, body: string) {
-    const away = document.hidden || tab !== "chats" || activeId !== threadId;
+    const away = document.hidden || tabRef.current !== "chats" || activeRef.current !== threadId;
     if (!away) return;
     document.title = `● ${title} · WTS Assistant`;
-    if (notify !== "on" || !("Notification" in window) || Notification.permission !== "granted") return;
+    if (notifyRef.current !== "on" || !("Notification" in window) || Notification.permission !== "granted") return;
     const clean = body.replace(/[#*_`>]/g, "").replace(/\s+/g, " ").trim().slice(0, 140);
     try {
       const note = new Notification(title, { body: clean, tag: "wts-assistant", icon: "/images/logo.webp" });
