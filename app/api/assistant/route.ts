@@ -1200,6 +1200,32 @@ export async function GET(request: NextRequest) {
   }
 }
 
+/**
+ * A plain "print the card for <name> in <class>" is answered without the model,
+ * so the card comes back in seconds instead of after a model round trip.
+ */
+function cardAsk(text: string): { classKey: string; label: string; search: string } | null {
+  if (!/\b(report\s*card|result\s*card|print\s+(the\s+)?card|card)\b/i.test(text)) return null;
+  const cls = text.match(/\b(creche|kg\s*1|kg1|kg\s*2|kg2|nursery\s*[12]|primary\s*[1-6]|pry\s*[1-6]|basic\s*[1-6]|jss\s*[1-3][a-z]?|ss\s*[1-3][a-z]?(?:\s*(?:science|arts|commercial|general))?)\b/i);
+  if (!cls) return null;
+  const adm = text.match(/\bWTS[\/ ]?STU[\/ ]?(\d{3,7})\b/i);
+  const after = text.match(/\b(?:for|of)\s+([a-z][a-z'.\- ]{2,60}?)(?=\s+(?:in|from|at|of)\b|[,.;?]|$)/i);
+  let search = adm ? `WTS/STU/${adm[1]}` : after ? after[1] : "";
+  if (!search) {
+    search = text
+      .replace(cls[0], " ")
+      .replace(/\b(report|result|print|the|a|card|cards|please|kindly|for|of|in|my|term|session)\b/gi, " ")
+      .replace(/\b\d(st|nd|rd|th)\b/gi, " ")
+      .replace(/[0-9]{4}\/[0-9]{4}/g, " ")
+      .replace(/[^a-z' .\-]/gi, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+  search = search.replace(/\s+/g, " ").trim();
+  if (search.length < 3) return null;
+  return { classKey: cls[0], label: cls[0].replace(/\s+/g, " ").toUpperCase(), search };
+}
+
 export async function POST(request: NextRequest) {
   try {
     if (!sameOriginOrMissing(request)) return error("ORIGIN_NOT_ALLOWED", 403);
@@ -1252,6 +1278,31 @@ export async function POST(request: NextRequest) {
 
     const messages = Array.isArray(body.messages) ? body.messages.filter((message) => message && typeof message === "object").slice(-20) : [];
     if (!messages.length) return error("ASSISTANT_MESSAGE_REQUIRED");
+
+    // A straight card request skips the model, so the card is a few seconds away.
+    const lastUser = [...messages].reverse().find((message) => (message as Record<string, unknown>).role === "user");
+    const ask = lastUser && typeof (lastUser as Record<string, unknown>).content === "string"
+      ? cardAsk(String((lastUser as Record<string, unknown>).content))
+      : null;
+    if (ask) {
+      try {
+        const made = await reportCard(current, { classKey: ask.classKey, search: ask.search });
+        if (made.ok === true) {
+          const person = (made.student || {}) as Record<string, unknown>;
+          const blank = !((made.rows || []) as Record<string, unknown>[]).some((row) => Number(row.exam) > 0);
+          const text = `${person.name} — ${ask.label}, ${made.term} ${made.academic_session}. Total ${made.total}${blank ? ", CA only since exam marks are still blank" : ""}. The card is ready: tap Save report card.`;
+          return Response.json({
+            ok: true,
+            model: settings.model,
+            text,
+            usage: null,
+            steps: ["report_card"],
+            document: { student: String(person.id || ""), classKey: String(person.class_key || ask.classKey), term: String(made.term || ""), session: String(made.academic_session || ""), name: String(person.name || "") },
+          }, { headers: noStoreHeaders() });
+        }
+      } catch { /* fall through to the model, which can explain it */ }
+    }
+
     const result = await gateway(messages, settings, current);
     if (!result.ok) {
       return Response.json({ ok: false, code: result.code, detail: result.detail, model: settings.model }, { status: 200, headers: noStoreHeaders() });
