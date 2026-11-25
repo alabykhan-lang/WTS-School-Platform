@@ -1300,7 +1300,9 @@ export async function POST(request: NextRequest) {
     let fastError = "";
     if (ask) {
       try {
-        const made = await reportCard(current, { classKey: ask.classKey, search: ask.search });
+        let made = await reportCard(current, { classKey: ask.classKey, search: ask.search });
+        // The portal can read before its own context lands; one retry settles it.
+        if (made.ok !== true && made.code === "RESULT_CONTEXT_MISMATCH") made = await reportCard(current, { classKey: ask.classKey, search: ask.search });
         if (made.ok === true) {
           const person = (made.student || {}) as Record<string, unknown>;
           const blank = !((made.rows || []) as Record<string, unknown>[]).some((row) => Number(row.exam) > 0);
