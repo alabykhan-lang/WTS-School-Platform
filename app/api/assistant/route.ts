@@ -433,7 +433,7 @@ async function reportCard(current: CurrentSession, args: Record<string, unknown>
   if (!payload.class_key || !payload.term || !payload.academic_session) {
     return { ok: false, code: "RESULT_ACADEMIC_CONTEXT_REQUIRED", detail: "A class, term and session are needed." };
   }
-  await call("context.set", { class_key: payload.class_key, academic_session: payload.academic_session, term: payload.term });
+  const contextReady = call("context.set", { class_key: payload.class_key, academic_session: payload.academic_session, term: payload.term });
   const [summary, subjectsCall, traits, remarks, settings] = await Promise.all([
     call("read.result_summary", payload),
     call("read.subjects", { class_key: payload.class_key }),
@@ -441,6 +441,7 @@ async function reportCard(current: CurrentSession, args: Record<string, unknown>
     call("read.remarks", payload),
     call("settings.read", {}),
   ]);
+  await contextReady;
   if (!summary.ok) return summary;
   const bag = (summary.summary || {}) as { students?: Record<string, unknown>[]; scores?: Record<string, unknown>[] };
   const student = (bag.students || []).find((row) => String(row.id) === studentId);

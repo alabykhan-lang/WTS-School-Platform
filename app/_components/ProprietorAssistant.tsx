@@ -439,7 +439,7 @@ export function ProprietorAssistant() {
       document.body.appendChild(a);
       a.click();
       window.setTimeout(() => { a.remove(); URL.revokeObjectURL(href); }, 20000);
-      setNotice(`Saved ${file.name} to your downloads.`);
+      setNotice(`Saved ${file.name}. If it did not arrive, tap Open to print.`);
     } catch (caught) {
       if ((caught as Error)?.name === "AbortError") return;
       setNotice("The card could not be saved. Tap Open to print instead.");
