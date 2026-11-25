@@ -141,7 +141,12 @@ function readStored(key: string, config: AssistantConfig): Stored {
   try {
     const saved = JSON.parse(localStorage.getItem(key) || "null") as Partial<Stored> | null;
     if (!saved) return fallback;
-    const models = sanitiseModels(saved.models, fallback.models);
+    // Older entries had no route of their own; pin them to the route they were saved under.
+    const models = sanitiseModels(saved.models, fallback.models).map((model) => ({
+      ...model,
+      url: model.url || saved.providerUrl || fallback.providerUrl,
+      providerId: model.providerId || saved.providerId || fallback.providerId,
+    }));
     const defaultModel = models.some((model) => model.id === saved.defaultModel) ? String(saved.defaultModel) : models[0].id;
     return {
       models,
