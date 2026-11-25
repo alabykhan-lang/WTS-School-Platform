@@ -8,7 +8,7 @@ import type { CardData } from "./card";
 import { cardPdf } from "./card-pdf";
 
 export const runtime = "nodejs";
-export const maxDuration = 160;
+export const maxDuration = 220;
 export const dynamic = "force-dynamic";
 
 const GATEWAY_KEY = process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_AI_GATEWAY_API_KEY || "";
@@ -120,10 +120,17 @@ async function currentSession(request: Request): Promise<CurrentSession> {
     };
   }
   if (!current) throw new IdentityApiError("STAFF_SESSION_REQUIRED", 401);
-  const context = await callPrivilegedRpc<Record<string, unknown>>("school_staff_workspace_read_session_api", {
+  // The database sheds a statement under load, so one retry keeps a slow spell from failing the turn.
+  const readContext = () => callPrivilegedRpc<Record<string, unknown>>("school_staff_workspace_read_session_api", {
     p_session_id: current.id,
     p_session_secret: current.secret,
   });
+  let context: Record<string, unknown>;
+  try {
+    context = await readContext();
+  } catch {
+    context = await readContext();
+  }
   if (!context?.ok) throw new IdentityApiError(String(context?.code || "STAFF_SESSION_NOT_ACTIVE"), 401);
   assertProprietor(context);
   return { ...current, context };

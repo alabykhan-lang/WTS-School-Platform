@@ -587,7 +587,7 @@ export function ProprietorAssistant() {
     setBusy(true); setBusyThread(threadId); setNotice("");
     const host = hostOf(settings.providerUrl || DEFAULT_URL);
     const controller = new AbortController();
-    const stop = window.setTimeout(() => controller.abort(), 150000);
+    const stop = window.setTimeout(() => controller.abort(), 210000);
     try {
       const response = await fetch("/api/assistant", {
         method: "POST",
