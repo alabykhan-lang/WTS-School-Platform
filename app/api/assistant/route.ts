@@ -1033,7 +1033,8 @@ async function cardDocument(current: CurrentSession, request: NextRequest) {
     if (row.trait_name) target[String(row.trait_name)] = String(row.rating ?? "");
   }
   const feeRows = (Array.isArray(feesCall?.rows) ? feesCall.rows : []) as Record<string, unknown>[];
-  const resumeValue = feeRows[0]?.resume_date || feeRows[0]?.resume || config?.resumption;
+  const sessionCfg = (config?.sessionCfg || {}) as Record<string, unknown>;
+  const resumeValue = sessionCfg.showResumption === false ? "" : feeRows[0]?.resume_date || feeRows[0]?.resume || sessionCfg.resumption;
   const passed = rows.filter((row) => row.total !== "" && Number(row.total) >= 40).length;
 
   const html = cardPage({
