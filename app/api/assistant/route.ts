@@ -66,8 +66,9 @@ function authorityIsAdmin(context: Record<string, unknown>) {
   const classification = String(authority.classification || summaryAuthority.classification || "").toLowerCase();
   const roles = Array.isArray(context.roles) ? context.roles : [];
   const roleText = roles.map((role) => typeof role === "object" && role ? `${(role as Record<string, unknown>).role_code || ""} ${(role as Record<string, unknown>).role_name || ""}` : "").join(" ").toLowerCase();
-  return context.management_access === true
-    || ["system_owner", "developer"].includes(classification)
+  // Only the developer's own account is free. A proprietor is management too,
+  // so management_access alone would wrongly exempt them from the allowance.
+  return ["system_owner", "developer"].includes(classification)
     || /system[_ -]?owner|developer/.test(roleText);
 }
 
