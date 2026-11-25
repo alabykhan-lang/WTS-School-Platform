@@ -700,7 +700,7 @@ export function ProprietorAssistant() {
         <form className="assistantComposer" onSubmit={send}>
           <textarea value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Message the assistant…" rows={1} aria-label="Message"/>
           <button type="submit" disabled={busy || !draft.trim()} aria-label="Send">↑</button>
-          <small>{config.is_admin ? "Developer chats are not counted" : `${settings.usagePercent.toFixed(0)}% allowance left${settings.usageUntil ? ` · until ${new Date(settings.usageUntil).toLocaleDateString()}` : ""}`} · answers use live school data</small>
+          {!config.is_admin && <small>{`${settings.usagePercent.toFixed(0)}% allowance left${settings.usageUntil ? ` · until ${new Date(settings.usageUntil).toLocaleDateString()}` : ""}`}</small>}
           <button type="button" className={`assistantBell${notify === "on" ? " on" : ""}`} onClick={toggleNotify} aria-pressed={notify === "on"} title="Tell me here when the answer is ready">{notify === "on" ? "🔔 Notify me" : "🔕 Notify me"}</button>
         </form>
       </>}
@@ -769,18 +769,20 @@ export function ProprietorAssistant() {
       {tab === "usage" && <div className="assistantPane">
         <div className="assistantCard">
           <h2>Usage balance</h2>
-          <p className="assistantMuted">The balance counts down from the level you set. Each answer costs the amount below.</p>
+          <p className="assistantMuted">The balance counts down as the account answers. {config.is_admin ? "You set the level and the cost below." : "The developer sets the level and the cost."}</p>
           <div className="assistantMeter">
             <div className="assistantRing" style={{ ["--usage" as string]: `${settings.usagePercent}%` }}><span>{Math.round(settings.usagePercent)}%</span></div>
             <div><strong>{settings.usagePercent <= 0 ? "Empty" : "Remaining"}</strong><small>{settings.usagePercent <= 20 && settings.usagePercent > 0 ? "Running low" : "Manual balance for this account"}</small></div>
           </div>
           <div className="assistantPair">
-            <label><span>Balance (%)</span><input type="number" min="0" max="100" step="1" value={settings.usagePercent} onChange={(event) => changeUsage("usagePercent", event.target.value)} /></label>
-            <label><span>Cost per answer (%)</span><input type="number" min="0" max="100" step="0.5" value={settings.perReplyCost} onChange={(event) => changeUsage("perReplyCost", event.target.value)} /></label>
+            <label><span>Balance (%)</span><input type="number" min="0" max="100" step="1" value={settings.usagePercent} readOnly={!config.is_admin} onChange={(event) => changeUsage("usagePercent", event.target.value)} /></label>
+            <label><span>Cost per answer (%)</span><input type="number" min="0" max="100" step="0.5" value={settings.perReplyCost} readOnly={!config.is_admin} onChange={(event) => changeUsage("perReplyCost", event.target.value)} /></label>
           </div>
-          <label><span>Lasts for (days)</span><input type="number" min="1" max="365" step="1" value={settings.usageDays} onChange={(event) => setSettings((current) => ({ ...current, usageDays: Math.max(1, Math.min(365, Number(event.target.value) || 1)) }))} /></label>
-          <p className="assistantMuted">{settings.usageUntil ? `This allowance runs until ${new Date(settings.usageUntil).toLocaleDateString()} (${Math.max(0, Math.ceil((settings.usageUntil - Date.now()) / 86400000))} day(s) left).` : "No end date set yet. Start the allowance to date it."} It is shared, so a reset here applies everywhere. Developer chats are free; only the proprietor's answers use it.</p>
-          <div className="assistantActions"><button type="button" className="assistantPrimary" onClick={startAllowance}>Start fresh at 100%</button><button type="button" className="assistantGhost" onClick={() => { const next = { ...settings, usagePercent: 100 }; setSettings(next); pushUsage(next); }}>Set balance to 100%</button></div>
+          <label><span>Lasts for (days)</span><input type="number" min="1" max="365" step="1" value={settings.usageDays} readOnly={!config.is_admin} onChange={(event) => setSettings((current) => ({ ...current, usageDays: Math.max(1, Math.min(365, Number(event.target.value) || 1)) }))} /></label>
+          <p className="assistantMuted">{settings.usageUntil ? `This allowance runs until ${new Date(settings.usageUntil).toLocaleDateString()} (${Math.max(0, Math.ceil((settings.usageUntil - Date.now()) / 86400000))} day(s) left).` : "No end date set yet. Start the allowance to date it."} It is shared. Developer chats are free; only the proprietor's answers use it.</p>
+          {config.is_admin
+            ? <div className="assistantActions"><button type="button" className="assistantPrimary" onClick={startAllowance}>Start fresh at 100%</button><button type="button" className="assistantGhost" onClick={() => { const next = { ...settings, usagePercent: 100 }; setSettings(next); pushUsage(next); }}>Set balance to 100%</button></div>
+            : <p className="assistantMuted">Only the developer sets the balance and the rate.</p>}
         </div>
       </div>}
     </section>

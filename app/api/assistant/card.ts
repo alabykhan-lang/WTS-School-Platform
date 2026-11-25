@@ -40,6 +40,7 @@ export type CardData = {
   passed: number | "";
   affective: Record<string, string>;
   psychomotor: Record<string, string>;
+  form: { ca: number; classAvg: boolean; highest: boolean; remark: boolean };
   attendance: { opened: unknown; present: unknown; absent: number | "" };
   remark: string;
   resume: string;
@@ -84,6 +85,14 @@ export const CARD_SECTIONS = [
   "showHeader", "showPhoto", "showBio", "showSummary", "showSubjects", "showAffective",
   "showPsycho", "showFees", "showNextTerm", "showAttendance", "showSignature",
 ];
+
+export const CARD_SECTION_LABELS: Record<string, string> = {
+  showFees: "Fees",
+  showAttendance: "Attendance",
+  showPsycho: "Psychomotor",
+  showNextTerm: "Next term",
+  showSignature: "Signature",
+};
 
 export function gradeOf(total: number | ""): Grade {
   if (total === "") return { g: "", r: "", c: "#aaa" };
@@ -195,31 +204,41 @@ export function renderCard(data: CardData): string {
   }
 
   if (show("showSubjects")) {
+    const threeCa = Number(data.form.ca) === 3;
     h += `<div style="background:${TEAL};color:${WHITE};text-align:center;padding:5px;font-weight:700;font-size:9.5pt;text-transform:uppercase;${P}">Academic Subject Results</div>`
       + `<table style="width:100%;border-collapse:collapse;font-size:8pt"><thead><tr style="background:${NAVY};color:${WHITE};${P}">`
       + `<th style="padding:5px 6px;text-align:left;border:1px solid ${BORDER}">SUBJECT</th>`
-      + `<th style="padding:5px 3px;text-align:center;border:1px solid ${BORDER}">C.A.<br/><small>(30%)</small></th>`
+      + (threeCa
+        ? `<th style="padding:5px 2px;text-align:center;border:1px solid ${BORDER}">CA1<br/><small>(10)</small></th>`
+          + `<th style="padding:5px 2px;text-align:center;border:1px solid ${BORDER}">CA2<br/><small>(10)</small></th>`
+          + `<th style="padding:5px 2px;text-align:center;border:1px solid ${BORDER}">CA3<br/><small>(10)</small></th>`
+        : `<th style="padding:5px 3px;text-align:center;border:1px solid ${BORDER}">C.A.<br/><small>(30%)</small></th>`)
       + `<th style="padding:5px 3px;text-align:center;border:1px solid ${BORDER}">EXAM<br/><small>(70%)</small></th>`
       + `<th style="padding:5px 3px;text-align:center;border:1px solid ${BORDER}">TOTAL<br/><small>(100%)</small></th>`
       + `<th style="padding:5px 3px;text-align:center;border:1px solid ${BORDER}">GRADE</th>`
-      + `<th style="padding:5px 3px;text-align:center;border:1px solid ${BORDER}">CLASS AVG</th>`
-      + `<th style="padding:5px 3px;text-align:center;border:1px solid ${BORDER}">HIGHEST</th>`
-      + `<th style="padding:5px 3px;text-align:center;border:1px solid ${BORDER}">REMARK</th>`
+      + (data.form.classAvg ? `<th style="padding:5px 3px;text-align:center;border:1px solid ${BORDER}">CLASS AVG</th>` : "")
+      + (data.form.highest ? `<th style="padding:5px 3px;text-align:center;border:1px solid ${BORDER}">HIGHEST</th>` : "")
+      + (data.form.remark ? `<th style="padding:5px 3px;text-align:center;border:1px solid ${BORDER}">REMARK</th>` : "")
       + `</tr></thead><tbody>`
       + data.rows.map((row, index) => {
         const bg = index % 2 === 0 ? WHITE : MINT;
         const hasCa = [row.ca1, row.ca2, row.ca3].some((value) => value !== "" && value !== null && value !== undefined);
         const ca = hasCa ? Math.min(30, (Number(row.ca1) || 0) + (Number(row.ca2) || 0) + (Number(row.ca3) || 0)) : "";
+        const cell = (value: unknown) => value !== "" && value !== null && value !== undefined ? esc(value) : "";
         const total = row.total;
         return `<tr style="background:${bg};${P}">`
           + `<td style="padding:4px 6px;border:1px solid ${BORDER};font-weight:600;color:${NAVY}">${esc(row.name)}</td>`
-          + `<td style="padding:4px 3px;text-align:center;border:1px solid ${BORDER}">${ca}</td>`
-          + `<td style="padding:4px 3px;text-align:center;border:1px solid ${BORDER}">${row.exam !== "" && row.exam !== null && row.exam !== undefined ? esc(row.exam) : ""}</td>`
+          + (threeCa
+            ? `<td style="padding:4px 2px;text-align:center;border:1px solid ${BORDER}">${cell(row.ca1)}</td>`
+              + `<td style="padding:4px 2px;text-align:center;border:1px solid ${BORDER}">${cell(row.ca2)}</td>`
+              + `<td style="padding:4px 2px;text-align:center;border:1px solid ${BORDER}">${cell(row.ca3)}</td>`
+            : `<td style="padding:4px 3px;text-align:center;border:1px solid ${BORDER}">${ca}</td>`)
+          + `<td style="padding:4px 3px;text-align:center;border:1px solid ${BORDER}">${cell(row.exam)}</td>`
           + `<td style="padding:4px 3px;text-align:center;border:1px solid ${BORDER};font-weight:700">${total !== "" ? total : ""}</td>`
           + `<td style="padding:4px 3px;text-align:center;border:1px solid ${BORDER};font-weight:700;color:${total !== "" ? gradeOf(total).c : "#999"}">${total !== "" ? gradeOf(total).g : ""}</td>`
-          + `<td style="padding:4px 3px;text-align:center;border:1px solid ${BORDER}">${row.classAvg !== "" ? row.classAvg : "--"}</td>`
-          + `<td style="padding:4px 3px;text-align:center;border:1px solid ${BORDER};color:#065f46;font-weight:600">${row.highest !== "" ? row.highest : "--"}</td>`
-          + `<td style="padding:4px 3px;text-align:center;border:1px solid ${BORDER};color:${total !== "" ? gradeOf(total).c : "#999"}">${total !== "" ? gradeOf(total).r : ""}</td>`
+          + (data.form.classAvg ? `<td style="padding:4px 3px;text-align:center;border:1px solid ${BORDER}">${row.classAvg !== "" ? row.classAvg : "--"}</td>` : "")
+          + (data.form.highest ? `<td style="padding:4px 3px;text-align:center;border:1px solid ${BORDER};color:#065f46;font-weight:600">${row.highest !== "" ? row.highest : "--"}</td>` : "")
+          + (data.form.remark ? `<td style="padding:4px 3px;text-align:center;border:1px solid ${BORDER};color:${total !== "" ? gradeOf(total).c : "#999"}">${total !== "" ? gradeOf(total).r : ""}</td>` : "")
           + `</tr>`;
       }).join("")
       + `</tbody></table>`;
@@ -317,9 +336,23 @@ export function cardPage(data: CardData, options: { autoPrint?: boolean; message
     .cardBio td[colspan]{padding:6px 10px!important}
     .cardBio td[style*="text-align:right"]{text-align:left!important;min-width:0;padding:2px 10px 6px!important}
   }
+  .panel{background:#fff;border-bottom:2px solid ${BORDER};padding:10px 16px;font-size:8.5pt;display:flex;flex-direction:column;gap:8px}
+  .panel[hidden]{display:none}
+  .panel .row{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center}
+  .panel strong{color:${NAVY};font-size:8.5pt;text-transform:uppercase;letter-spacing:.04em}
+  .panel label{display:flex;align-items:center;gap:5px;color:#334155}
+  .panel input[type=text],.panel select{border:1px solid #cbd5e1;border-radius:5px;padding:4px 6px;font:inherit;background:#fff;color:#111}
+  .panel input[type=text]{width:140px}
+  .panel input[type=file]{font-size:8pt}
+  .panel .save{border:0;border-radius:6px;padding:7px 16px;font:inherit;font-weight:700;background:${NAVY};color:#fff;cursor:pointer}
+  .panel .save:disabled{opacity:.6;cursor:default}
+  .panel .ghost{border:1px solid #cbd5e1;background:#fff;border-radius:6px;padding:5px 10px;font:inherit;color:#334155;cursor:pointer}
+  .panel .note{color:#475569}
+  .panel .note.bad{color:#b91c1c}
+  .panel img{height:34px;max-width:150px;object-fit:contain;border:1px dashed #cbd5e1;border-radius:4px;padding:2px;background:#fff}
   @media print{
     html,body{background:#fff}
-    .bar{display:none}
+    .bar,.panel{display:none}
     .sheet{padding:0}
     .report-card{box-shadow:none!important;max-width:none!important}
     table,tr,td,th{page-break-inside:avoid}
@@ -327,9 +360,99 @@ export function cardPage(data: CardData, options: { autoPrint?: boolean; message
 </style></head>
 <body>
 <div class="bar"><strong>${esc(data.student.name)} · ${esc(data.term)} · ${esc(data.session)}${options.message ? ` — ${esc(options.message)}` : ""}</strong>
+<button type="button" id="openForm">Card form</button>
+<button type="button" id="openSig">Signature</button>
 <button type="button" onclick="window.print()">Print / Save as PDF</button></div>
+<div class="panel" id="panel" hidden>
+  <div class="row"><strong>Card form</strong>
+    <label>CA columns
+      <select id="f-ca">
+        <option value="3"${Number(data.form.ca) === 3 ? " selected" : ""}>Three CA columns</option>
+        <option value="1"${Number(data.form.ca) === 1 ? " selected" : ""}>One CA total</option>
+      </select>
+    </label>
+    <label><input type="checkbox" id="f-classAvg"${data.form.classAvg ? " checked" : ""}/> Class average</label>
+    <label><input type="checkbox" id="f-highest"${data.form.highest ? " checked" : ""}/> Highest</label>
+    <label><input type="checkbox" id="f-remark"${data.form.remark ? " checked" : ""}/> Remark column</label>
+  </div>
+  <div class="row"><strong>Sections</strong>
+    ${(["showFees", "showAttendance", "showPsycho", "showNextTerm", "showSignature"] as const).map((key) => `<label><input type="checkbox" data-section="${key}"${data.sections[key] !== false ? " checked" : ""}/> ${CARD_SECTION_LABELS[key]}</label>`).join("")}
+  </div>
+  <div class="row"><strong>Signature</strong>
+    <label>Name <input type="text" id="s-name" maxlength="80" value="${esc(data.signature.name || "")}"/></label>
+    <label>Title <input type="text" id="s-title" maxlength="80" placeholder="Proprietor" value="${esc(data.signature.title || "")}"/></label>
+    <label>Image <input type="file" id="s-file" accept="image/png,image/jpeg"/></label>
+    <img id="s-preview" alt="" src="${esc(data.signature.image || "")}"${data.signature.image ? "" : " hidden"}/>
+    <button type="button" class="ghost" id="s-clear">Clear image</button>
+  </div>
+  <div class="row"><button type="button" class="save" id="save">Save changes</button><span class="note" id="note">Saved here shows on every card.</span></div>
+</div>
 <div class="sheet">${body}</div>
-<script>${options.autoPrint ? "window.addEventListener('load',function(){setTimeout(function(){window.print();},350);});" : ""}</script>
+<script>
+(function(){
+  var panel=document.getElementById('panel');
+  var note=document.getElementById('note');
+  var save=document.getElementById('save');
+  var preview=document.getElementById('s-preview');
+  var image='';
+  var clear=false;
+  function open(){
+    panel.hidden=false;
+    var bar=document.querySelector('.bar');
+    var top=panel.getBoundingClientRect().top+window.pageYOffset-(bar?bar.offsetHeight+6:0);
+    window.scrollTo({top:Math.max(0,top),behavior:'smooth'});
+  }
+  document.getElementById('openForm').addEventListener('click',open);
+  document.getElementById('openSig').addEventListener('click',open);
+  document.getElementById('s-clear').addEventListener('click',function(){image='';clear=true;preview.hidden=true;preview.removeAttribute('src');note.textContent='Signature image will be removed when you save.';note.className='note';});
+  document.getElementById('s-file').addEventListener('change',function(){
+    var file=this.files&&this.files[0];
+    if(!file)return;
+    var reader=new FileReader();
+    reader.onload=function(){
+      var img=new Image();
+      img.onload=function(){
+        var scale=Math.min(1,600/(img.width||600));
+        var canvas=document.createElement('canvas');
+        canvas.width=Math.max(1,Math.round(img.width*scale));
+        canvas.height=Math.max(1,Math.round(img.height*scale));
+        canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);
+        image=canvas.toDataURL('image/png');
+        clear=false;
+        preview.src=image;preview.hidden=false;
+        note.textContent='New signature ready. Save to keep it.';
+        note.className='note';
+      };
+      img.src=String(reader.result);
+    };
+    reader.readAsDataURL(file);
+  });
+  save.addEventListener('click',function(){
+    var sections={};
+    Array.prototype.forEach.call(document.querySelectorAll('[data-section]'),function(box){sections[box.getAttribute('data-section')]=box.checked;});
+    var body={
+      action:'card_config',
+      cardForm:{ca:Number(document.getElementById('f-ca').value),classAvg:document.getElementById('f-classAvg').checked,highest:document.getElementById('f-highest').checked,remark:document.getElementById('f-remark').checked},
+      sections:sections,
+      signature:{name:document.getElementById('s-name').value,title:document.getElementById('s-title').value}
+    };
+    if(image)body.signature.image=image;
+    else if(clear)body.signature.image='';
+    save.disabled=true;
+    note.textContent='Saving…';note.className='note';
+    fetch('/api/assistant',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+      .then(function(r){return r.json();})
+      .then(function(got){
+        if(got&&got.ok){note.textContent='Saved. Reloading…';location.reload();return;}
+        save.disabled=false;
+        note.textContent=(got&&got.code==='ASSISTANT_SIGNATURE_TOO_LARGE')?'That image is too large.':'Could not save. Try again.';
+        note.className='note bad';
+      })
+      .catch(function(){save.disabled=false;note.textContent='Could not save. Check the connection.';note.className='note bad';});
+  });
+  ${options.autoPrint ? "window.addEventListener('load',function(){setTimeout(function(){window.print();},350);});" : ""}
+})();
+</script>
 </body></html>`;
 }
 

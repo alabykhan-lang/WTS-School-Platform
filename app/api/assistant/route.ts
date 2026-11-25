@@ -3,7 +3,7 @@ import { NextRequest } from "next/server";
 import { callPrivilegedRpc, IdentityApiError, isSameOrigin, noStoreHeaders, resultErrorResponse } from "../identity/_lib";
 import { workspaceSessionFromRequest } from "../workspace-session/_lib";
 import { portalOrigins } from "../../../data/portal-config";
-import { autoRemark, cardErrorPage, cardPage, CARD_SECTIONS, gradeOf, totalOf, dateText } from "./card";
+import { autoRemark, cardErrorPage, cardPage, CARD_SECTION_LABELS, CARD_SECTIONS, gradeOf, totalOf, dateText } from "./card";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -500,6 +500,51 @@ async function saveUsage(current: CurrentSession, raw: unknown) {
   return results(current, "settings.app_config.update", { config: { ...(config || {}), assistant_usage: usage } });
 }
 
+/** The card's own settings: the signature and which parts of the card to print. */
+const CARD_FORM_DEFAULTS = { ca: 3, classAvg: true, highest: true, remark: true };
+
+async function saveCardConfig(current: CurrentSession, body: Record<string, unknown>) {
+  const read = await results(current, "settings.read", {});
+  if (!read?.ok) return read;
+  const config = { ...(((read.settings || {}) as Record<string, unknown>).app_config as Record<string, unknown> || {}) };
+
+  if (body.signature && typeof body.signature === "object") {
+    const supplied = body.signature as Record<string, unknown>;
+    const old = (config.signature || {}) as Record<string, unknown>;
+    const next: Record<string, string> = {};
+    const name = typeof supplied.name === "string" ? supplied.name.trim().slice(0, 80) : String(old.name || "");
+    const title = typeof supplied.title === "string" ? supplied.title.trim().slice(0, 80) : String(old.title || "Proprietor");
+    if (name) next.name = name;
+    next.title = title || "Proprietor";
+    if (supplied.image === "") next.image = "";
+    else if (typeof supplied.image === "string" && supplied.image.startsWith("data:image/")) {
+      if (supplied.image.length > 1_600_000) return { ok: false, code: "ASSISTANT_SIGNATURE_TOO_LARGE" };
+      next.image = supplied.image;
+    } else if (typeof old.image === "string" && old.image) next.image = old.image;
+    config.signature = next;
+  }
+
+  if (body.cardForm && typeof body.cardForm === "object") {
+    const supplied = body.cardForm as Record<string, unknown>;
+    const old = (config.cardForm || {}) as Record<string, unknown>;
+    config.cardForm = {
+      ca: Number(supplied.ca) === 1 ? 1 : Number(supplied.ca) === 3 ? 3 : Number(old.ca) === 1 ? 1 : 3,
+      classAvg: typeof supplied.classAvg === "boolean" ? supplied.classAvg : old.classAvg !== false,
+      highest: typeof supplied.highest === "boolean" ? supplied.highest : old.highest !== false,
+      remark: typeof supplied.remark === "boolean" ? supplied.remark : old.remark !== false,
+    };
+  }
+
+  if (body.sections && typeof body.sections === "object") {
+    const supplied = body.sections as Record<string, unknown>;
+    const sections = { ...((config.sections || {}) as Record<string, unknown>) };
+    for (const key of CARD_SECTIONS) if (typeof supplied[key] === "boolean") sections[key] = supplied[key];
+    config.sections = sections;
+  }
+
+  return results(current, "settings.app_config.update", { config });
+}
+
 function approvalToken(current: CurrentSession, proposal: Record<string, unknown>) {
   const body = b64(JSON.stringify({ ...proposal, expires: Date.now() + 5 * 60 * 1000 }));
   const signature = b64(createHmac("sha256", current.secret).update(body).digest());
@@ -545,7 +590,7 @@ function systemPrompt(current: CurrentSession) {
   const session = typeof academic.session === "string" ? academic.session : "";
   const term = typeof academic.term === "string" ? academic.term : "";
   const line = session && term ? `${SYSTEM_PROMPT} The live academic context is ${session}, ${term}; use it for result tools unless the proprietor names another.` : SYSTEM_PROMPT;
-  return `${line} When saving a score, send every component (ca1, ca2, ca3, exam), keeping the values already recorded for the ones not being changed. For contact questions call class_guardians once for the class straight away, without find_students first, instead of student_guardians per child, and say plainly when a number is missing rather than guessing. Do not call school_overview when the proprietor already named the class. Work in as few tool calls as you can: reuse what a tool already gave you instead of fetching it again, and stop and answer once you have enough. For any best-student, top-of-class or position question, call result_ranking once instead of reading subjects one by one; never rank from a single subject unless the proprietor names that subject. When asked for a report card, call report_card straight away with the class and the name as search (no student lookup first). Then reply in two or three short lines: the student, the class, the term and the total, and say the card is ready to print or save as PDF. Do not repeat the whole table unless the proprietor asks for the figures. Always call result_subjects before naming a subject, because score rows carry index numbers only. When exam marks are blank, say the figure is CA-only rather than calling it a term position. If the proprietor sent several short messages in a row, answer the newest one and mention the earlier points only in passing.`;
+  return `${line} When saving a score, send every component (ca1, ca2, ca3, exam), keeping the values already recorded for the ones not being changed. For contact questions call class_guardians once for the class straight away, without find_students first, instead of student_guardians per child, and say plainly when a number is missing rather than guessing. Do not call school_overview when the proprietor already named the class. Work in as few tool calls as you can: reuse what a tool already gave you instead of fetching it again, and stop and answer once you have enough. For any best-student, top-of-class or position question, call result_ranking once instead of reading subjects one by one; never rank from a single subject unless the proprietor names that subject. When asked for a report card, call report_card straight away with the class and the name as search (no student lookup first). Then reply in two or three short lines: the student, the class, the term and the total, and say the card is ready to print or save as PDF, and that the Card form and Signature buttons on the card change its layout and signature. Do not repeat the whole table unless the proprietor asks for the figures. Always call result_subjects before naming a subject, because score rows carry index numbers only. When exam marks are blank, say the figure is CA-only rather than calling it a term position. If the proprietor sent several short messages in a row, answer the newest one and mention the earlier points only in passing.`;
 }
 
 /** Photos and signatures arrive as base64 data URLs and would swamp the model context. */
@@ -1036,6 +1081,13 @@ async function cardDocument(current: CurrentSession, request: NextRequest) {
   const sessionCfg = (config?.sessionCfg || {}) as Record<string, unknown>;
   const resumeValue = sessionCfg.showResumption === false ? "" : feeRows[0]?.resume_date || feeRows[0]?.resume || sessionCfg.resumption;
   const passed = rows.filter((row) => row.total !== "" && Number(row.total) >= 40).length;
+  const rawForm = (config?.cardForm || {}) as Record<string, unknown>;
+  const form = {
+    ca: Number(rawForm.ca) === 1 ? 1 : 3,
+    classAvg: rawForm.classAvg !== false,
+    highest: rawForm.highest !== false,
+    remark: rawForm.remark !== false,
+  };
 
   const html = cardPage({
     student,
@@ -1050,6 +1102,7 @@ async function cardDocument(current: CurrentSession, request: NextRequest) {
       email: schools.email || "sambour12@gmail.com",
     },
     sections,
+    form,
     signature: (config?.signature || {}) as Record<string, string>,
     rows,
     count: classStudents.length,
@@ -1119,6 +1172,10 @@ export async function POST(request: NextRequest) {
     if (body.action === "usage") {
       const saved = await saveUsage(current, body.usage);
       return Response.json(saved, { headers: noStoreHeaders() });
+    }
+
+    if (body.action === "card_config") {
+      return Response.json(await saveCardConfig(current, body), { headers: noStoreHeaders() });
     }
 
     const suppliedKey = typeof body.provider_key === "string" ? body.provider_key.trim() : "";
