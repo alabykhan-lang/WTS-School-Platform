@@ -315,8 +315,17 @@ export function cardPage(data: CardData, options: { autoPrint?: boolean; message
   *{box-sizing:border-box}
   html,body{margin:0;padding:0;background:#eef2f5}
   body{font-family:${FONT};color:#111}
-  .bar{position:sticky;top:0;z-index:5;display:flex;gap:10px;align-items:center;padding:10px 16px;background:${NAVY};color:#fff;font-size:9pt}
-  .bar strong{flex:1;font-weight:600;color:${TEAL}}
+  .bar{position:sticky;top:0;z-index:5;display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:10px 16px;background:${NAVY};color:#fff;font-size:9pt}
+  .bar strong{grid-area:name;min-width:0;font-weight:600;color:${TEAL}}
+  .bar .acts{grid-area:acts;display:flex;gap:10px}
+  .bar .back{grid-area:back}
+  .lbl-short{display:none}
+  @media screen and (max-width:640px){
+    .bar{grid-template-columns:auto 1fr;grid-template-areas:"back name" "acts acts";gap:8px}
+    .bar .acts button{flex:1;padding:8px 6px;font-size:8.5pt}
+    .lbl-full{display:none}
+    .lbl-short{display:inline}
+  }
   .bar button{border:0;border-radius:6px;padding:8px 14px;font:inherit;font-weight:700;background:${TEAL};color:${NAVY};cursor:pointer}
   .bar a{color:#fff;font-size:8.5pt}
   .sheet{display:flex;justify-content:center;padding:14px;overflow-x:auto}
@@ -350,19 +359,23 @@ export function cardPage(data: CardData, options: { autoPrint?: boolean; message
   .panel .note{color:#475569}
   .panel .note.bad{color:#b91c1c}
   .panel img{height:34px;max-width:150px;object-fit:contain;border:1px dashed #cbd5e1;border-radius:4px;padding:2px;background:#fff}
+  .printing .bar,.printing .panel{display:none!important}
+  .printing .sheet{display:block;padding:0;overflow:visible}
+  .printing .report-card{box-shadow:none!important;max-width:none!important}
+  .back{display:flex;align-items:center;gap:4px;border:0;border-radius:6px;padding:8px 10px;font:inherit;font-weight:700;background:rgba(255,255,255,.14);color:#fff;cursor:pointer;text-decoration:none;white-space:nowrap}
   @media print{
     html,body{background:#fff}
-    .bar,.panel{display:none}
-    .sheet{padding:0}
+    .bar,.panel{display:none!important}
+    .sheet{display:block;padding:0;overflow:visible}
     .report-card{box-shadow:none!important;max-width:none!important}
     table,tr,td,th{page-break-inside:avoid}
   }
 </style></head>
 <body>
-<div class="bar"><strong>${esc(data.student.name)} · ${esc(data.term)} · ${esc(data.session)}${options.message ? ` — ${esc(options.message)}` : ""}</strong>
-<button type="button" id="openForm">Card form</button>
+<div class="bar"><a class="back" id="back" href="/assistant">← Back</a><strong>${esc(data.student.name)} · ${esc(data.term)} · ${esc(data.session)}${options.message ? ` — ${esc(options.message)}` : ""}</strong>
+<div class="acts"><button type="button" id="openForm">Card form</button>
 <button type="button" id="openSig">Signature</button>
-<button type="button" onclick="window.print()">Print / Save as PDF</button></div>
+<button type="button" onclick="window.print()"><span class="lbl-full">Print / Save as PDF</span><span class="lbl-short">Print</span></button></div></div>
 <div class="panel" id="panel" hidden>
   <div class="row"><strong>Card form</strong>
     <label>CA columns
@@ -450,7 +463,12 @@ export function cardPage(data: CardData, options: { autoPrint?: boolean; message
       })
       .catch(function(){save.disabled=false;note.textContent='Could not save. Check the connection.';note.className='note bad';});
   });
-  ${options.autoPrint ? "window.addEventListener('load',function(){setTimeout(function(){window.print();},350);});" : ""}
+  var back=document.getElementById('back');
+  var chat=new URLSearchParams(location.search).get('chat');
+  if(chat)back.href='/assistant?chat='+encodeURIComponent(chat);
+  window.addEventListener('beforeprint',function(){document.body.classList.add('printing');});
+  window.addEventListener('afterprint',function(){document.body.classList.remove('printing');});
+  ${options.autoPrint ? "window.addEventListener('load',function(){var go=function(){document.body.classList.add('printing');setTimeout(function(){window.print();},250);};if(document.fonts&&document.fonts.ready)document.fonts.ready.then(go);else go();});" : ""}
 })();
 </script>
 </body></html>`;

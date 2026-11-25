@@ -264,7 +264,10 @@ export function ProprietorAssistant() {
         } catch { list = []; }
         if (!list.length) list = [{ id: crypto.randomUUID(), title: "New chat", messages: [], updatedAt: Date.now() }];
         setThreads(list);
-        setActiveId(list[0].id);
+        const wantedChat = new URLSearchParams(window.location.search).get("chat");
+        const backTo = list.find((item) => item.id === wantedChat);
+        setActiveId(backTo ? backTo.id : list[0].id);
+        if (wantedChat) window.history.replaceState(null, "", window.location.pathname);
       })
       .catch((error) => {
         const code = error instanceof Error ? error.message : "";
@@ -392,7 +395,7 @@ export function ProprietorAssistant() {
   /** The assistant serves the card itself, in the portal's design, and prints it. */
   function openCard(doc?: CardDoc, portal = false) {
     if (!doc?.student) { printDocument(); return; }
-    const query = new URLSearchParams({ card: doc.student, class: doc.classKey, term: doc.term || "", session: doc.session || "", print: "1" });
+    const query = new URLSearchParams({ card: doc.student, class: doc.classKey, term: doc.term || "", session: doc.session || "", print: "1", chat: activeThread?.id || "" });
     const href = portal
       ? `${(config?.results_url || "https://wts-result-system.vercel.app").replace(/\/$/, "")}/portal_core.html?${query}`
       : `/api/assistant?${query}`;
