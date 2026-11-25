@@ -25,11 +25,25 @@ const STARTERS = [
   "Show today's staff on duty.",
 ];
 
+/** Provider errors arrive as raw JSON; keep the one sentence the provider sent. */
+function saidText(raw: unknown) {
+  const text = String(raw || "").trim();
+  if (!text) return "";
+  try {
+    const raw = JSON.parse(text) as unknown;
+    const parsed = (Array.isArray(raw) ? raw[0] : raw) as { error?: { message?: string } | string; message?: string } | undefined;
+    const inner = typeof parsed?.error === "string" ? parsed.error : parsed?.error?.message || parsed?.message || "";
+    if (inner) return ` ${inner}`;
+  } catch { /* not JSON */ }
+  return ` ${text.slice(0, 200)}`;
+}
+
 const ERRORS: Record<string, string> = {
   ASSISTANT_MODEL_KEY_REJECTED: "The API key was rejected. Check the key in Models.",
   ASSISTANT_MODEL_NOT_FOUND: "The model name was not found. Check the model ID in Models.",
   ASSISTANT_MODEL_UNAVAILABLE: "This key cannot reach that model. Fetch the models the key supports and pick one.",
   ASSISTANT_MODEL_RATE_LIMITED: "The provider is limiting requests. Wait a moment and try again.",
+  ASSISTANT_MODEL_BUSY: "The provider is busy right now. Try again in a moment, or pick another model.",
   ASSISTANT_MODEL_TIMEOUT: "The model took too long to answer. Try again.",
   ASSISTANT_MODEL_UNREACHABLE: "The provider could not be reached from the school server.",
   ASSISTANT_MODEL_GATEWAY_NOT_CONFIGURED: "Add a model API key in Models.",
@@ -175,7 +189,7 @@ export function ProprietorAssistant() {
   const [savedFlash, setSavedFlash] = useState(false);
   const [modelList, setModelList] = useState<string[]>([]);
   const [fetchingModels, setFetchingModels] = useState(false);
-  const [probe, setProbe] = useState<Record<string, "testing" | "works" | "failed">>({});
+  const [probe, setProbe] = useState<Record<string, "testing" | "works" | "failed" | "busy">>({});
   const endRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -302,7 +316,7 @@ export function ProprietorAssistant() {
     try {
       const response = await fetch("/api/assistant", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "test", model: id, provider_key: key, provider_url: url }) });
       const value = await response.json();
-      setProbe((current) => ({ ...current, [id]: value?.ok ? "works" : "failed" }));
+      setProbe((current) => ({ ...current, [id]: value?.ok ? "works" : value?.code === "ASSISTANT_MODEL_BUSY" || value?.code === "ASSISTANT_MODEL_RATE_LIMITED" ? "busy" : "failed" }));
     } catch { setProbe((current) => ({ ...current, [id]: "failed" })); }
   }
 
@@ -343,7 +357,7 @@ export function ProprietorAssistant() {
       const value = await response.json();
       if (value?.ok) setTest({ state: "pass", message: `Connected in ${value.ms} ms. The key and model work.` });
       else if (value?.code === "ASSISTANT_MODEL_UNAVAILABLE") { setTest({ state: "fail", message: ERRORS[value.code] }); await fetchModels(); }
-      else setTest({ state: "fail", message: value?.detail ? `${ERRORS[value.code] || "Connection failed."} ${value.detail}` : ERRORS[value?.code] || "Connection failed." });
+      else setTest({ state: "fail", message: `${ERRORS[value?.code] || "Connection failed."}${saidText(value?.detail)}` });
     } catch {
       setTest({ state: "fail", message: "The test could not run. Check your connection." });
     }
@@ -419,8 +433,7 @@ export function ProprietorAssistant() {
       const value = await response.json();
       if (!response.ok || !value?.ok) {
         const code = String(value?.code || "ASSISTANT_REQUEST_FAILED");
-        const said = String(value?.detail || "").trim().slice(0, 180);
-        throw new Error(`${ERRORS[code] || "The request failed."} The server was ${host}.${said ? ` It said: ${said}` : ""}`);
+        throw new Error(`${ERRORS[code] || "The request failed."}${saidText(value?.detail)}`);
       }
       updateThread(threadId, [...updated, { role: "assistant", content: String(value.text || "Done."), document: value.document === true }]);
       if (value.approval?.approval_token) setApproval({ token: value.approval.approval_token, summary: value.approval.summary || "Confirm this change." });
@@ -435,7 +448,7 @@ export function ProprietorAssistant() {
         : error instanceof Error && error.message && !error.message.startsWith("ASSISTANT_")
           ? error.message
           : `${ERRORS["ASSISTANT_REQUEST_FAILED"]} The server was ${host}.`;
-      setNotice(failed);
+      setNotice("The last answer failed. Send it again, or pick another model in Models.");
       updateThread(threadId, [...updated, { role: "assistant", content: failed, failed: true }]);
     } finally { window.clearTimeout(stop); setBusy(false); }
   }
@@ -559,14 +572,14 @@ export function ProprietorAssistant() {
         </div>
         <div className="assistantCard">
           <h2>Available models</h2>
-          <p className="assistantMuted">List models to see what this key can reach, then test any of them. A green Works mark means that model answered.</p>
+          <p className="assistantMuted">List models to see what this key can reach, then test any of them. Green means that model answered; amber means the provider is busy, so try again later.</p>
           <div className="assistantModelList">
             {(modelList.length ? modelList.map((id) => ({ id, label: settings.models.find((model) => model.id === id)?.label || id })) : settings.models).map((model) => {
               const state = probe[model.id];
               return <div key={model.id} className={`assistantModelRow ${state || ""}`}>
                 <div className="assistantModelBody">
                   <b>{model.label}</b>
-                  <small>{model.id}{form.id === model.id ? " · chosen" : settings.defaultModel === model.id ? " · in use" : ""}{state === "works" ? " · works" : state === "failed" ? " · failed" : ""}</small>
+                  <small>{model.id}{form.id === model.id ? " · chosen" : settings.defaultModel === model.id ? " · in use" : ""}{state === "works" ? " · works" : state === "busy" ? " · busy, try again" : state === "failed" ? " · failed" : ""}</small>
                 </div>
                 <button type="button" className="assistantModelPick" onClick={() => useModel(model.id)}>{form.id === model.id ? "Chosen" : "Use"}</button>
                 <button type="button" className="assistantModelTest" onClick={() => testModel(model.id)} disabled={state === "testing"}>{state === "testing" ? "…" : "Test"}</button>

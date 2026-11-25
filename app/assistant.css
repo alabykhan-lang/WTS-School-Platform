@@ -132,6 +132,7 @@
 .assistantModelBody small { display: block; margin-top: 3px; font-size: 11px; color: #86999f; word-break: break-all; }
 .assistantModelRow.works { border-color: #9ccfba; background: #f4fbf7; }
 .assistantModelRow.failed { border-color: #e5bdb8; background: #fff7f6; }
+.assistantModelRow.busy { border-color: #e8d5a8; background: #fffbf1; }
 .assistantModelPick, .assistantModelTest { flex: none; border: 1px solid #c8d8d4; background: #fff; color: #2c5566; border-radius: 8px; padding: 6px 10px; font: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer; }
 .assistantModelTest { color: #0b5a44; }
 .assistantModelPick:hover, .assistantModelTest:hover { border-color: #0b5a44; }

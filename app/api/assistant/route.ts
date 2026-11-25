@@ -602,15 +602,18 @@ type ModelSettings = { key: string; url: string; model: string; label: string; e
 
 function providerFailure(status: number, detail: string): GatewayFailure {
   const channelMissing = /no available channel|no channel for model|model not available|not available for/i.test(detail);
+  const badKey = status === 400 && /api key|invalid key|unauthori[sz]ed|authentication/i.test(detail);
   const code = channelMissing
     ? "ASSISTANT_MODEL_UNAVAILABLE"
-    : status === 401 || status === 403
+    : status === 401 || status === 403 || badKey
       ? "ASSISTANT_MODEL_KEY_REJECTED"
       : status === 404
         ? "ASSISTANT_MODEL_NOT_FOUND"
         : status === 429
           ? "ASSISTANT_MODEL_RATE_LIMITED"
-          : "ASSISTANT_MODEL_REQUEST_FAILED";
+          : status === 503
+            ? "ASSISTANT_MODEL_BUSY"
+            : "ASSISTANT_MODEL_REQUEST_FAILED";
   return { ok: false, status, code, detail: detail.slice(0, 400) };
 }
 
@@ -735,13 +738,20 @@ async function askProvider(url: string, settings: ModelSettings, style: Style, h
     : body;
   let response: Response;
   try {
-    response = await fetch(url, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${settings.key}`, "Content-Type": "application/json", "User-Agent": "opencode/1.18.0" },
-      body: JSON.stringify({ model: settings.model, temperature: 0.2, ...tuned }),
-      cache: "no-store",
-      signal: AbortSignal.timeout(Math.max(6000, budgetMs)),
-    });
+    // A provider that is briefly busy usually answers on the next try, so
+    // retry 429/5xx twice before reporting a failure.
+    for (let attempt = 0; ; attempt += 1) {
+      response = await fetch(url, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${settings.key}`, "Content-Type": "application/json", "User-Agent": "opencode/1.18.0" },
+        body: JSON.stringify({ model: settings.model, temperature: 0.2, ...tuned }),
+        cache: "no-store",
+        signal: AbortSignal.timeout(Math.max(6000, budgetMs)),
+      });
+      const transient = response.status === 429 || response.status === 503 || response.status === 500 || response.status === 502 || response.status === 504;
+      if (!transient || attempt >= 2) break;
+      await new Promise((resolve) => setTimeout(resolve, attempt === 0 ? 900 : 2200));
+    }
   } catch (caught) {
     const timedOut = caught instanceof Error && (caught.name === "TimeoutError" || caught.name === "AbortError");
     return { failure: { ok: false, status: timedOut ? 504 : 502, code: timedOut ? "ASSISTANT_MODEL_TIMEOUT" : "ASSISTANT_MODEL_UNREACHABLE", detail: timedOut ? "The provider did not answer in time." : "The provider could not be reached from the school server." } as GatewayFailure };
@@ -750,8 +760,10 @@ async function askProvider(url: string, settings: ModelSettings, style: Style, h
   let payload: Record<string, unknown> | null = null;
   try { payload = JSON.parse(text) as Record<string, unknown>; } catch { payload = null; }
   if (!response.ok || !payload) {
-    const provider = payload?.error && typeof payload.error === "object" ? payload.error as Record<string, unknown> : null;
-    const detail = String(provider?.message || payload?.message || text || `Provider replied ${response.status}`).trim();
+    // Some providers wrap the error in a one-item array, e.g. Google.
+    const record = Array.isArray(payload) ? payload[0] as Record<string, unknown> | undefined : payload;
+    const provider = record?.error && typeof record.error === "object" ? record.error as Record<string, unknown> : null;
+    const detail = String(provider?.message || record?.message || text || `Provider replied ${response.status}`).trim();
     if (response.status === 400 && settings.effort && !retriedEffort && /effort|reasoning|unknown|unexpected|unsupported/i.test(detail)) {
       return askProvider(url, { ...settings, effort: "" }, style, history, budgetMs, noTools, true);
     }
@@ -907,7 +919,7 @@ export async function POST(request: NextRequest) {
 
     const suppliedKey = typeof body.provider_key === "string" ? body.provider_key.trim() : "";
     const suppliedUrl = readProviderUrl(body.provider_url);
-    const suppliedModel = typeof body.model === "string" ? body.model.trim() : "";
+    const suppliedModel = typeof body.model === "string" ? body.model.trim().replace(/^models\//, "") : "";
     if ((suppliedKey || suppliedUrl) && !isAdmin) throw new IdentityApiError("ASSISTANT_ADMIN_REQUIRED", 403);
     if (suppliedKey && suppliedKey.length > 500) throw new IdentityApiError("ASSISTANT_PROVIDER_KEY_INVALID", 400);
     if (suppliedModel && suppliedModel.length > 120) throw new IdentityApiError("ASSISTANT_MODEL_NOT_AVAILABLE", 400);
