@@ -1305,7 +1305,7 @@ export async function POST(request: NextRequest) {
             document: { student: String(person.id || ""), classKey: String(person.class_key || ask.classKey), term: String(made.term || ""), session: String(made.academic_session || ""), name: String(person.name || "") },
           }, { headers: noStoreHeaders() });
         }
-      } catch { /* fall through to the model, which can explain it */ }
+      } catch (caught) { console.error("card-fast", (caught as Error)?.message || String(caught)); }
     }
 
     const result = await gateway(messages, settings, current);
