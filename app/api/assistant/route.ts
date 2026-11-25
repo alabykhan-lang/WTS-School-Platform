@@ -1288,6 +1288,7 @@ export async function POST(request: NextRequest) {
     const ask = lastUser && typeof (lastUser as Record<string, unknown>).content === "string"
       ? cardAsk(String((lastUser as Record<string, unknown>).content))
       : null;
+    let fastError = "";
     if (ask) {
       try {
         const made = await reportCard(current, { classKey: ask.classKey, search: ask.search });
@@ -1305,14 +1306,14 @@ export async function POST(request: NextRequest) {
             document: { student: String(person.id || ""), classKey: String(person.class_key || ask.classKey), term: String(made.term || ""), session: String(made.academic_session || ""), name: String(person.name || "") },
           }, { headers: noStoreHeaders() });
         }
-      } catch (caught) { console.error("card-fast", (caught as Error)?.message || String(caught)); }
+      } catch (caught) { fastError = (caught as Error)?.message || String(caught); }
     }
 
     const result = await gateway(messages, settings, current);
     if (!result.ok) {
       return Response.json({ ok: false, code: result.code, detail: result.detail, model: settings.model }, { status: 200, headers: noStoreHeaders() });
     }
-    return Response.json({ ok: true, model: settings.model, text: result.text, usage: result.usage, approval: result.approval, steps: result.steps, document: result.document }, { headers: noStoreHeaders() });
+    return Response.json({ ok: true, model: settings.model, text: result.text, usage: result.usage, approval: result.approval, steps: result.steps, document: result.document, fast_error: fastError || undefined }, { headers: noStoreHeaders() });
   } catch (caught) {
     return resultErrorResponse(caught);
   }
