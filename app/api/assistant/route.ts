@@ -888,12 +888,12 @@ function pendingWrites(name: string, args: Record<string, unknown>) {
 }
 
 /** One short, exact sentence of what the tap will change. */
-function pendingSummary(name: string, args: Record<string, unknown>) {
+function pendingSummary(name: string, args: Record<string, unknown>, label: { who?: string; where?: string } = {}) {
   const payload = (args.payload && typeof args.payload === "object" ? args.payload : {}) as Record<string, unknown>;
   if (name === "results_request") {
     const action = String(args.action || "");
-    const who = String(payload.student_id || payload.name || payload.admno || "the record");
-    const where = [payload.class_key, payload.term, payload.subject_index === undefined ? "" : `subject ${payload.subject_index}`].filter(Boolean).join(", ");
+    const who = label.who || String(payload.student_id || payload.name || payload.admno || "the record");
+    const where = label.where || [payload.class_key, payload.term, payload.subject_index === undefined ? "" : `subject ${payload.subject_index}`].filter(Boolean).join(", ");
     if (action === "scores.enter") return `Save marks for ${who}${where ? ` — ${where}` : ""}: CA1 ${payload.ca1 ?? "blank"}, CA2 ${payload.ca2 ?? "blank"}, CA3 ${payload.ca3 ?? "blank"}, exam ${payload.exam ?? "blank"}.`;
     if (action === "traits.enter") return `Save the trait "${payload.trait_name || "trait"}" (${payload.rating ?? "blank"}) for ${who}${where ? ` — ${where}` : ""}.`;
     if (action === "remarks.enter") {
@@ -952,12 +952,27 @@ async function verifyWrite(name: string, args: Record<string, unknown>, current:
   return record;
 }
 
+/** Read a person's name and class so the confirmation reads like a person, not an id. */
+async function cardLabel(name: string, args: Record<string, unknown>, current: CurrentSession) {
+  const payload = (args.payload && typeof args.payload === "object" ? args.payload : {}) as Record<string, unknown>;
+  const label: { who?: string; where?: string } = {};
+  if (name === "results_request" && payload.student_id) {
+    const read = await registry(current, "read", "student", { studentId: String(payload.student_id) }).catch(() => null);
+    const found = (Array.isArray(read?.students) ? read.students[0] : read?.student) as Record<string, unknown> | undefined;
+    if (found?.name) label.who = String(found.name);
+    const classKey = classKeyOf(found?.class_key || payload.class_key);
+    if (classKey) label.where = [classLabel(classKey), payload.term].filter(Boolean).join(", ");
+  }
+  return label;
+}
+
 async function executeTool(name: string, args: Record<string, unknown>, current: CurrentSession, confirmed = false) {
   if (pendingWrites(name, args) && !confirmed) {
+    const label = await cardLabel(name, args, current);
     const token = approvalToken(current, { tool: name, args });
     return {
       requires_confirmation: true,
-      summary: pendingSummary(name, args),
+      summary: pendingSummary(name, args, label),
       tool: name,
       args,
       token,
@@ -1486,7 +1501,7 @@ async function approve(token: string, current: CurrentSession) {
   const tool = String(proposal.tool || "");
   const args = (proposal.args && typeof proposal.args === "object" ? proposal.args : {}) as Record<string, unknown>;
   if (!tool) throw new IdentityApiError("ASSISTANT_TOOL_NOT_FOUND", 403);
-  const summary = pendingSummary(tool, args);
+  const summary = pendingSummary(tool, args, await cardLabel(tool, args, current));
   const result = await executeTool(tool, args, current, true);
   if ((result as Record<string, unknown>).requires_confirmation === true) throw new IdentityApiError("APPROVAL_INVALID", 400);
   return { summary, tool, result };
