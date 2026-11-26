@@ -1228,8 +1228,8 @@ async function verifyWrite(name: string, args: Record<string, unknown>, current:
     if (name === "results_request" && String(args.action) === "scores.enter") {
       const call = await openResults(current);
       // The sheet read needs the class, term and session in session context first.
-      await call("context.set", { class_key: payload.class_key, academic_session: payload.academic_session, term: payload.term });
-      let debug = "";
+      const ctx = await call("context.set", { class_key: payload.class_key, academic_session: payload.academic_session, term: payload.term });
+      let debug = `ctx=${String((ctx as Record<string, unknown>)?.code || "ok")} cl=${String(payload.class_key)} t=${String(payload.term)} s=${String(payload.academic_session)};`;
       const found = await verifyRow(async () => {
         const read = await call("read.scores", {
           class_key: payload.class_key,
@@ -1239,7 +1239,7 @@ async function verifyWrite(name: string, args: Record<string, unknown>, current:
           academic_session: payload.academic_session,
         });
         const rows = Array.isArray(read?.rows) ? read.rows as Record<string, unknown>[] : [];
-        debug = `${String((read as Record<string, unknown>)?.code || "no-code")}|${rows.length}|${read && typeof read === "object" ? Object.keys(read).join(",") : typeof read}`;
+        debug += `${String((read as Record<string, unknown>)?.code || "no-code")}|${rows.length}`;
         return rows.find((item) => String(item.student_id) === String(payload.student_id) && Number(item.subject_index) === Number(payload.subject_index)) || null;
       }, (row) => sameMark(row.ca1, payload.ca1) && sameMark(row.ca2, payload.ca2) && sameMark(row.ca3, payload.ca3) && sameMark(row.exam, payload.exam));
       const row = found.row;
