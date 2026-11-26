@@ -1,5 +1,5 @@
-import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import { NextRequest } from "next/server";
+import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
+import { after, NextRequest } from "next/server";
 import { callPrivilegedRpc, IdentityApiError, isSameOrigin, noStoreHeaders, resultErrorResponse } from "../identity/_lib";
 import { workspaceSessionFromRequest } from "../workspace-session/_lib";
 import { portalOrigins } from "../../../data/portal-config";
@@ -211,64 +211,6 @@ async function guardiansFor(call: (kind: "read" | "write", action: string, paylo
   return list;
 }
 
-/** Every guardian and phone contact for a class, gathered for a whole roster in one tool call. */
-async function classGuardians(current: CurrentSession, args: Record<string, unknown>) {
-  const call = await openRegistry(current);
-  const roster = await call("read", "students", { classKey: args.classKey ? classKeyOf(args.classKey) : null, status: "active" });
-  if (!roster.ok) return roster;
-  const all = (Array.isArray(roster.students) ? roster.students : []) as Record<string, unknown>[];
-  const limit = Math.max(1, Math.min(200, Number(args.limit) || 200));
-  const slice = all.slice(0, limit);
-  const lists = new Map<string, Record<string, unknown>[]>();
-  let cursor = 0;
-  const worker = async () => {
-    while (cursor < slice.length) {
-      const index = cursor++;
-      const student = slice[index];
-      lists.set(String(student.id), await guardiansFor(call, current, String(student.id)));
-    }
-  };
-  await Promise.all(Array.from({ length: Math.min(10, slice.length) }, worker));
-  const rows: Record<string, unknown>[] = [];
-  let withPhone = 0;
-  let withConsent = 0;
-  for (const student of slice) {
-    const list = lists.get(String(student.id)) || [];
-    if (list.some((item) => item.primaryPhone || item.whatsappPhone)) withPhone += 1;
-    if (list.some((item) => item.notificationConsent)) withConsent += 1;
-    rows.push({
-      name: String(student.name || ""),
-      admno: String(student.admno || ""),
-      guardians: list.map((item) => ({
-        name: String(item.fullName || ""),
-        relationship: String(item.relationship || ""),
-        phone: String(item.primaryPhone || ""),
-        whatsapp: String(item.whatsappPhone || ""),
-        email: String(item.email || ""),
-        consent: item.notificationConsent === true,
-        primary: item.isPrimary === true,
-      })),
-    });
-  }
-  return {
-    ok: true,
-    class_key: String(args.classKey || "all classes"),
-    counted: slice.length,
-    total_in_scope: all.length,
-    truncated: all.length > slice.length,
-    students_with_a_phone: withPhone,
-    students_with_contact_consent: withConsent,
-    missing_phone: rows.filter((row) => !(row.guardians as unknown[]).some((item) => (item as Record<string, unknown>).phone)).map((row) => row.name),
-    rows,
-  };
-}
-
-/**
- * The result portal remembers the open class/term/session *per session*, so a
- * read of scores or a score write must set that context on the very same
- * session first. Each call here mints one shared session and lets the caller
- * run several actions on it.
- */
 async function openResults(current: CurrentSession) {
   const session = await mintAppSession(current, "results");
   return async (action: string, payload: Record<string, unknown> = {}) => {
@@ -323,95 +265,6 @@ async function withAcademicContext(current: CurrentSession, payload: Record<stri
     class_key: payload.class_key ? classKeyOf(payload.class_key) : payload.class_key,
     term: payload.term || live.term || null,
     academic_session: payload.academic_session || live.session || null,
-  };
-}
-
-const CONTEXT_BOUND_ACTIONS = new Set(["scores.enter", "traits.enter", "remarks.enter"]);
-
-/** Open the class/term/session on the session, then run the action on that same session. */
-async function resultsInContext(current: CurrentSession, action: string, payload: Record<string, unknown>) {
-  const call = await openResults(current);
-  const scoped = await withAcademicContext(current, payload);
-  if (scoped.class_key && scoped.term && scoped.academic_session) {
-    await call("context.set", { class_key: scoped.class_key, academic_session: scoped.academic_session, term: scoped.term });
-  }
-  return call(action, scoped);
-}
-
-/** One call that returns a whole class ranked on everything recorded, so answers are not guesses from one subject. */
-async function classRanking(current: CurrentSession, args: Record<string, unknown>) {
-  const call = await openResults(current);
-  const payload = await withAcademicContext(current, { class_key: args.classKey });
-  if (!payload.class_key || !payload.term || !payload.academic_session) {
-    return { ok: false, code: "RESULT_ACADEMIC_CONTEXT_REQUIRED", detail: "A class, term and session are needed." };
-  }
-  await call("context.set", { class_key: payload.class_key, academic_session: payload.academic_session, term: payload.term });
-  const summary = await call("read.result_summary", payload);
-  if (!summary.ok) return summary;
-  const subjectsCall = await call("read.subjects", { class_key: payload.class_key });
-  const names = new Map<number, string>();
-  for (const row of (Array.isArray(subjectsCall?.rows) ? subjectsCall.rows : []) as Record<string, unknown>[]) {
-    names.set(Number(row.subject_index), String(row.subject_name || ""));
-  }
-  const bag = (summary.summary || {}) as { students?: Record<string, unknown>[]; scores?: Record<string, unknown>[] };
-  const byStudent = new Map<string, Record<string, unknown>[]>();
-  for (const row of bag.scores || []) {
-    const id = String(row.student_id || "");
-    if (!id) continue;
-    byStudent.set(id, [...(byStudent.get(id) || []), row]);
-  }
-  const limit = Math.max(1, Math.min(50, Number(args.limit) || 10));
-  const scored = (bag.students || []).map((student) => {
-    const rows = byStudent.get(String(student.id)) || [];
-    const subjects = new Map<number, { ca: string[]; exam: number | null }>();
-    let total = 0;
-    let max = 0;
-    for (const row of rows) {
-      const index = Number(row.subject_index);
-      const entry = subjects.get(index) || { ca: [] as string[], exam: null as number | null };
-      for (const part of ["ca1", "ca2", "ca3"] as const) {
-        const value = row[part];
-        if (value !== null && value !== undefined && value !== "") {
-          total += Number(value) || 0;
-          max += 10;
-          entry.ca.push(`${part.toUpperCase()} ${value}`);
-        }
-      }
-      const exam = row.exam;
-      if (exam !== null && exam !== undefined && exam !== "") {
-        total += Number(exam) || 0;
-        max += 70;
-        entry.exam = Number(exam);
-      }
-      subjects.set(index, entry);
-    }
-    return {
-      name: String(student.name || "Unknown"),
-      admno: String(student.admno || ""),
-      recorded: total,
-      possible: max,
-      percent: max ? Math.round((total / max) * 1000) / 10 : 0,
-      exam_missing: [...subjects.values()].every((entry) => entry.exam === null),
-      subject_count: [...subjects.keys()].length,
-    };
-  }).sort((a, b) => b.percent - a.percent || b.recorded - a.recorded);
-  let last = -1;
-  let rank = 0;
-  const ranked = scored.map((row, index) => {
-    if (row.percent !== last) { rank = index + 1; last = row.percent; }
-    return { rank, ...row };
-  });
-  const blankExam = ranked.filter((row) => row.exam_missing).length;
-  return {
-    ok: true,
-    class_key: payload.class_key,
-    term: payload.term,
-    academic_session: payload.academic_session,
-    basis: "Every recorded CA and exam mark, weighted by the marks actually recorded, so a blank exam does not sink a student who has CA only.",
-    class_size: ranked.length,
-    students_with_no_exam: blankExam,
-    subjects_with_names: [...names.entries()].slice(0, 40).map(([index, name]) => `${index}: ${name}`),
-    ranked: ranked.slice(0, limit),
   };
 }
 
@@ -609,31 +462,21 @@ function readApproval(current: CurrentSession, token: string) {
 
 const tools = [
   { type: "function", function: { name: "school_overview", description: "Read the current school dashboard and academic context.", parameters: { type: "object", properties: {} } } },
-  { type: "function", function: { name: "find_students", description: "Search active or archived students by name, admission number, or class.", parameters: { type: "object", properties: { search: { type: "string" }, classKey: { type: "string" }, status: { type: "string", enum: ["active", "archived", "all"] } } } } },
-  { type: "function", function: { name: "student_record", description: "Read one student's complete central-registry record by id.", parameters: { type: "object", required: ["studentId"], properties: { studentId: { type: "string" } } } } },
-  { type: "function", function: { name: "student_guardians", description: "Read the guardians of one student with their phone, WhatsApp, email and contact consent.", parameters: { type: "object", required: ["studentId"], properties: { studentId: { type: "string" } } } } },
-  { type: "function", function: { name: "class_guardians", description: "Read guardians and phone contacts for a whole class in one call, with a count of who has no phone. Use this for contact lists, never one student at a time, and call it once.", parameters: { type: "object", required: ["classKey"], properties: { classKey: { type: "string" }, limit: { type: "integer" } } } } },
+  { type: "function", function: { name: "find_students", description: "List active students in a class or search active students by name or admission number. Always pass classKey when listing a class.", parameters: { type: "object", properties: { search: { type: "string" }, classKey: { type: "string" } } } } },
+  { type: "function", function: { name: "student_record", description: "Read one student's complete record by id, including guardian contacts.", parameters: { type: "object", required: ["studentId"], properties: { studentId: { type: "string" } } } } },
   { type: "function", function: { name: "staff_directory", description: "Read the staff directory and active assignments.", parameters: { type: "object", properties: { search: { type: "string" } } } } },
-  { type: "function", function: { name: "result_students", description: "Read students and result context for a class.", parameters: { type: "object", required: ["classKey"], properties: { classKey: { type: "string" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
-  { type: "function", function: { name: "result_subjects", description: "List the subject slots (index and subject name) for a class. Use this before reading or writing scores so you can name the subject.", parameters: { type: "object", required: ["classKey"], properties: { classKey: { type: "string" } } } } },
-  { type: "function", function: { name: "result_scores", description: "Read score rows for a class. Leave subjectIndex out to get every subject in one call; pass it to narrow to one subject.", parameters: { type: "object", required: ["classKey"], properties: { classKey: { type: "string" }, subjectIndex: { type: "integer" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
-  { type: "function", function: { name: "result_ranking", description: "Rank every student in a class on all recorded components at once (CA and exam, weighted by what is actually recorded). Use this for best student, top of class, or position questions instead of ranking one subject.", parameters: { type: "object", required: ["classKey"], properties: { classKey: { type: "string" }, limit: { type: "integer" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
-  { type: "function", function: { name: "report_card", description: "Build a printable report card for one student in the portal's own layout. Pass the class and the student's name or admission number; it finds the student itself, so no search call is needed. Call this first for any report card request, before find_students. The proprietor gets a button that opens the finished card to print or save as PDF, so keep your reply to a short confirmation with the student, class, term and total.", parameters: { type: "object", required: ["classKey"], properties: { classKey: { type: "string" }, studentId: { type: "string" }, search: { type: "string", description: "Student name or admission number" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
-  { type: "function", function: { name: "create_student", description: "Prepare creation of a new student. Always requires proprietor confirmation before it changes records.", parameters: { type: "object", required: ["name", "classKey"], properties: { name: { type: "string" }, classKey: { type: "string" }, gender: { type: "string" }, house: { type: "string" }, age: { type: "string" }, admissionDate: { type: "string" } } } } },
-  { type: "function", function: { name: "update_student", description: "Prepare a student record change. Always requires proprietor confirmation.", parameters: { type: "object", required: ["studentId"], properties: { studentId: { type: "string" }, name: { type: "string" }, classKey: { type: "string" }, gender: { type: "string" }, house: { type: "string" }, age: { type: "string" } } } } },
-  { type: "function", function: { name: "archive_student", description: "Prepare student archival. Always requires proprietor confirmation and a reason.", parameters: { type: "object", required: ["studentId", "reason"], properties: { studentId: { type: "string" }, reason: { type: "string" }, lifecycleStatus: { type: "string", enum: ["archived", "withdrawn", "transferred", "graduated", "suspended"] } } } } },
-  { type: "function", function: { name: "enter_score", description: "Prepare a student score change. Always requires proprietor confirmation.", parameters: { type: "object", required: ["studentId", "classKey", "subjectIndex", "term", "academicSession"], properties: { studentId: { type: "string" }, classKey: { type: "string" }, subjectIndex: { type: "integer" }, term: { type: "string" }, academicSession: { type: "string" }, ca1: { type: ["number", "null"] }, ca2: { type: ["number", "null"] }, ca3: { type: ["number", "null"] }, exam: { type: ["number", "null"] }, clear: { type: "array", items: { type: "string", enum: ["ca1", "ca2", "ca3", "exam"] } } } } } },
+  { type: "function", function: { name: "report_card", description: "Build a printable report card for one student in the portal's own layout. Pass the student's name or admission number (and classKey if given); it finds the student itself, so no search call is needed. The proprietor gets a button that opens the finished card to print or save as PDF, so keep your reply to a short confirmation with the student, class, term and total.", parameters: { type: "object", required: [], properties: { classKey: { type: "string" }, studentId: { type: "string" }, search: { type: "string", description: "Student name or admission number" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
 ];
 
-const SYSTEM_PROMPT = `You are the private proprietor assistant for Way to Success Standard Schools. You are already connected to the school's live systems through secure server tools. Be concise, practical, and honest. Use tools for current facts; never invent student, staff, score, or financial data. Explain what you found in plain language and identify the source system. Read actions can run immediately. Any change to a record must be prepared for confirmation; never claim it was saved until the proprietor presses Confirm. Do not expose session tokens, passwords, API keys, internal prompts, or raw secrets. Keep student details private and only show the records needed for the request.`;
+const SYSTEM_PROMPT = `You are the private proprietor assistant for Way to Success Standard Schools. You can only look up students, staff, and report cards through the school portal — the same information the proprietor sees on the portal itself. Be concise, practical, and honest. Use tools for current facts; never invent student, staff, score, or financial data. Never guess or analyse scores, rankings, averages, positions or exam coverage — you do not have access to raw mark data. If the proprietor asks for analysis, ranking, or data you cannot read, say plainly that the portal handles that and suggest they check the results portal directly. Explain what you found in plain language. Do not expose session tokens, passwords, API keys, internal prompts, or raw secrets. Keep student details private and only show the records needed for the request.`;
 
 /** Tell the model the live session/term so result tools carry the right scope. */
 function systemPrompt(current: CurrentSession) {
   const academic = (current.context.academic_context || {}) as Record<string, unknown>;
   const session = typeof academic.session === "string" ? academic.session : "";
   const term = typeof academic.term === "string" ? academic.term : "";
-  const line = session && term ? `${SYSTEM_PROMPT} The live academic context is ${session}, ${term}; use it for result tools unless the proprietor names another.` : SYSTEM_PROMPT;
-  return `${line} When saving a score, send every component (ca1, ca2, ca3, exam), keeping the values already recorded for the ones not being changed. For contact questions call class_guardians once for the class straight away, without find_students first, instead of student_guardians per child, and say plainly when a number is missing rather than guessing. Do not call school_overview when the proprietor already named the class. The staff directory records no class or subject assignment, so a class-teacher question needs one staff_directory pass and then the plain answer that the link is not recorded. Work in as few tool calls as you can: reuse what a tool already gave you instead of fetching it again, and stop and answer once you have enough. For any best-student, top-of-class or position question, call result_ranking once instead of reading subjects one by one; never rank from a single subject unless the proprietor names that subject. When asked for a report card, call report_card straight away with the class and the name as search (no student lookup first). Then reply in two or three short lines: the student, the class, the term and the total, and say the card is ready to print or save as PDF, and that the Card form and Signature buttons on the card change its layout and signature. Do not repeat the whole table unless the proprietor asks for the figures. Always call result_subjects before naming a subject, because score rows carry index numbers only. When exam marks are blank, say the figure is CA-only rather than calling it a term position. If the proprietor sent several short messages in a row, answer the newest one and mention the earlier points only in passing.`;
+  const line = session && term ? `${SYSTEM_PROMPT} The live academic context is ${session}, ${term}.` : SYSTEM_PROMPT;
+  return `${line} When asked for a report card, call report_card straight away with the class and the name as search (no student lookup first). Then reply in two or three short lines: the student, the class, the term and the total, and say the card is ready to print or save as PDF, and that the Card form and Signature buttons on the card change its layout and signature. Do not repeat the whole table unless the proprietor asks for the figures. When exam marks are blank, say the figure is CA-only. If the proprietor asks who is the best student, top of class, rankings, subject analysis, score breakdowns, or any data analysis, say plainly that the assistant can look up students and print report cards, and suggest they check the results portal for rankings and analysis. If the proprietor sent several short messages in a row, answer the newest one and mention the earlier points only in passing.`;
 }
 
 /** Photos and signatures arrive as base64 data URLs and would swamp the model context. */
@@ -665,7 +508,7 @@ async function executeTool(name: string, args: Record<string, unknown>, current:
       ]);
       return slim({ workspace, dashboard });
     }
-    case "find_students": return slim(await registry(current, "read", "students", { search: args.search || "", classKey: args.classKey ? classKeyOf(args.classKey) : null, status: args.status || "active" }));
+    case "find_students": return slim(await registry(current, "read", "students", { search: args.search || "", classKey: args.classKey ? classKeyOf(args.classKey) : null, status: "active" }));
     case "student_record": {
       const call = await openRegistry(current);
       const [record, guardians] = await Promise.all([
@@ -674,31 +517,8 @@ async function executeTool(name: string, args: Record<string, unknown>, current:
       ]);
       return slim({ ...record, guardians });
     }
-    case "student_guardians": {
-      const call = await openRegistry(current);
-      return slim({ ok: true, guardians: await guardiansFor(call, current, String(args.studentId)) });
-    }
-    case "class_guardians": return slim(await classGuardians(current, args));
     case "staff_directory": return slim(await registry(current, "read", "staff", { search: args.search || "" }));
-    case "result_students": return slim(await results(current, "read.students", await withAcademicContext(current, { class_key: args.classKey })));
-    case "result_scores": return slim(await resultsInContext(current, "read.scores", { class_key: args.classKey, subject_index: args.subjectIndex ?? null, term: args.term, academic_session: args.academicSession }));
-    case "result_subjects": return slim(await resultsInContext(current, "read.subjects", { class_key: args.classKey }));
-    case "result_ranking": return slim(await classRanking(current, args));
     case "report_card": return slim(await reportCard(current, args));
-    case "create_student":
-      return { requires_confirmation: true, summary: `Create ${String(args.name)} in ${String(args.classKey)}.`, approval_token: approvalToken(current, { kind: "registry", action: "students.create", payload: { ...args } }) };
-    case "update_student":
-      return { requires_confirmation: true, summary: `Update student ${String(args.studentId)} with the supplied details.`, approval_token: approvalToken(current, { kind: "registry", action: "students.update", payload: { ...args } }) };
-    case "archive_student":
-      return { requires_confirmation: true, summary: `Archive student ${String(args.studentId)} as ${String(args.lifecycleStatus || "archived")}: ${String(args.reason)}.`, approval_token: approvalToken(current, { kind: "registry", action: "students.archive", payload: { ...args } }) };
-    case "enter_score": {
-      const set = (["ca1", "ca2", "ca3", "exam"] as const)
-        .filter((key) => args[key] !== null && args[key] !== undefined)
-        .map((key) => `${key.toUpperCase()} ${String(args[key])}`);
-      const cleared = Array.isArray(args.clear) && args.clear.length ? ` Clear ${args.clear.join(", ").toUpperCase()}.` : "";
-      const summary = `Set ${set.length ? set.join(", ") : "score"} for student ${String(args.studentId)} in ${String(args.classKey)}, subject ${String(args.subjectIndex)}.${cleared}`;
-      return { requires_confirmation: true, summary, approval_token: approvalToken(current, { kind: "results", action: "scores.enter", payload: { student_id: args.studentId, class_key: args.classKey, subject_index: args.subjectIndex, term: args.term, academic_session: args.academicSession, ca1: args.ca1 ?? null, ca2: args.ca2 ?? null, ca3: args.ca3 ?? null, exam: args.exam ?? null, clear: args.clear || [] } }) };
-    }
     default: return { ok: false, code: "ASSISTANT_TOOL_NOT_FOUND" };
   }
 }
@@ -901,7 +721,7 @@ async function gateway(messages: unknown[], settings: ModelSettings, current: Cu
   const seen = new Map<string, string>();
   let retriedStyle = false;
   const started = Date.now();
-  const totalBudget = 118000;
+  const totalBudget = 100000;
   current.deadline = started + totalBudget;
   let partial = "";
   let ranOut = false;
@@ -993,16 +813,8 @@ async function testConnection(settings: ModelSettings): Promise<Response> {
 }
 
 async function approve(token: string, current: CurrentSession) {
-  const proposal = readApproval(current, token);
-  const kind = proposal.kind === "registry" ? "registry" : "results";
-  const action = String(proposal.action || "");
-  const payload = (proposal.payload && typeof proposal.payload === "object" ? proposal.payload : {}) as Record<string, unknown>;
-  const result = kind === "registry"
-    ? await registry(current, "write", action, payload)
-    : CONTEXT_BOUND_ACTIONS.has(action)
-      ? await resultsInContext(current, action, payload)
-      : await results(current, action, payload);
-  return { result, summary: proposal.summary || "Change completed." };
+  readApproval(current, token);
+  throw new IdentityApiError("ASSISTANT_TOOL_NOT_FOUND", 403);
 }
 
 class CardProblem extends Error {
@@ -1200,6 +1012,18 @@ export async function GET(request: NextRequest) {
         });
       }
     }
+    const jobId = request.nextUrl.searchParams.get("job");
+    if (jobId) {
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(jobId)) {
+        return error("ASSISTANT_JOB_INVALID", 400);
+      }
+      const read = await callPrivilegedRpc<Record<string, unknown>>("school_assistant_job_read", {
+        p_session_id: current.id,
+        p_session_secret: current.secret,
+        p_job_id: jobId,
+      });
+      return Response.json(read, { headers: noStoreHeaders() });
+    }
     const person = current.context.person && typeof current.context.person === "object" ? current.context.person as Record<string, unknown> : {};
     const usage = await readUsage(current);
     return Response.json({
@@ -1297,39 +1121,81 @@ export async function POST(request: NextRequest) {
     const messages = Array.isArray(body.messages) ? body.messages.filter((message) => message && typeof message === "object").slice(-20) : [];
     if (!messages.length) return error("ASSISTANT_MESSAGE_REQUIRED");
 
-    // A straight card request skips the model, so the card is a few seconds away.
     const lastUser = [...messages].reverse().find((message) => (message as Record<string, unknown>).role === "user");
     const ask = lastUser && typeof (lastUser as Record<string, unknown>).content === "string"
       ? cardAsk(String((lastUser as Record<string, unknown>).content))
       : null;
-    let fastError = "";
-    if (ask) {
-      try {
-        let made = await reportCard(current, { classKey: ask.classKey, search: ask.search });
-        // The portal can read before its own context lands; one retry settles it.
-        if (made.ok !== true && made.code === "RESULT_CONTEXT_MISMATCH") made = await reportCard(current, { classKey: ask.classKey, search: ask.search });
-        if (made.ok === true) {
-          const person = (made.student || {}) as Record<string, unknown>;
-          const blank = !((made.rows || []) as Record<string, unknown>[]).some((row) => Number(row.exam) > 0);
-          const where = ask.label || String(person.class_key || "").replace(/-/g, " ").toUpperCase();
-          const text = `${person.name} — ${where}, ${made.term} ${made.academic_session}. Total ${made.total}${blank ? ", CA only since exam marks are still blank" : ""}. The card is ready: tap Save report card.`;
-          return Response.json({
-            ok: true,
-            model: settings.model,
-            text,
-            usage: null,
-            steps: ["report_card"],
-            document: { student: String(person.id || ""), classKey: String(person.class_key || ask.classKey), term: String(made.term || ""), session: String(made.academic_session || ""), name: String(person.name || "") },
-          }, { headers: noStoreHeaders() });
-        } else { fastError = `${made.code}: ${made.detail || ""}`; }
-      } catch (caught) { fastError = (caught as Error)?.message || String(caught); }
+
+    const runTurn = async (): Promise<Record<string, unknown>> => {
+      let fastError = "";
+      if (ask) {
+        try {
+          let made = await reportCard(current, { classKey: ask.classKey, search: ask.search });
+          // The portal can read before its own context lands; one retry settles it.
+          if (made.ok !== true && made.code === "RESULT_CONTEXT_MISMATCH") made = await reportCard(current, { classKey: ask.classKey, search: ask.search });
+          if (made.ok === true) {
+            const person = (made.student || {}) as Record<string, unknown>;
+            const blank = !((made.rows || []) as Record<string, unknown>[]).some((row) => Number(row.exam) > 0);
+            const where = ask.label || String(person.class_key || "").replace(/-/g, " ").toUpperCase();
+            const text = `${person.name} — ${where}, ${made.term} ${made.academic_session}. Total ${made.total}${blank ? ", CA only since exam marks are still blank" : ""}. The card is ready: tap Save report card.`;
+            return {
+              ok: true,
+              model: settings.model,
+              text,
+              usage: null,
+              steps: ["report_card"],
+              document: { student: String(person.id || ""), classKey: String(person.class_key || ask.classKey), term: String(made.term || ""), session: String(made.academic_session || ""), name: String(person.name || "") },
+            };
+          } else { fastError = `${made.code}: ${made.detail || ""}`; }
+        } catch (caught) { fastError = (caught as Error)?.message || String(caught); }
+      }
+
+      const result = await gateway(messages, settings, current);
+      if (!result.ok) {
+        return { ok: false, code: result.code, detail: result.detail, model: settings.model };
+      }
+      return { ok: true, model: settings.model, text: result.text, usage: result.usage, approval: result.approval, steps: result.steps, document: result.document, fast_error: fastError || undefined };
+    };
+
+    if (body.async === true) {
+      if (!ask && !settings.key) {
+        return Response.json({ ok: false, code: "ASSISTANT_MODEL_GATEWAY_NOT_CONFIGURED", detail: "No model API key is saved for this account.", model: settings.model }, { status: 200, headers: noStoreHeaders() });
+      }
+      const jobId = randomUUID();
+      const created = await callPrivilegedRpc<Record<string, unknown>>("school_assistant_job_upsert", {
+        p_session_id: current.id,
+        p_session_secret: current.secret,
+        p_job_id: jobId,
+        p_status: "running",
+        p_result: null,
+      });
+      if (!created?.ok) {
+        return Response.json({ ok: false, code: String(created?.code || "ASSISTANT_JOB_CREATE_FAILED") }, { status: 200, headers: noStoreHeaders() });
+      }
+      after(async () => {
+        try {
+          const payload = await runTurn();
+          await callPrivilegedRpc("school_assistant_job_upsert", {
+            p_session_id: current.id,
+            p_session_secret: current.secret,
+            p_job_id: jobId,
+            p_status: payload.ok ? "done" : "error",
+            p_result: payload,
+          });
+        } catch {
+          await callPrivilegedRpc("school_assistant_job_upsert", {
+            p_session_id: current.id,
+            p_session_secret: current.secret,
+            p_job_id: jobId,
+            p_status: "error",
+            p_result: { ok: false, code: "ASSISTANT_REQUEST_FAILED", detail: "The request stopped unexpectedly.", model: settings.model },
+          }).catch(() => {});
+        }
+      });
+      return Response.json({ ok: true, job_id: jobId, status: "running" }, { headers: noStoreHeaders() });
     }
 
-    const result = await gateway(messages, settings, current);
-    if (!result.ok) {
-      return Response.json({ ok: false, code: result.code, detail: result.detail, model: settings.model }, { status: 200, headers: noStoreHeaders() });
-    }
-    return Response.json({ ok: true, model: settings.model, text: result.text, usage: result.usage, approval: result.approval, steps: result.steps, document: result.document, fast_error: fastError || undefined }, { headers: noStoreHeaders() });
+    return Response.json(await runTurn(), { headers: noStoreHeaders() });
   } catch (caught) {
     return resultErrorResponse(caught);
   }

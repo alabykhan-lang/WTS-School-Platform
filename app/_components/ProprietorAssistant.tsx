@@ -9,7 +9,7 @@ type Thread = { id: string; title: string; messages: Message[]; updatedAt: numbe
 type Person = { id?: string; full_name?: string };
 type AssistantConfig = { configured: boolean; models: Model[]; default_model: string; default_url: string; results_url?: string; is_admin: boolean; person?: Person };
 type TestState = { state: "idle" | "running" | "pass" | "fail"; message: string };
-type Job = { threadId: string; messages: Message[]; started: number };
+type Job = { threadId: string; messages: Message[]; started: number; jobId?: string };
 
 const DEFAULT_URL = "https://api.deepseek.com";
 
@@ -23,8 +23,8 @@ const FALLBACK_MODELS: Model[] = [
 const STARTERS = [
   "How many active students do we have in each class?",
   "Show the current school dashboard.",
-  "Find a student and show their class and result status.",
-  "Show today's staff on duty.",
+  "Find a student and show their class and guardian contacts.",
+  "List the staff directory.",
 ];
 
 /** Provider errors arrive as raw JSON; keep the one sentence the provider sent. */
@@ -333,14 +333,30 @@ export function ProprietorAssistant() {
     const messages = thread && thread.messages.length > job.messages.length ? thread.messages : job.messages;
     setActiveId(job.threadId);
     setTab("chats");
-    void run(job.threadId, messages);
+    void run(job.threadId, messages, job.jobId, job.started);
     setNotice("Picking up the job you left running…");
   }, [config, threads.length]);
   useEffect(() => {
-    const back = () => { if (!document.hidden && !busy) document.title = baseTitle.current; };
+    const back = () => {
+      if (!document.hidden && !busy) document.title = baseTitle.current;
+      if (!document.hidden && !busy && config?.person?.id) {
+        const key = `wts-assistant-job:${config.person.id}`;
+        let job: Job | null = null;
+        try { job = JSON.parse(localStorage.getItem(key) || "null"); } catch { job = null; }
+        if (job?.threadId && Array.isArray(job.messages) && job.messages.length && job.jobId) {
+          const thread = threads.find((item) => item.id === job.threadId);
+          if (thread?.messages.slice(-1)[0]?.role === "user") {
+            const messages = thread.messages.length > job.messages.length ? thread.messages : job.messages;
+            setActiveId(job.threadId);
+            setTab("chats");
+            void run(job.threadId, messages, job.jobId, job.started);
+          }
+        }
+      }
+    };
     document.addEventListener("visibilitychange", back);
     return () => document.removeEventListener("visibilitychange", back);
-  }, [busy]);
+  }, [busy, config, threads]);
 
   const activeThread = threads.find((thread) => thread.id === activeId) || threads[0];
   const name = useMemo(() => config?.person?.full_name?.split(" ")[0] || "there", [config]);
@@ -588,59 +604,138 @@ export function ProprietorAssistant() {
     return config?.person?.id ? `wts-assistant-job:${config.person.id}` : "";
   }
 
-  /** The job is kept on the device, so leaving or reloading does not lose the work. */
-  async function run(threadId: string, messages: Message[]) {
+  function waitVisibleOr(ms: number) {
+    return new Promise<void>((resolve) => {
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        window.clearTimeout(timer);
+        document.removeEventListener("visibilitychange", onVis);
+        resolve();
+      };
+      const onVis = () => { if (!document.hidden) finish(); };
+      const timer = window.setTimeout(finish, ms);
+      document.addEventListener("visibilitychange", onVis);
+    });
+  }
+
+  /** Starts the job on the server and polls for the answer, so minimizing never kills the work. */
+  async function run(threadId: string, messages: Message[], existingJobId?: string, startedAt?: number) {
     const key = jobKey();
-    if (key) localStorage.setItem(key, JSON.stringify({ threadId, messages, started: Date.now() } satisfies Job));
-    let answered = false;
+    const started = startedAt || Date.now();
+    let jobId = existingJobId || "";
+    if (key) localStorage.setItem(key, JSON.stringify({ threadId, messages, started, jobId: jobId || undefined } satisfies Job));
+    let settled = false;
     setBusy(true); setBusyThread(threadId); setNotice("");
     const host = hostOf(settings.providerUrl || DEFAULT_URL);
-    const controller = new AbortController();
-    const stop = window.setTimeout(() => controller.abort(), 210000);
-    try {
-      const response = await fetch("/api/assistant", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
-        signal: controller.signal,
-        body: JSON.stringify({
-          model: settings.defaultModel,
-          messages,
-          provider_key: config?.is_admin ? settings.providerKey : "",
-          provider_url: config?.is_admin ? settings.providerUrl : "",
-          effort: settings.effort,
-        }),
-      });
-      const value = await response.json();
-      if (!response.ok || !value?.ok) {
-        const code = String(value?.code || "ASSISTANT_REQUEST_FAILED");
-        throw new Error(`${ERRORS[code] || "The request failed."}${saidText(value?.detail)}`);
-      }
+
+    const deliver = (value: Record<string, unknown>) => {
       const answer = String(value.text || "Done.");
       const doc = value.document && typeof value.document === "object" ? value.document as CardDoc : undefined;
       updateThread(threadId, [...messages, { role: "assistant", content: answer, doc }]);
-      if (value.approval?.approval_token) setApproval({ token: value.approval.approval_token, summary: value.approval.summary || "Confirm this change." });
+      const approvalObj = value.approval as { approval_token?: string; summary?: string } | undefined;
+      if (approvalObj?.approval_token) setApproval({ token: approvalObj.approval_token, summary: approvalObj.summary || "Confirm this change." });
       if (!config?.is_admin) setSettings((current) => {
         const next = { ...current, usagePercent: Math.max(0, current.usagePercent - current.perReplyCost) };
         pushUsage(next);
         return next;
       });
-      answered = true;
+      settled = true;
       setNotice("");
       announce(threadId, doc ? `Report card ready${doc.name ? `: ${doc.name}` : ""}` : "Answer ready", answer);
+    };
+
+    try {
+      if (!jobId) {
+        let startValue: Record<string, unknown> | null = null;
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          try {
+            const response = await fetch("/api/assistant", {
+              method: "POST",
+              credentials: "same-origin",
+              headers: { "Content-Type": "application/json" },
+              signal: AbortSignal.timeout(25000),
+              body: JSON.stringify({
+                async: true,
+                model: settings.defaultModel,
+                messages,
+                provider_key: config?.is_admin ? settings.providerKey : "",
+                provider_url: config?.is_admin ? settings.providerUrl : "",
+                effort: settings.effort,
+              }),
+            });
+            startValue = await response.json();
+            if (!response.ok || !startValue?.ok) {
+              const code = String(startValue?.code || "ASSISTANT_REQUEST_FAILED");
+              throw new Error(`${ERRORS[code] || "The request failed."}${saidText(startValue?.detail)}`);
+            }
+            break;
+          } catch (caught) {
+            const isNet = caught instanceof TypeError || (caught instanceof DOMException && caught.name === "TimeoutError");
+            if (attempt === 0 && isNet) {
+              await waitVisibleOr(1200);
+              continue;
+            }
+            throw caught;
+          }
+        }
+        if (startValue && typeof startValue.text === "string") {
+          deliver(startValue);
+          return;
+        }
+        jobId = String(startValue?.job_id || "");
+        if (!jobId) throw new Error(ERRORS["ASSISTANT_REQUEST_FAILED"]);
+        if (key) localStorage.setItem(key, JSON.stringify({ threadId, messages, started, jobId } satisfies Job));
+      }
+
+      let firstPoll = true;
+      while (Date.now() - started < 165000) {
+        await waitVisibleOr(document.hidden ? 8000 : firstPoll ? 900 : 1600);
+        firstPoll = false;
+        let response: Response;
+        try {
+          response = await fetch(`/api/assistant?job=${encodeURIComponent(jobId)}`, {
+            credentials: "same-origin",
+            cache: "no-store",
+            signal: AbortSignal.timeout(12000),
+          });
+        } catch {
+          // Minimizing the app or a brief network drop pauses polling cleanly without failing.
+          continue;
+        }
+        const value = await response.json().catch(() => null) as Record<string, unknown> | null;
+        if (response.status === 401 || response.status === 403) {
+          const code = String(value?.code || "STAFF_SESSION_NOT_ACTIVE");
+          throw new Error(ERRORS[code] || "Your sign-in expired. Reload the page and sign in again.");
+        }
+        if (!response.ok || !value) continue;
+        if (value.ok === false) {
+          const code = String(value.code || "ASSISTANT_REQUEST_FAILED");
+          if (code === "ASSISTANT_JOB_NOT_FOUND") throw new Error("That request expired. Send it again.");
+          throw new Error(ERRORS[code] || "The request failed.");
+        }
+        if (value.status === "running") continue;
+        if (value.status === "done" || value.status === "error") {
+          const payload = (value.result && typeof value.result === "object" ? value.result : {}) as Record<string, unknown>;
+          if (!payload.ok) {
+            const code = String(payload.code || "ASSISTANT_REQUEST_FAILED");
+            throw new Error(`${ERRORS[code] || "The request failed."}${saidText(payload.detail)}`);
+          }
+          deliver(payload);
+          return;
+        }
+      }
+      throw new Error(`${host} did not answer in time, so the request was stopped. Try again.`);
     } catch (error) {
-      const failed = controller.signal.aborted
-        ? `${host} did not answer within 150 seconds, so the request was stopped. Try again.`
-        : error instanceof Error && error.message && !error.message.startsWith("ASSISTANT_")
-          ? error.message
-          : `${ERRORS["ASSISTANT_REQUEST_FAILED"]} The server was ${host}.`;
+      settled = true;
+      const failed = error instanceof Error && error.message && !error.message.startsWith("ASSISTANT_")
+        ? error.message
+        : `${ERRORS["ASSISTANT_REQUEST_FAILED"]} The server was ${host}.`;
       setNotice("The last answer failed. Send it again, or pick another model in Models.");
       updateThread(threadId, [...messages, { role: "assistant", content: failed, failed: true }]);
     } finally {
-      window.clearTimeout(stop);
-      // A reload aborts the request just before the new page reads the job, so the
-      // record stays until an answer exists; a resumed job replaces it.
-      if (key && answered) localStorage.removeItem(key);
+      if (key && settled) localStorage.removeItem(key);
       setBusy(false); setBusyThread("");
     }
   }
