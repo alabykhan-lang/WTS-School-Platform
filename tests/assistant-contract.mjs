@@ -30,6 +30,13 @@ assert.match(route, /const BASIS: Record<string, \{ fields: string\[\]; label: s
 assert.match(route, /basis: \{ type: "string", enum: \["current", "ca", "ca1", "ca2", "ca3", "exam"\]/);
 assert.match(route, /const percentOf = /);
 assert.match(route, /Leave basis at current/);
+// Comparing classes is one call with no class name, not one call per class.
+assert.match(route, /async function classAnalysisOne/);
+assert.match(route, /mode: "school_compare"/);
+assert.match(route, /classAveragePercent/);
+assert.match(route, /Which class is most competitive/);
+// The reply must not open with a data-dump label.
+assert.match(route, /Never open with "Here is what the records returned"/);
 // A test turn leaves the proprietor's balance alone, and a subject can be
 // broken down on request.
 assert.match(route, /const isTestRun = body\.test === true \|\| request\.headers\.get\("x-assistant-test"\) === "1";/);

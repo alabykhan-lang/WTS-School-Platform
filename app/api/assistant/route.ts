@@ -574,7 +574,7 @@ const tools = [
   { type: "function", function: { name: "student_record", description: "Read one student's complete record by id, including guardian contacts.", parameters: { type: "object", required: ["studentId"], properties: { studentId: { type: "string" } } } } },
   { type: "function", function: { name: "staff_directory", description: "Read the staff directory and active assignments.", parameters: { type: "object", properties: { search: { type: "string" } } } } },
   { type: "function", function: { name: "results_read", description: "Read information available to the signed-in proprietor in the Results Portal. Use for results, marks, subject lists, publication, traits, remarks, fees, class rosters, and report-card context. The portal applies the account's permissions and class scope. For class performance, pass/fail, coverage, averages, or rankings, use class_analysis so the complete class is read and summarized in one call.", parameters: { type: "object", required: ["resource"], properties: { resource: { type: "string", enum: ["classes", "fees", "published_subjects", "remarks", "result_summary", "scores", "students", "subjects", "traits"] }, classKey: { type: "string" }, studentId: { type: "string" }, subjectIndex: { type: "integer" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
-  { type: "function", function: { name: "class_analysis", description: "One call gives a complete class analysis from the Results Portal: coverage, per-subject pass/fail rates, per-subject top performers, and the overall top and bottom order. It reads the whole class once and does the arithmetic on the server. Use it for every class performance question and call it only once per class. Requires classKey. basis defaults to current, which uses every mark recorded so far and compares percentages so a learner whose exam is not entered yet still ranks; name a basis only when the proprietor asks to grade on that part alone. Pass subject only for exactly one subject; topN changes how many leaders are returned; includeMissing names learners with nothing on the chosen basis; breakdown true adds a simple per-subject breakdown (bands, component averages, strongest and weakest) for every subject in this one call, so use it alone for 'break it down'; add subject only for one named subject, which also returns the full table. list true returns the whole score sheet in the same call, for requests to list every score.", parameters: { type: "object", required: ["classKey"], properties: { classKey: { type: "string" }, basis: { type: "string", enum: ["current", "ca", "ca1", "ca2", "ca3", "exam"], description: "current = every recorded mark (default); ca = all continuous assessment; ca1, ca2, ca3 = that single CA; exam = exam only" }, subject: { type: "string", description: "Subject name or stored index, for one subject only" }, topN: { type: "integer" }, includeMissing: { type: "boolean" }, breakdown: { type: "boolean", description: "Add the simple breakdown for every subject at once. With a single subject named, also return that subject's full table" }, list: { type: "boolean", description: "Return every learner's marks for every subject analysed, as the whole score sheet" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
+  { type: "function", function: { name: "class_analysis", description: "One call gives a complete class analysis from the Results Portal: coverage, per-subject pass/fail rates, per-subject top performers, and the overall top and bottom order. It reads the whole class once and does the arithmetic on the server. Use it for every class performance question and call it only once per class. Omit classKey to compare every class on its average and pass rate in this one call. basis defaults to current, which uses every mark recorded so far and compares percentages so a learner whose exam is not entered yet still ranks; name a basis only when the proprietor asks to grade on that part alone. Pass subject only for exactly one subject; topN changes how many leaders are returned; includeMissing names learners with nothing on the chosen basis; breakdown true adds a simple per-subject breakdown (bands, component averages, strongest and weakest) for every subject in this one call, so use it alone for 'break it down'; add subject only for one named subject, which also returns the full table. list true returns the whole score sheet in the same call, for requests to list every score.", parameters: { type: "object", properties: { classKey: { type: "string", description: "The class to analyse. Leave it out for a whole-school comparison" }, basis: { type: "string", enum: ["current", "ca", "ca1", "ca2", "ca3", "exam"], description: "current = every recorded mark (default); ca = all continuous assessment; ca1, ca2, ca3 = that single CA; exam = exam only" }, subject: { type: "string", description: "Subject name or stored index, for one subject only" }, topN: { type: "integer" }, includeMissing: { type: "boolean" }, breakdown: { type: "boolean", description: "Add the simple breakdown for every subject at once. With a single subject named, also return that subject's full table" }, list: { type: "boolean", description: "Return every learner's marks for every subject analysed, as the whole score sheet" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
   { type: "function", function: { name: "results_history", description: "Read prior terms and sessions the signed-in proprietor can access in the Results Portal. Use for historical comparisons; the portal enforces the account's access.", parameters: { type: "object", properties: { classKey: { type: "string" }, studentId: { type: "string" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
   {
     type: "function",
@@ -617,6 +617,7 @@ CLASS AND RESULT ANALYSIS
 - Give the class, session, term, roster size and the denominator behind every rate. A subject with only a few marks on the chosen basis is reported against those marks, not against the whole class, and you say so.
 - Marks are out of 10 for each CA and out of 70 for the exam; quote the maximum with any average and never invent one.
 - Never say a class has no data, or tell the proprietor to finish the exam, when CA is recorded. Answer with what is in the records and mention how much of the exam is in yet.
+- "Which class is most competitive", "which classes are best or worst", or any comparison between classes: call class_analysis once with NO classKey. It compares every class on its own average and pass rate. Name the strongest class first with its figure, then the weakest, and keep the rest to the few that matter.
 - Break a subject down when asked, even for "just show me" or "simply", and call class_analysis only ONCE. Leave subject out and pass breakdown true and you get every subject broken down in the same call; add subject only when the proprietor named one subject, which also returns the full table.
 - In a breakdown give the bands as a short list, the strongest and weakest few, and where the marks were lost (component averages against their maximums). Print the whole table only when the hint says to; otherwise top five and bottom five.
 - When the proprietor asks for the list of scores, every score, or the whole sheet, call class_analysis ONCE with list true, and add subject only for one named subject. scoreSheet.roster holds the names; each row's i is its position in that list. Print a table per subject with every row, blank marks as a dash, and do not call again per subject.
@@ -665,9 +666,13 @@ LEARNER WORDS
 - Follow the class section in every reply, including lists and error sentences. On a whole-school answer say "learners".
 
 STYLE
-- Plain everyday words, short sentences, phone-friendly. Use "- " bullets when listing.
+- Sound like a helpful person who knows the school, not a report. Warm, direct, everyday words.
+- Answer the question in the first line, in the words it was asked. Never open with "Here is what the records returned", "Based on the data" or similar.
+- Then give only the figures that answer it, the few that matter, and stop. Short sentences; two to five lines on a phone. A full list is right when the question asks for a list.
+- Say what it means: "JSS 3 is ahead", "the exam is barely in yet, so this can still move".
+- Offer one plain next step when it helps, as a normal sentence: "Want the bottom five?" Not every turn needs one.
+- Use "- " bullets for lists, one learner, subject or figure per line.
 - Never mention tool names, JSON, RPCs or internal codes. Never print tokens or keys.
-- One learner, subject or figure per line when listing.
 - A question you ask is a normal question, never a failure message.
 - Put learners in alphabetical order whenever you list a group.
 - A report card appears as a Save button under your reply, so do not paste file links; say the card is ready and name the pupil.
@@ -715,8 +720,67 @@ function slim(value: unknown, depth = 0, field = ""): unknown {
   return value;
 }
 
-/** Full-class aggregates keep large score sheets complete and out of model context. */
+/**
+ * With a class named, that class is analysed in full. Without one, every class
+ * is compared on its own average and pass rate in this same call, so "which
+ * class is most competitive" never needs one call per class.
+ */
 async function classAnalysis(current: CurrentSession, args: Record<string, unknown>) {
+  if (classKeyOf(args.classKey)) return classAnalysisOne(current, args);
+  const catalog = await classCatalog(current);
+  if (!catalog.length) return { ok: false, code: "RESULT_CLASS_REQUIRED", detail: "Name the class to analyse.", hint: "Call class_analysis again with one of the class names in TURN STATE." };
+
+  const basisKey = String(args.basis || "current").toLowerCase().replace(/[^a-z0-9]/g, "");
+  // One settings read serves every class, so the comparison stays quick.
+  const sharedRead = await results(current, "settings.read", {}).catch(() => null);
+  const sharedConfig = ((sharedRead?.settings || {}) as Record<string, unknown>).app_config as Record<string, unknown> | undefined;
+  const sharedGrades = Array.isArray(sharedConfig?.gradeScale) && sharedConfig.gradeScale.length
+    ? sharedConfig.gradeScale as Record<string, unknown>[]
+    : DEFAULT_GRADE_SCALE;
+  const ranked: Record<string, unknown>[] = [];
+  const skipped: { class: string; code: string }[] = [];
+  const queue = [...catalog];
+  const worker = async () => {
+    for (;;) {
+      const item = queue.shift();
+      if (!item) return;
+      const made = await classAnalysisOne(current, { ...args, classKey: item.key, breakdown: false, list: false, includeMissing: false }, sharedGrades) as Record<string, unknown>;
+      if (made.ok !== true) { skipped.push({ class: item.label, code: String(made.code || "UNREAD") }); continue; }
+      if (!Number(made.gradedSubjectEntries || 0)) continue;
+      ranked.push({
+        class: item.label,
+        roster: made.rosterCount,
+        subjects: made.subjectCount,
+        averagePercent: made.classAveragePercent,
+        passRate: made.overallPassRate,
+        examCoverage: made.examCoverageRate,
+      });
+    }
+  };
+  await Promise.all([worker(), worker(), worker()]);
+  ranked.sort((a, b) => Number(b.averagePercent ?? -1) - Number(a.averagePercent ?? -1) || Number(b.passRate ?? -1) - Number(a.passRate ?? -1));
+  ranked.forEach((row, index) => { row.rank = index + 1; });
+  if (!ranked.length) return { ok: false, code: "RESULT_NO_MARKS_ANYWHERE", detail: "No class has a mark recorded yet on this basis.", hint: "Say that no marks are recorded yet and ask the proprietor to enter them in the Results Portal." };
+  const live = await withAcademicContext(current, {});
+  return {
+    ok: true,
+    mode: "school_compare",
+    source: "results_portal_each_class_read",
+    basis: basisKey || "current",
+    term: live.term,
+    academicSession: live.academic_session,
+    classesCompared: ranked.length,
+    classesSkipped: skipped.length ? skipped : undefined,
+    mostCompetitive: ranked[0],
+    leastCompetitive: ranked[ranked.length - 1],
+    ranked,
+    method: "Classes are ordered by their average learner percentage on the chosen basis, with the pass rate breaking ties. Classes with no marks on that basis are left out.",
+    hint: "Name the mostCompetitive class first with its average and pass rate, then the leastCompetitive, then only the few in between that matter. Say the exam is barely in where coverage is low.",
+  };
+}
+
+/** One class, measured across every subject, from a single read of that class. */
+async function classAnalysisOne(current: CurrentSession, args: Record<string, unknown>, sharedGrades?: Record<string, unknown>[]) {
   const requestedClass = classKeyOf(args.classKey);
   if (!requestedClass) return { ok: false, code: "RESULT_CLASS_REQUIRED", detail: "Name the class to analyse.", hint: "Call class_analysis again with one of the class names in TURN STATE." };
   const payload = await withAcademicContext(current, {
@@ -732,10 +796,12 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
   let summary = await call("read.result_summary", payload);
   if (summary?.code === "RESULT_CONTEXT_MISMATCH") summary = await call("read.result_summary", payload);
   if (!summary?.ok) return { ...summary, hint: "The class read failed. Check the class name, session and term in TURN STATE, then call class_analysis once more with corrected values." };
-  const [subjectResponse, configResponse] = await Promise.all([
-    call("read.subjects", { class_key: payload.class_key }),
-    call("settings.read", {}),
-  ]);
+  const [subjectResponse, configResponse] = sharedGrades
+    ? [await call("read.subjects", { class_key: payload.class_key }), null]
+    : await Promise.all([
+      call("read.subjects", { class_key: payload.class_key }),
+      call("settings.read", {}),
+    ]);
   if (!subjectResponse?.ok) return subjectResponse;
 
   const bag = (summary.summary || {}) as { students?: Record<string, unknown>[]; scores?: Record<string, unknown>[] };
@@ -749,9 +815,11 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
   const config = ((configResponse?.settings || {}) as Record<string, unknown>).app_config as Record<string, unknown> | undefined;
   // The portal's own default grade bands, used until the school customises
   // them, so pass/fail and band counts here match the report cards.
-  const gradeScale = Array.isArray(config?.gradeScale) && config.gradeScale.length
-    ? config.gradeScale as Record<string, unknown>[]
-    : DEFAULT_GRADE_SCALE;
+  const gradeScale = sharedGrades?.length
+    ? sharedGrades
+    : Array.isArray(config?.gradeScale) && config.gradeScale.length
+      ? config.gradeScale as Record<string, unknown>[]
+      : DEFAULT_GRADE_SCALE;
   const didPass = (total: number) => {
     const value = Math.floor(total);
     const grade = gradeScale.find((row) => value >= Number(row.min) && value <= Number(row.max));
@@ -1029,6 +1097,9 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
     }))
     .sort((a, b) => b.averagePercent - a.averagePercent || b.totalMarks - a.totalMarks || a.name.localeCompare(b.name));
 
+  const classAveragePercent = ordered.length
+    ? Math.round(ordered.reduce((sum, entry) => sum + entry.averagePercent, 0) * 10 / ordered.length) / 10
+    : null;
   const expectedExamEntries = students.length * chosenIndexes.length;
   const actualExamEntries = subjects.reduce((sum, subject) => sum + subject.studentsWithExam, 0);
   const gradedCount = subjects.reduce((sum, subject) => sum + subject.gradedOnBasis, 0);
@@ -1050,6 +1121,7 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
     expectedExamEntries,
     recordedExamEntries: actualExamEntries,
     examCoverageRate: expectedExamEntries ? Math.round(actualExamEntries * 1000 / expectedExamEntries) / 10 : null,
+    classAveragePercent,
     gradedSubjectEntries: gradedCount,
     totalPassCount: passCount,
     totalFailCount: gradedCount - passCount,
@@ -1617,6 +1689,8 @@ async function gateway(messages: unknown[], settings: ModelSettings, current: Cu
   const seen = new Map<string, string>();
   /** Last whole score sheet returned, so a timed-out list can still be printed. */
   let sheet: Record<string, unknown> | null = null;
+  /** Last whole-school comparison, printed rather than dumped as raw facts. */
+  let compare: Record<string, unknown> | null = null;
   let retriedStyle = false;
   const started = Date.now();
   const totalBudget = Math.max(8000, budgetMs);
@@ -1677,10 +1751,11 @@ async function gateway(messages: unknown[], settings: ModelSettings, current: Cu
       }
       if ((result as Record<string, unknown>).ok === true) {
         const made = result as Record<string, unknown>;
-        if (call.name === "class_analysis") {
+        if (call.name === "class_analysis" && made.mode !== "school_compare") {
           const line = `${made.class}: ${made.rosterCount} students, ${made.overallPassRate ?? "no"}% overall pass on ${made.gradedSubjectEntries} graded entries, exam coverage ${made.examCoverageRate ?? "unknown"}%`;
           if (!facts.includes(line)) facts.push(line);
           if (made.scoreSheet) sheet = made.scoreSheet as Record<string, unknown>;
+          if (made.mode === "school_compare") compare = made;
         }
         else if (call.name === "class_guardians") facts.push(`${made.class}: ${made.withoutGuardianPhoneCount} of ${made.checked} students with no guardian phone`);
         else if (call.name === "find_students") {
@@ -1717,15 +1792,33 @@ async function gateway(messages: unknown[], settings: ModelSettings, current: Cu
     }
   }
   const labels = [...new Set(used)].map((name) => DONE_LABELS[name]).filter(Boolean);
-  const printed = sheet ? scoreSheetText(sheet) : "";
+  const printed = sheet ? scoreSheetText(sheet) : compare ? compareText(compare) : "";
   const fallback = printed
     ? `${printed}\n\nThat is every row in the records. Name one subject if you want it on its own.`
     : facts.length
-    ? `Here is what the records returned: ${facts.join("; ")}.${note}`
+    ? `Here is where it stands: ${facts.join("; ")}.${note}`
     : labels.length
       ? `${labels.join(", ")}.${partial.trim() ? `\n\n${partial.trim()}` : ""}${note}`
       : `The connected school systems did not finish this request.${note}`;
   return { ok: true, text: fallback, usage: null, steps: used, truncated: true, document: doc || undefined };
+}
+
+/** Print a whole-school comparison as a short ranked answer. */
+function compareText(compare: Record<string, unknown>) {
+  const ranked = Array.isArray(compare.ranked) ? compare.ranked as Record<string, unknown>[] : [];
+  const top = (compare.mostCompetitive || {}) as Record<string, unknown>;
+  const low = (compare.leastCompetitive || {}) as Record<string, unknown>;
+  const line = (row: Record<string, unknown>) => `${row.class}: ${row.averagePercent}% average, ${row.passRate}% pass on ${String(row.subjects)} subjects`;
+  const parts = [
+    `${String(top.class)} is the strongest class right now — ${line(top).replace(`${String(top.class)}: `, "")}.`,
+    `The weakest is ${line(low)}.`,
+    "",
+    "In order:",
+    ...ranked.map((row) => `- ${line(row)}`),
+    "",
+    `That is every class compared on the marks on record (${String(compare.basis || "current")}).`,
+  ];
+  return parts.join("\n");
 }
 
 /** Print a returned score sheet as plain tables, for when the model runs out of time. */
