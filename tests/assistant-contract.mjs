@@ -34,9 +34,13 @@ assert.match(route, /Leave basis at current/);
 // broken down on request.
 assert.match(route, /const isTestRun = body\.test === true \|\| request\.headers\.get\("x-assistant-test"\) === "1";/);
 assert.match(route, /!isAdmin && !isTestRun && payload\.ok === true/);
-assert.match(route, /RESULT_SUBJECT_REQUIRED_FOR_BREAKDOWN/);
+// Breakdown without a subject returns every subject in the one call, so the
+// model never loops one subject at a time; a named subject adds the full table.
+assert.match(route, /const breakdownOf = /);
+assert.match(route, /breakdowns = chosenIndexes\.map/);
 assert.match(route, /const componentAverages/);
 assert.match(route, /printHint:/);
+assert.match(route, /Break a subject down when asked[^\n]*call class_analysis only ONCE/);
 
 // A write asks for a tap, and a tap is verified against the same call.
 assert.match(route, /requires_confirmation: true/);

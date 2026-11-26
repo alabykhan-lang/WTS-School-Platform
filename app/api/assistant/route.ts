@@ -572,7 +572,7 @@ const tools = [
   { type: "function", function: { name: "student_record", description: "Read one student's complete record by id, including guardian contacts.", parameters: { type: "object", required: ["studentId"], properties: { studentId: { type: "string" } } } } },
   { type: "function", function: { name: "staff_directory", description: "Read the staff directory and active assignments.", parameters: { type: "object", properties: { search: { type: "string" } } } } },
   { type: "function", function: { name: "results_read", description: "Read information available to the signed-in proprietor in the Results Portal. Use for results, marks, subject lists, publication, traits, remarks, fees, class rosters, and report-card context. The portal applies the account's permissions and class scope. For class performance, pass/fail, coverage, averages, or rankings, use class_analysis so the complete class is read and summarized in one call.", parameters: { type: "object", required: ["resource"], properties: { resource: { type: "string", enum: ["classes", "fees", "published_subjects", "remarks", "result_summary", "scores", "students", "subjects", "traits"] }, classKey: { type: "string" }, studentId: { type: "string" }, subjectIndex: { type: "integer" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
-  { type: "function", function: { name: "class_analysis", description: "One call gives a complete class analysis from the Results Portal: coverage, per-subject pass/fail rates, per-subject top performers, and the overall top and bottom order. It reads the whole class once and does the arithmetic on the server. Use it for every class performance question and call it only once per class. Requires classKey. basis defaults to current, which uses every mark recorded so far and compares percentages so a learner whose exam is not entered yet still ranks; name a basis only when the proprietor asks to grade on that part alone. Pass subject only for exactly one subject; topN changes how many leaders are returned; includeMissing names learners with nothing on the chosen basis; breakdown true with one subject adds the simple full breakdown of that subject.", parameters: { type: "object", required: ["classKey"], properties: { classKey: { type: "string" }, basis: { type: "string", enum: ["current", "ca", "ca1", "ca2", "ca3", "exam"], description: "current = every recorded mark (default); ca = all continuous assessment; ca1, ca2, ca3 = that single CA; exam = exam only" }, subject: { type: "string", description: "Subject name or stored index, for one subject only" }, topN: { type: "integer" }, includeMissing: { type: "boolean" }, breakdown: { type: "boolean", description: "With one subject: add the simple breakdown - every learner's mark, band counts and component averages" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
+  { type: "function", function: { name: "class_analysis", description: "One call gives a complete class analysis from the Results Portal: coverage, per-subject pass/fail rates, per-subject top performers, and the overall top and bottom order. It reads the whole class once and does the arithmetic on the server. Use it for every class performance question and call it only once per class. Requires classKey. basis defaults to current, which uses every mark recorded so far and compares percentages so a learner whose exam is not entered yet still ranks; name a basis only when the proprietor asks to grade on that part alone. Pass subject only for exactly one subject; topN changes how many leaders are returned; includeMissing names learners with nothing on the chosen basis; breakdown true adds a simple per-subject breakdown (bands, component averages, strongest and weakest) for every subject in this one call, so use it alone for 'break it down'; add subject only for one named subject, which also returns the full table.", parameters: { type: "object", required: ["classKey"], properties: { classKey: { type: "string" }, basis: { type: "string", enum: ["current", "ca", "ca1", "ca2", "ca3", "exam"], description: "current = every recorded mark (default); ca = all continuous assessment; ca1, ca2, ca3 = that single CA; exam = exam only" }, subject: { type: "string", description: "Subject name or stored index, for one subject only" }, topN: { type: "integer" }, includeMissing: { type: "boolean" }, breakdown: { type: "boolean", description: "Add the simple breakdown for every subject at once. With a single subject named, also return that subject's full table" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
   { type: "function", function: { name: "results_history", description: "Read prior terms and sessions the signed-in proprietor can access in the Results Portal. Use for historical comparisons; the portal enforces the account's access.", parameters: { type: "object", properties: { classKey: { type: "string" }, studentId: { type: "string" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
   {
     type: "function",
@@ -615,7 +615,8 @@ CLASS AND RESULT ANALYSIS
 - Give the class, session, term, roster size and the denominator behind every rate. A subject with only a few marks on the chosen basis is reported against those marks, not against the whole class, and you say so.
 - Marks are out of 10 for each CA and out of 70 for the exam; quote the maximum with any average and never invent one.
 - Never say a class has no data, or tell the proprietor to finish the exam, when CA is recorded. Answer with what is in the records and mention how much of the exam is in yet.
-- Break a subject down when asked, even for "just show me" or "simply". Call class_analysis with that subject and breakdown true, then give the bands as a short list, the strongest and weakest rows, and where the marks were lost (the component averages). Print the whole table only when the hint says to; otherwise top five and bottom five.
+- Break a subject down when asked, even for "just show me" or "simply", and call class_analysis only ONCE. Leave subject out and pass breakdown true and you get every subject broken down in the same call; add subject only when the proprietor named one subject, which also returns the full table.
+- In a breakdown give the bands as a short list, the strongest and weakest few, and where the marks were lost (component averages against their maximums). Print the whole table only when the hint says to; otherwise top five and bottom five.
 - one whole-class call already returns every subject with its own marks, rates and leaders, plus the overall order. Do not call it again once per subject. Pass subject only when the proprietor asks about exactly one subject, and topN only to change how many leaders are shown.
 - Use results_read for a single record, one pupil's marks, traits, remarks or fees, and never for whole-class statistics.
 - Use results_history only for prior terms and sessions the proprietor can already see.
@@ -878,21 +879,11 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
     };
   });
 
-  // One subject, broken down into the simplest form that still answers: who
-  // scored what, how the class fell into bands, and where the marks were lost.
-  let breakdown: Record<string, unknown> | undefined;
-  if (args.breakdown === true) {
-    if (chosenIndexes.length !== 1) {
-      return {
-        ok: false,
-        code: "RESULT_SUBJECT_REQUIRED_FOR_BREAKDOWN",
-        detail: "A breakdown covers one subject at a time.",
-        subjects: subjectIndexes.map((index) => subjectNames.get(index)),
-        hint: "Call class_analysis again with one subject from the list and breakdown true.",
-      };
-    }
-    const index = chosenIndexes[0];
-    const single = subjects[0];
+  // A breakdown is the simple view: who scored what, how the class fell into
+  // bands, and where the marks were lost. With no subject named it covers every
+  // subject in this same call, so the model never has to loop one subject at a
+  // time. With one subject named it also returns the full table.
+  const breakdownOf = (index: number) => {
     const rowsByStudent = new Map<string, Record<string, unknown>>();
     for (const row of rawScores) {
       if (Number(row.subject_index) !== index) continue;
@@ -907,7 +898,7 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
       marks: basis.fields.map((field) => markOf(row, field)),
     })).filter((entry) => entry.percent !== null)
       .sort((a, b) => Number(b.percent) - Number(a.percent) || a.name.localeCompare(b.name));
-    const bandRows = (gradeScale.length ? gradeScale : []).map((row) => ({
+    const bandRows = gradeScale.map((row) => ({
       grade: String(row.g || row.grade || ""),
       remark: String(row.r || row.remark || ""),
       min: Number(row.min),
@@ -926,17 +917,42 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
       const values = table.map((row) => row[field] as number | null).filter((value): value is number => value !== null);
       componentAverages[field] = { mean: values.length ? Math.round(values.reduce((sum, value) => sum + value, 0) * 10 / values.length) / 10 : null, max: MAX_MARK[field] };
     }
-    breakdown = {
-      subject: single.subject,
+    const percentages = table.map((row) => Number(row.percent));
+    const side = (rows: Record<string, unknown>[]) => rows.map((row) => ({ name: row.name, percent: row.percent, grade: row.grade }));
+    return {
+      subject: subjectNames.get(index) || `Subject ${index}`,
+      index,
       basisLabel: basis.label,
+      roster: students.length,
+      gradedOnBasis: table.length,
+      percentMean: percentages.length ? Math.round(percentages.reduce((sum, value) => sum + value, 0) * 10 / percentages.length) / 10 : null,
       bandsLabel: "Counts per grade band on the portal's own grade scale, highest band first.",
       bands: bandRows,
       componentAverages,
+      strongest: side(table.slice(0, 3)),
+      weakest: side(table.slice(-3).reverse()),
       table,
-      printHint: table.length <= 30
-        ? "Print the bands, then the whole table."
-        : "Print the bands, then the top five and bottom five rows of the table, and say the table holds the rest.",
     };
+  };
+  let breakdown: Record<string, unknown> | undefined;
+  let breakdowns: Record<string, unknown>[] | undefined;
+  if (args.breakdown === true) {
+    if (chosenIndexes.length === 1) {
+      const built = breakdownOf(chosenIndexes[0]);
+      const rows = Number(built.gradedOnBasis) || 0;
+      breakdown = {
+        ...built,
+        printHint: rows <= 30
+          ? "Print the bands, then the whole table."
+          : "Print the bands, then the top five and bottom five rows of the table, and say the table holds the rest.",
+      };
+    } else {
+      // Every subject at once, but without the long tables.
+      breakdowns = chosenIndexes.map((index) => {
+        const { table: _table, ...rest } = breakdownOf(index);
+        return rest;
+      });
+    }
   }
 
   // Overall position across every subject analysed, from the same single read.
@@ -998,6 +1014,7 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
     bottomStudentsOverall: ordered.length > topN ? ordered.slice(-topN).reverse() : [],
     subjects,
     ...(breakdown ? { breakdown } : {}),
+    ...(breakdowns ? { breakdowns, breakdownsHint: "Every subject is here. Name one of them for its full table." } : {}),
   };
 }
 
@@ -1604,7 +1621,9 @@ async function gateway(messages: unknown[], settings: ModelSettings, current: Cu
           if (rows.length) facts.push(`${rows.length} students found`);
         } else if (call.name === "report_card" && made.student) facts.push(`report card built for ${String((made.student as Record<string, unknown>).name || "")}`);
       }
-      const content = capText(JSON.stringify(slim(result)));
+      // A whole-class breakdown is one result with every subject in it, so it
+      // gets more room than an ordinary read before the safety cap.
+      const content = capText(JSON.stringify(slim(result)), call.name === "class_analysis" ? 24000 : TOOL_RESULT_CAP);
       seen.set(key, content);
       history.push({ role: "tool", callId: call.id, content });
     }
