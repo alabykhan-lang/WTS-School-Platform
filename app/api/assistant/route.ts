@@ -1743,6 +1743,29 @@ export async function GET(request: NextRequest) {
         p_session_secret: current.secret,
         p_job_id: jobId,
       });
+      // A killed function can leave a job marked running forever; close it out
+      // so the app never spins on a dead turn.
+      if (read?.ok === true && read.status === "running") {
+        const touched = Date.parse(String(read.updated_at || ""));
+        if (Number.isFinite(touched) && Date.now() - touched > 70000) {
+          const stale = {
+            ok: true,
+            model: "",
+            text: "The turn took longer than the hosting limit and was stopped before it could finish. Nothing partial was saved. Send the request again, or ask for a smaller part of it.",
+            steps: [],
+            truncated: true,
+            usage: null,
+          };
+          await callPrivilegedRpc("school_assistant_job_upsert", {
+            p_session_id: current.id,
+            p_session_secret: current.secret,
+            p_job_id: jobId,
+            p_status: "error",
+            p_result: stale,
+          }).catch(() => null);
+          return Response.json({ ...read, status: "done", result: stale }, { headers: noStoreHeaders() });
+        }
+      }
       return Response.json(read, { headers: noStoreHeaders() });
     }
     const person = current.context.person && typeof current.context.person === "object" ? current.context.person as Record<string, unknown> : {};
