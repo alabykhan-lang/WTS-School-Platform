@@ -55,7 +55,7 @@ assert.match(route, /classes: classes.map\(\(row\) => row.label\)/);
 assert.match(route, /async function chargeUsage/);
 assert.match(route, /if \(!isAdmin && answer\.ok === true\)/);
 const ui = await readFile(new URL("../app/_components/ProprietorAssistant.tsx", import.meta.url), "utf8");
-assert.match(ui, /config\.is_admin && <>\s*<div className="assistantPair">/, "the balance fields still show for a proprietor");
+assert.match(ui, /config\.is_admin && <>\s*<div className="assistantPair">\s*<label><span>Balance \(%\)<\/span><input/, "the balance fields still show for a proprietor");
 assert.match(ui, /const charged = value\.usage as/);
 assert.doesNotMatch(ui, /current\.usagePercent - current\.perReplyCost/, "the client still counts the answer itself");
 

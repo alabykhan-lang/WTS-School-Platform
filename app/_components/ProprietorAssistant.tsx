@@ -897,7 +897,7 @@ export function ProprietorAssistant() {
         <form className="assistantComposer" onSubmit={send}>
           <textarea value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Message the assistant…" rows={1} aria-label="Message"/>
           <button type="submit" disabled={busy || !draft.trim()} aria-label="Send">↑</button>
-          {!config.is_admin && <small>{`${settings.usagePercent.toFixed(0)}% allowance left${settings.usageUntil ? ` · until ${new Date(settings.usageUntil).toLocaleDateString()}` : ""}`}</small>}
+          {!config.is_admin && <small>{`${settings.usagePercent.toFixed(0)}% allowance left`}</small>}
           <button type="button" className={`assistantBell${notify === "on" ? " on" : ""}`} onClick={toggleNotify} aria-pressed={notify === "on"} title="Tell me here when the answer is ready">{notify === "on" ? "🔔 Notify me" : "🔕 Notify me"}</button>
         </form>
       </>}
@@ -966,20 +966,11 @@ export function ProprietorAssistant() {
       {tab === "usage" && <div className="assistantPane">
         <div className="assistantCard">
           <h2>Usage balance</h2>
-          {config.is_admin
-            ? <p className="assistantMuted">The balance counts down as the account answers. You set the level and the cost below.</p>
-            : <p className="assistantMuted">This is your balance. It goes down as your questions are answered.</p>}
+          {config.is_admin && <p className="assistantMuted">The balance counts down as the account answers. You set the level and the cost below.</p>}
           <div className="assistantMeter">
             <div className="assistantRing" style={{ ["--usage" as string]: `${settings.usagePercent}%` }}><span>{Math.round(settings.usagePercent)}%</span></div>
             <div><strong>{settings.usagePercent <= 0 ? "Empty" : "Remaining"}</strong><small>{settings.usagePercent <= 20 && settings.usagePercent > 0 ? "Running low" : config.is_admin ? "Manual balance for this account" : "Your balance"}</small></div>
           </div>
-          {!config.is_admin && (
-            <p className="assistantMuted">
-              {settings.usageUntil
-                ? `This balance runs until ${new Date(settings.usageUntil).toLocaleDateString()} (${Math.max(0, Math.ceil((settings.usageUntil - Date.now()) / 86400000))} day(s) left).`
-                : "No end date is set on this balance yet."}
-            </p>
-          )}
           {config.is_admin && <>
             <div className="assistantPair">
               <label><span>Balance (%)</span><input type="number" min="0" max="100" step="1" value={settings.usagePercent} onChange={(event) => changeUsage("usagePercent", event.target.value)} /></label>
