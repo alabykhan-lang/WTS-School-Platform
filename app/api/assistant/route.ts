@@ -744,7 +744,11 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
     subjectNames.set(Number(row.subject_index), String(row.subject_name || `Subject ${row.subject_index}`));
   }
   const config = ((configResponse?.settings || {}) as Record<string, unknown>).app_config as Record<string, unknown> | undefined;
-  const gradeScale = Array.isArray(config?.gradeScale) ? config.gradeScale as Record<string, unknown>[] : [];
+  // The portal's own default grade bands, used until the school customises
+  // them, so pass/fail and band counts here match the report cards.
+  const gradeScale = Array.isArray(config?.gradeScale) && config.gradeScale.length
+    ? config.gradeScale as Record<string, unknown>[]
+    : DEFAULT_GRADE_SCALE;
   const didPass = (total: number) => {
     const value = Math.floor(total);
     const grade = gradeScale.find((row) => value >= Number(row.min) && value <= Number(row.max));
@@ -1515,6 +1519,19 @@ async function askProvider(url: string, settings: ModelSettings, style: Style, h
 
 const MAX_TOOL_CALLS = 12;
 const TOOL_RESULT_CAP = 6000;
+
+/** Same default bands the Results Portal ships with, kept in step with it. */
+const DEFAULT_GRADE_SCALE: Record<string, unknown>[] = [
+  { min: 75, max: 100, g: "A1", r: "Excellent" },
+  { min: 70, max: 74, g: "B2", r: "Very Good" },
+  { min: 65, max: 69, g: "B3", r: "Good" },
+  { min: 60, max: 64, g: "C4", r: "Credit" },
+  { min: 55, max: 59, g: "C5", r: "Credit" },
+  { min: 50, max: 54, g: "C6", r: "Credit" },
+  { min: 45, max: 49, g: "D7", r: "Pass" },
+  { min: 40, max: 44, g: "E8", r: "Pass" },
+  { min: 0, max: 39, g: "F9", r: "Fail" },
+];
 
 /** Labels let a turn close with a sentence even when the model cannot be called again. */
 const DONE_LABELS: Record<string, string> = {

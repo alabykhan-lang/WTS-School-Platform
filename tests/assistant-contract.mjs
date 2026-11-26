@@ -40,6 +40,10 @@ assert.match(route, /const breakdownOf = /);
 assert.match(route, /breakdowns = chosenIndexes\.map/);
 assert.match(route, /const componentAverages/);
 assert.match(route, /printHint:/);
+
+// Band counts use the portal's own default bands until the school customises
+// them, so a breakdown always has real bands.
+assert.match(route, /const DEFAULT_GRADE_SCALE/);
 assert.match(route, /Break a subject down when asked[^\n]*call class_analysis only ONCE/);
 
 // A write asks for a tap, and a tap is verified against the same call.
