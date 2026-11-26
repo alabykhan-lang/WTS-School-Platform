@@ -1227,6 +1227,8 @@ async function verifyWrite(name: string, args: Record<string, unknown>, current:
   try {
     if (name === "results_request" && String(args.action) === "scores.enter") {
       const call = await openResults(current);
+      // The sheet read needs the class, term and session in session context first.
+      await call("context.set", { class_key: payload.class_key, academic_session: payload.academic_session, term: payload.term });
       const found = await verifyRow(async () => {
         const read = await call("read.scores", {
           class_key: payload.class_key,
@@ -1243,6 +1245,7 @@ async function verifyWrite(name: string, args: Record<string, unknown>, current:
     }
     if (name === "results_request" && String(args.action) === "fees.update") {
       const call = await openResults(current);
+      await call("context.set", { class_key: payload.class_key, academic_session: payload.academic_session, term: payload.term });
       const found = await verifyRow(async () => {
         const read = await call("read.fees", { class_key: payload.class_key, student_id: payload.student_id, term: payload.term, academic_session: payload.academic_session });
         const rows = Array.isArray(read?.rows) ? read.rows as Record<string, unknown>[] : [];
