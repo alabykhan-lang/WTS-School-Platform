@@ -98,8 +98,24 @@ assert.match(route, /classes: classes.map\(\(row\) => row.label\)/);
 assert.match(route, /async function chargeUsage/);
 assert.match(route, /if \(!isAdmin && !isTestRun && answer\.ok === true\)/);
 const ui = await readFile(new URL("../app/_components/ProprietorAssistant.tsx", import.meta.url), "utf8");
-assert.match(ui, /config\.is_admin && <>\s*<div className="assistantPair">\s*<label><span>Balance \(%\)<\/span><input/, "the balance fields still show for a proprietor");
+assert.match(ui, /config\.is_admin && <div className="assistantCard">\s*<h2>Set the balance<\/h2>[\s\S]{0,400}<label><span>Balance \(%\)<\/span><input/, "the balance fields still show for a proprietor");
 assert.match(ui, /const charged = value\.usage as/);
 assert.doesNotMatch(ui, /current\.usagePercent - current\.perReplyCost/, "the client still counts the answer itself");
+
+// The screen is the cloned chat shell: header, avatars, quiet confirm row and a
+// three-tab bar, not a settings page with a chat in it.
+assert.match(ui, /className="assistantAvatar">WTS</);
+assert.match(ui, /className="assistantWho">You</);
+assert.match(ui, /placeholder="Message the assistant…"/);
+assert.match(ui, /className="assistantConfirm"/);
+assert.match(ui, /className="assistantTabbar"/);
+assert.match(ui, />Chats<\/button>/);
+assert.match(ui, />Models<\/button>/);
+assert.match(ui, />Usage<\/button>/);
+assert.doesNotMatch(ui, /assistantApproval/, "the old yellow approval bar is gone");
+// The reply layer is prose and bullets, and settles pushback first.
+assert.match(route, /never a table/);
+assert.match(route, /settle that point first/);
+assert.match(route, /barely started/);
 
 console.log("Assistant contract passed");

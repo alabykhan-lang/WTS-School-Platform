@@ -222,6 +222,7 @@ export function ProprietorAssistant() {
   const [fetchingModels, setFetchingModels] = useState(false);
   const [probe, setProbe] = useState<Record<string, "testing" | "works" | "failed" | "busy">>({});
   const endRef = useRef<HTMLDivElement | null>(null);
+  const draftRef = useRef<HTMLTextAreaElement | null>(null);
   const resumed = useRef(false);
   const [elapsed, setElapsed] = useState(0);
   const baseTitle = useRef("");
@@ -280,6 +281,7 @@ export function ProprietorAssistant() {
       })
       .catch((error) => {
         const code = error instanceof Error ? error.message : "";
+        // The signed-out local preview still needs a working screen.
         if (process.env.NODE_ENV !== "production") {
           const mock: AssistantConfig = { configured: true, models: FALLBACK_MODELS, default_model: FALLBACK_MODELS[0].id, default_url: DEFAULT_URL, is_admin: true, person: { id: "preview", full_name: "Alabi Preview" } };
           setConfig(mock);
@@ -590,10 +592,12 @@ export function ProprietorAssistant() {
     event?.preventDefault();
     const content = (prompt || draft).trim();
     if (!content || busy || !activeThread) return;
-    if (!config?.is_admin && settings.usagePercent <= 0) { setNotice("The allowance is empty. Reset it in Usage to continue."); setTab("usage"); return; }
+    if (!config?.is_admin && settings.usagePercent <= 0) { setNotice("The allowance is empty. Ask the developer to top it up."); setTab("usage"); return; }
+    setApproval(null);
     const updated = [...activeThread.messages, { role: "user", content } as Message];
     updateThread(activeThread.id, updated);
     setDraft("");
+    if (draftRef.current) draftRef.current.style.height = "auto";
     await run(activeThread.id, updated);
   }
 
@@ -808,7 +812,7 @@ export function ProprietorAssistant() {
         const result = (value.completed?.result || {}) as { ok?: boolean; code?: string; error_detail?: string };
         const line = result.ok
           ? `Done. ${value.completed?.summary || approval.summary}`
-          : `Not saved: ${result.code || "unknown error"}${result.error_detail ? ` — ${result.error_detail}` : ""}.`;
+          : `Not saved. ${result.code || "unknown error"}${result.error_detail ? ` — ${result.error_detail}` : ""}.`;
         updateThread(activeThread.id, [...activeThread.messages, { role: "assistant", content: line }]);
       }
       setApproval(null);
@@ -824,22 +828,170 @@ export function ProprietorAssistant() {
         <h1>{loadError ? "Access check" : "Opening your workspace"}</h1>
         <p>{(loadError || "Checking your signed-in account…").replace(/^(ACCESS|SLOW):/, "")}</p>
         {loadError.startsWith("SLOW:") && <button type="button" onClick={() => window.location.reload()}>Try again</button>}
-        {loadError && !loadError.startsWith("SLOW:") && <a href="/portal/sign-in?return_to=%2Fassistant">Sign in to the Staff Portal</a>}
         {loadError.startsWith("SLOW:") && <a href="/portal/sign-in?return_to=%2Fassistant">Sign in again instead</a>}
+        {!!loadError && !loadError.startsWith("SLOW:") && <a href="/portal/sign-in?return_to=%2Fassistant">Sign in to the Staff Portal</a>}
       </div>
     </main>;
   }
 
+  const title = tab === "chats" ? `Good day, ${name}` : tab === "models" ? "Models" : "Usage";
+  const invite = (text: string) => { setTab("chats"); void send(undefined, text); };
+
   return <main className="assistantShell">
+    <header className="assistantTopbar">
+      <button className="assistantMenu" type="button" aria-label="Open chats" onClick={() => setDrawer((open) => !open)}><i/></button>
+      <div className="assistantTitles">
+        <p className="assistantEyebrow">PRIVATE ASSISTANT</p>
+        <h1>{title}</h1>
+      </div>
+    </header>
+
+    {tab === "chats" && <>
+      <div className="assistantConversation">
+        {!activeThread?.messages.length && <div className="assistantWelcome">
+          <span className="assistantOrb">WTS</span>
+          <h2>Ask me anything about the school.</h2>
+          <p>Results, learners, classes, fees — I read the live records before I answer, and I can save changes for you.</p>
+          <div className="assistantChips">
+            <button type="button" onClick={() => invite("Which class is the most competitive right now?")}>Which class is the most competitive?</button>
+            <button type="button" onClick={() => invite("How is JSS 2 doing this term?")}>How is JSS 2 doing?</button>
+            <button type="button" onClick={() => invite("Which classes have no marks recorded yet?")}>Who has no marks yet?</button>
+          </div>
+        </div>}
+        {activeThread?.messages.map((message, index) => {
+          const doc = message.doc;
+          const last = index === activeThread.messages.length - 1;
+          return <div key={`${message.role}-${index}`}>
+            <article className={`assistantMessage ${message.role}${message.doc || message.document ? " printable" : ""}`}>
+              {message.role === "assistant" && <div className="assistantAvatar">WTS</div>}
+              <div className={`assistantBubble${message.failed ? " failed" : ""}`}>{renderBlocks(message.content)}</div>
+              {message.role === "user" && <div className="assistantWho">You</div>}
+            </article>
+            {(message.doc || message.document) && <div className="assistantDocActions">
+              {doc?.student
+                ? <button type="button" className="assistantDocPrint" onClick={() => saveCard(doc)}>Save report card</button>
+                : <button type="button" className="assistantDocPrint" onClick={() => openCard(doc)}>Print the report card</button>}
+              {doc?.student && <button type="button" className="assistantDocLink" onClick={() => openCard(doc)}>Open to print</button>}
+              {doc?.student && <button type="button" className="assistantDocLink" onClick={() => openCard(doc, true)}>Open in portal</button>}
+            </div>}
+            {approval && last && message.role === "assistant" && !message.failed && <div className="assistantConfirm">
+              <button type="button" onClick={confirm} disabled={busy}>Confirm</button>
+              <button type="button" onClick={() => setApproval(null)} disabled={busy}>Cancel</button>
+            </div>}
+          </div>;
+        })}
+        {busy && busyThread === activeThread?.id && <article className="assistantMessage assistant"><div className="assistantAvatar">WTS</div><div className="assistantBubble assistantThinking"><i/><i/><i/><span className="assistantWait">{elapsed < 5 ? "Working" : `Working · ${elapsed}s`}</span></div></article>}
+        {busy && busyThread && busyThread !== activeThread?.id && <p className="assistantMuted assistantElsewhere">Still working in another chat. You can keep reading here.</p>}
+        <div ref={endRef}/>
+      </div>
+      {notice && <div className="assistantNotice" role="status">{notice}</div>}
+      <form className="assistantComposer" onSubmit={send}>
+        <textarea ref={draftRef} value={draft} rows={1} aria-label="Message" placeholder="Message the assistant…"
+          onChange={(event) => setDraft(event.target.value)}
+          onInput={(event) => { const el = event.currentTarget; el.style.height = "auto"; el.style.height = `${Math.min(el.scrollHeight, 150)}px`; }}
+          onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }}/>
+        <button className="assistantSend" type="submit" disabled={busy || !draft.trim()} aria-label="Send">↑</button>
+        <div className="assistantComposerFoot">
+          {!config.is_admin && <small>{`${settings.usagePercent.toFixed(0)}% left`}</small>}
+          <button type="button" className={`assistantPill test${testMode ? " on" : ""}`} onClick={() => setTestMode((on) => { const next = !on; try { localStorage.setItem(`wts-assistant-test:${config.person?.id || "signed-in-user"}`, next ? "on" : "off"); } catch { /* private mode */ } return next; })} aria-pressed={testMode} title="Test turns are free and do not use the balance">Test</button>
+          <button type="button" className={`assistantPill${notify === "on" ? " on" : ""}`} onClick={toggleNotify} aria-pressed={notify === "on"} title="Tell me here when the answer is ready">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M18 15V10a6 6 0 1 0-12 0v5l-2 3h16l-2-3Z"/><path d="M10 21a2.4 2.4 0 0 0 4 0"/></svg>
+            Notify me
+          </button>
+        </div>
+      </form>
+    </>}
+
+    {tab === "models" && <div className="assistantPane">
+      <div className="assistantCard">
+        <h2>Your models</h2>
+        <p>Every answer comes through the model with the green dot. Tap a dot to switch, or test a model first.</p>
+        <div className="assistantModelList">
+          {settings.models.map((model) => {
+            const state = probe[model.id];
+            const current = settings.defaultModel === model.id;
+            return <div key={model.id} className={`assistantModelRow ${state || ""}${current ? " inuse" : ""}`}>
+              <button type="button" className={`assistantModelRadio${current ? " on" : ""}`} aria-label={`Use ${model.label}`} onClick={() => useModel(model)} disabled={current}/>
+              <div className="assistantModelBody">
+                <b>{model.label}</b>
+                <small>{model.id}{state === "works" ? " · answered" : state === "busy" ? " · busy, try again" : state === "failed" ? " · failed" : ""}</small>
+              </div>
+              {config.is_admin && <button type="button" className="assistantModelTest" onClick={() => testModel(model)} disabled={state === "testing"}>{state === "testing" ? "…" : "Test"}</button>}
+              {config.is_admin && settings.models.length > 1 && <button type="button" className="assistantRemove" onClick={() => removeModel(model.id)}>Remove</button>}
+            </div>;
+          })}
+        </div>
+        {!settings.models.length && <p className="assistantTest fail">No model saved yet. Add one below.</p>}
+      </div>
+
+      {config.is_admin && <div className="assistantCard">
+        <h2>Add a model</h2>
+        <p>The key stays on this device for your account only, and is sent only when you ask something.</p>
+        <div className="assistantPair">
+          <label><span>Provider</span><select value={form.provider} onChange={(event) => {
+            const provider = PROVIDERS.find((item) => item.id === event.target.value);
+            setForm((current) => ({ ...current, provider: event.target.value, url: provider?.url || current.url, id: "", key: "" }));
+            setModelList([]); setProbe({}); setTest({ state: "idle", message: "" });
+          }}>{PROVIDERS.map((provider) => <option key={provider.id} value={provider.id}>{provider.label}</option>)}</select></label>
+          <label><span>Model ID</span><input list="assistantModelChoices" placeholder={config?.default_model || "deepseek-v4.1-flash"} value={form.id} onChange={(event) => setForm({ ...form, id: event.target.value })}/><datalist id="assistantModelChoices">{modelList.map((id) => <option key={id} value={id} />)}</datalist></label>
+        </div>
+        <div className="assistantPair">
+          <label><span>Base URL (optional)</span><input type="url" inputMode="url" placeholder={config?.default_url || DEFAULT_URL} value={form.url} onChange={(event) => setForm({ ...form, url: event.target.value })}/></label>
+          <label><span>Effort</span><select value={form.effort} onChange={(event) => setForm({ ...form, effort: event.target.value as Effort })}>{EFFORTS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
+        </div>
+        <label><span>API key</span><div className="assistantKeyRow"><input type={showKey ? "text" : "password"} autoComplete="new-password" placeholder={settings.providerKey ? `stored …${settings.providerKey.slice(-4)}` : "sk-…"} value={form.key} onChange={(event) => setForm({ ...form, key: event.target.value })}/><button type="button" onClick={() => setShowKey((shown) => !shown)}>{showKey ? "Hide" : "Show"}</button></div>{settings.providerKey && <em>A key ending {settings.providerKey.slice(-4)} is stored. Leave empty to keep it.</em>}</label>
+        <div className="assistantActions">
+          <button type="button" className="assistantPrimary" onClick={saveModel}>Save model</button>
+          <button type="button" className="assistantGhost" onClick={fetchModels} disabled={fetchingModels}>{fetchingModels ? "Listing…" : "List models"}</button>
+          <button type="button" className="assistantGhost" onClick={runTest} disabled={test.state === "running"}>{test.state === "running" ? "Testing…" : "Test route"}</button>
+          {settings.providerKey && <button type="button" className="assistantRemove" onClick={removeKey}>Remove key</button>}
+        </div>
+        {test.state !== "idle" && <div className={`assistantTest ${test.state}`}>{test.message}</div>}
+        {savedFlash && <div className="assistantTest pass">Saved. It is now the model in use.</div>}
+        {!!modelList.length && <div className="assistantModelList assistantAdd">
+          {modelList.filter((id) => !settings.models.some((model) => model.id === id && (model.providerId || settings.providerId) === form.provider)).map((id) => <div key={id} className="assistantModelRow">
+            <div className="assistantModelBody"><b>{id}</b><small>{hostOf(form.url || settings.providerUrl || DEFAULT_URL)}</small></div>
+            <button type="button" className="assistantModelTest" onClick={() => addModel(id)}>Add</button>
+          </div>)}
+          {modelList.every((id) => settings.models.some((model) => model.id === id && (model.providerId || settings.providerId) === form.provider)) && <p>Every model this key returned is already in your list.</p>}
+        </div>}
+      </div>}
+    </div>}
+
+    {tab === "usage" && <div className="assistantPane">
+      <div className="assistantCard">
+        <h2>Usage balance</h2>
+        <p>{config.is_admin ? "The balance counts down as the account answers. Test turns and your own turns are free." : "This is what is left for your assistant. Only your own chats use it."}</p>
+        <div className="assistantGauge">
+          <div className="assistantRing" style={{ ["--usage" as string]: `${settings.usagePercent}%` }}><span>{Math.round(settings.usagePercent)}%</span></div>
+          <strong>{settings.usagePercent <= 0 ? "Empty" : "Remaining"}</strong>
+          <small>{settings.usagePercent <= 20 && settings.usagePercent > 0 ? "Running low" : settings.usageUntil ? `Runs until ${new Date(settings.usageUntil).toLocaleDateString()}` : "No end date set"}</small>
+        </div>
+        {settings.usagePercent <= 20 && settings.usagePercent > 0 && <p className="assistantLow">Nearly used up. The developer tops this up.</p>}
+        {settings.usagePercent <= 0 && <p className="assistantLow">The allowance is empty. Ask the developer to top it up.</p>}
+      </div>
+      {config.is_admin && <div className="assistantCard">
+        <h2>Set the balance</h2>
+        <p>Shared with this account. Developer chats are free; only the proprietor's answers use it.</p>
+        <div className="assistantPair">
+          <label><span>Balance (%)</span><input type="number" min="0" max="100" step="1" value={settings.usagePercent} onChange={(event) => changeUsage("usagePercent", event.target.value)} /></label>
+          <label><span>Cost per answer (%)</span><input type="number" min="0" max="100" step="0.5" value={settings.perReplyCost} onChange={(event) => changeUsage("perReplyCost", event.target.value)} /></label>
+        </div>
+        <label><span>Lasts for (days)</span><input type="number" min="1" max="365" step="1" value={settings.usageDays} onChange={(event) => setSettings((current) => ({ ...current, usageDays: Math.max(1, Math.min(365, Number(event.target.value) || 1)) }))} /></label>
+        <div className="assistantActions"><button type="button" className="assistantPrimary" onClick={startAllowance}>Start fresh at 100%</button><button type="button" className="assistantGhost" onClick={() => { const next = { ...settings, usagePercent: 100 }; setSettings(next); pushUsage(next); }}>Set to 100%</button></div>
+      </div>}
+    </div>}
+
+    <nav className="assistantTabbar" aria-label="Workspace">
+      <button type="button" className={tab === "chats" ? "selected" : ""} onClick={() => setTab("chats")}>Chats</button>
+      <button type="button" className={tab === "models" ? "selected" : ""} onClick={() => { setTab("models"); setForm((current) => ({ ...current, id: current.id || settings.defaultModel, provider: settings.providerId, effort: settings.effort })); }}>Models</button>
+      <button type="button" className={tab === "usage" ? "selected" : ""} onClick={() => setTab("usage")}>Usage</button>
+    </nav>
+
+    {drawer && <button className="assistantScrim" type="button" aria-label="Close menu" onClick={() => setDrawer(false)}/>}
     <aside className={`assistantSidebar ${drawer ? "open" : ""}`}>
       <div className="assistantBrand"><img src="/images/logo.webp" alt=""/><div><strong>Way to Success</strong><span>{config.is_admin ? "Developer workspace" : "Proprietor workspace"}</span></div></div>
-      <button className="assistantNew" type="button" onClick={newChat}><span>＋</span> New chat</button>
-
-      <nav className="assistantNav" aria-label="Workspace">
-        <button type="button" className={tab === "chats" ? "selected" : ""} onClick={() => setTab("chats")}>Chats</button>
-        {config.is_admin && <button type="button" className={tab === "models" ? "selected" : ""} onClick={() => { setTab("models"); setForm((current) => ({ ...current, id: current.id || settings.defaultModel, provider: settings.providerId, effort: settings.effort })); }}>Models</button>}
-        {<button type="button" className={tab === "usage" ? "selected" : ""} onClick={() => setTab("usage")}>Usage</button>}
-      </nav>
+      <button className="assistantNew" type="button" onClick={newChat}><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg> New chat</button>
       <div className="assistantChatList">
         <p className="assistantListLabel">Your chats</p>
         {threads.map((thread) => <div key={thread.id} className={`assistantChatRow ${thread.id === activeId ? "active" : ""}`}>
@@ -852,144 +1004,5 @@ export function ProprietorAssistant() {
         <a href="/workspace">Staff Portal</a>
       </div>
     </aside>
-    {drawer && <button className="assistantScrim" type="button" aria-label="Close menu" onClick={() => setDrawer(false)}/>}
-
-    <section className="assistantMain">
-      <header className="assistantTopbar">
-        <button className="assistantMenu" type="button" aria-label="Open chats" onClick={() => setDrawer((open) => !open)}>☰</button>
-        <div className="assistantTitles">
-          <p className="assistantEyebrow">PRIVATE ASSISTANT</p>
-          <h1>{tab === "chats" ? `Good day, ${name}` : tab === "models" ? "Models" : "Usage"}</h1>
-        </div>
-      </header>
-
-      {tab === "chats" && <>
-        <div className="assistantConversation">
-          {!activeThread?.messages.length && <div className="assistantWelcome">
-            <span className="assistantOrb">✦</span>
-            <p className="assistantEyebrow">YOUR SCHOOL'S VIRTUAL STAFF</p>
-            <h2>Always here for the school.</h2>
-            <p>Ask for figures, a pupil record, or a change to save — any hour, any day. Bring a rough idea for the school as well and we will think it through together.</p>
-            <div className="assistantOnDuty">
-              <div className="assistantOnDutyHead"><span className="assistantPulse"/>On duty now</div>
-              <p>I never close, never rush you, and always check live records before I answer. Type below whenever you are ready.</p>
-            </div>
-          </div>}
-          {activeThread?.messages.map((message, index) => {
-            const doc = message.doc;
-            return <article key={`${message.role}-${index}`} className={`assistantMessage ${message.role}${message.doc || message.document ? " printable" : ""}`}>
-              <div className="assistantWho">{message.role === "user" ? "You" : "WTS"}</div>
-              <div className={`assistantBubble${message.failed ? " failed" : ""}`}>{renderBlocks(message.content)}</div>
-              {(message.doc || message.document) && <div className="assistantDocActions">
-                {doc?.student
-                  ? <button type="button" className="assistantDocPrint" onClick={() => saveCard(doc)}>Save report card</button>
-                  : <button type="button" className="assistantDocPrint" onClick={() => openCard(doc)}>Print the report card</button>}
-                {doc?.student && <button type="button" className="assistantDocLink" onClick={() => openCard(doc)}>Open to print</button>}
-                {doc?.student && <button type="button" className="assistantDocLink" onClick={() => openCard(doc, true)}>Open in portal</button>}
-              </div>}
-            </article>;
-          })}
-          {busy && busyThread === activeThread?.id && <article className="assistantMessage assistant"><div className="assistantWho">WTS</div><div className="assistantBubble assistantThinking"><i/><i/><i/><span className="assistantWait">{elapsed < 5 ? "Working" : `Working · ${elapsed}s`}</span></div></article>}
-          {busy && busyThread && busyThread !== activeThread?.id && <p className="assistantMuted assistantElsewhere">Still working in another chat. You can keep reading here.</p>}
-          <div ref={endRef}/>
-        </div>
-        {approval && <div className="assistantApproval"><div><strong>Confirm this change</strong><span>{approval.summary}</span></div><div className="assistantApprovalActions"><button type="button" onClick={() => setApproval(null)}>Cancel</button><button type="button" onClick={confirm} disabled={busy}>Confirm</button></div></div>}
-        {notice && <div className="assistantNotice" role="status">{notice}</div>}
-        <form className="assistantComposer" onSubmit={send}>
-          <textarea value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Message the assistant…" rows={1} aria-label="Message"/>
-          <button type="submit" disabled={busy || !draft.trim()} aria-label="Send">↑</button>
-          {!config.is_admin && <small>{`${settings.usagePercent.toFixed(0)}% allowance left`}</small>}
-          <button type="button" className={`assistantBell${testMode ? " on" : ""}`} onClick={() => setTestMode((on) => { const next = !on; try { localStorage.setItem(`wts-assistant-test:${config.person?.id || "signed-in-user"}`, next ? "on" : "off"); } catch { /* private mode */ } return next; })} aria-pressed={testMode} title="Test turns are free and do not use the balance">🧪 Test</button>
-          <button type="button" className={`assistantBell${notify === "on" ? " on" : ""}`} onClick={toggleNotify} aria-pressed={notify === "on"} title="Tell me here when the answer is ready">{notify === "on" ? "🔔 Notify me" : "🔕 Notify me"}</button>
-        </form>
-      </>}
-
-      {tab === "models" && <div className="assistantPane">
-        <div className="assistantCard">
-          <h2>Connection</h2>
-          <p className="assistantMuted">The key is kept on this device for your account only and sent only when you ask something. It is never shown to other accounts.</p>
-          <p className={`assistantMuted assistantSaved ${settings.providerKey ? "" : "empty"}`}>In use now: {settings.providerKey ? `key ending ${settings.providerKey.slice(-4)}` : "no key saved"} at {hostOf(settings.providerUrl || DEFAULT_URL)} · model {settings.defaultModel}</p>
-          <div className="assistantPair">
-            <label><span>Provider</span><select value={form.provider} onChange={(event) => {
-              const provider = PROVIDERS.find((item) => item.id === event.target.value);
-              setForm((current) => ({ ...current, provider: event.target.value, url: provider?.url || current.url, id: "", key: "" }));
-              setModelList([]); setProbe({}); setTest({ state: "idle", message: "" });
-            }}>{PROVIDERS.map((provider) => <option key={provider.id} value={provider.id}>{provider.label}</option>)}</select></label>
-            <label><span>Model</span><input list="assistantModelChoices" placeholder={config?.default_model || "deepseek-v4.1-flash"} value={form.id} onChange={(event) => setForm({ ...form, id: event.target.value })}/><datalist id="assistantModelChoices">{modelList.map((id) => <option key={id} value={id} />)}</datalist></label>
-          </div>
-          <div className="assistantPair">
-            <label><span>Base URL (optional)</span><input type="url" inputMode="url" placeholder={config?.default_url || DEFAULT_URL} value={form.url} onChange={(event) => setForm({ ...form, url: event.target.value })}/></label>
-            <label><span>Effort</span><select value={form.effort} onChange={(event) => setForm({ ...form, effort: event.target.value as Effort })}>{EFFORTS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
-          </div>
-          <label><span>API key</span><div className="assistantKeyRow"><input type={showKey ? "text" : "password"} autoComplete="new-password" placeholder={settings.providerKey ? `stored …${settings.providerKey.slice(-4)}` : "sk-…"} value={form.key} onChange={(event) => setForm({ ...form, key: event.target.value })}/><button type="button" onClick={() => setShowKey((shown) => !shown)}>{showKey ? "Hide" : "Show"}</button></div>{settings.providerKey && <em>A key ending {settings.providerKey.slice(-4)} is stored. Leave empty to keep it.</em>}</label>
-          <div className="assistantActions">
-            <button type="button" className="assistantPrimary" onClick={saveModel}>Save</button>
-            <button type="button" className="assistantGhost" onClick={fetchModels} disabled={fetchingModels}>{fetchingModels ? "Listing…" : "List models"}</button>
-            <button type="button" className="assistantGhost" onClick={runTest} disabled={test.state === "running"}>{test.state === "running" ? "Testing…" : "Test route"}</button>
-            {settings.providerKey && <button type="button" className="assistantRemove" onClick={removeKey}>Remove key</button>}
-          </div>
-          {test.state !== "idle" && <div className={`assistantTest ${test.state}`}>{test.message}</div>}
-          {savedFlash && <div className="assistantTest pass">Saved. It is now the model in use.</div>}
-        </div>
-        <div className="assistantCard">
-          <h2>Your models</h2>
-          <p className="assistantMuted">Only the models you pick stay here. Use powers the assistant; Test checks that route. Green answered, amber is busy, red failed.</p>
-          {!settings.models.length && <p className="assistantTest fail">No model saved yet. Add one below, or type a model above and press Save.</p>}
-          <div className="assistantModelList">
-            {settings.models.map((model) => {
-              const state = probe[model.id];
-              return <div key={model.id} className={`assistantModelRow ${state || ""}`}>
-                <div className="assistantModelBody">
-                  <b>{model.label}</b>
-                  <small>{model.id} · {hostOf(model.url || settings.providerUrl || DEFAULT_URL)}{settings.defaultModel === model.id ? " · in use" : ""}{state === "works" ? " · works" : state === "busy" ? " · busy, try again" : state === "failed" ? " · failed" : ""}</small>
-                </div>
-                <button type="button" className="assistantModelPick" onClick={() => useModel(model)} disabled={settings.defaultModel === model.id}>{settings.defaultModel === model.id ? "In use" : "Use"}</button>
-                <button type="button" className="assistantModelTest" onClick={() => testModel(model)} disabled={state === "testing"}>{state === "testing" ? "…" : "Test"}</button>
-                {settings.models.length > 1 && <button type="button" className="assistantRemove" onClick={() => removeModel(model.id)}>Remove</button>}
-              </div>;
-            })}
-          </div>
-          <p className="assistantMuted">Current endpoint: {settings.providerUrl || DEFAULT_URL}</p>
-        </div>
-        <div className="assistantCard">
-          <h2>Add a model from this key</h2>
-          <p className="assistantMuted">List what {hostOf(form.url || settings.providerUrl || DEFAULT_URL)} reaches, then add the one you want. Nothing else is added.</p>
-          <div className="assistantActions"><button type="button" className="assistantGhost" onClick={fetchModels} disabled={fetchingModels}>{fetchingModels ? "Listing…" : "List models"}</button></div>
-          {!!modelList.length && <div className="assistantModelList">
-            {modelList.filter((id) => !settings.models.some((model) => model.id === id && (model.providerId || settings.providerId) === form.provider)).map((id) => <div key={id} className="assistantModelRow">
-              <div className="assistantModelBody"><b>{id}</b><small>{hostOf(form.url || settings.providerUrl || DEFAULT_URL)}</small></div>
-              <button type="button" className="assistantModelPick" onClick={() => addModel(id)}>Add</button>
-            </div>)}
-            {modelList.every((id) => settings.models.some((model) => model.id === id && (model.providerId || settings.providerId) === form.provider)) && <p className="assistantMuted">Every model this key returned is already in your list.</p>}
-          </div>}
-        </div>
-      </div>}
-
-      {tab === "usage" && <div className="assistantPane">
-        <div className="assistantCard">
-          <h2>Usage balance</h2>
-          {config.is_admin && <p className="assistantMuted">The balance counts down as the account answers. You set the level and the cost below. Test turns and your own turns are free.</p>}
-          <div className="assistantMeter">
-            <div className="assistantRing" style={{ ["--usage" as string]: `${settings.usagePercent}%` }}><span>{Math.round(settings.usagePercent)}%</span></div>
-            <div><strong>{settings.usagePercent <= 0 ? "Empty" : "Remaining"}</strong><small>{settings.usagePercent <= 20 && settings.usagePercent > 0 ? "Running low" : config.is_admin ? "Manual balance for this account" : "Your balance"}</small></div>
-          </div>
-          {config.is_admin && <>
-            <div className="assistantPair">
-              <label><span>Balance (%)</span><input type="number" min="0" max="100" step="1" value={settings.usagePercent} onChange={(event) => changeUsage("usagePercent", event.target.value)} /></label>
-              <label><span>Cost per answer (%)</span><input type="number" min="0" max="100" step="0.5" value={settings.perReplyCost} onChange={(event) => changeUsage("perReplyCost", event.target.value)} /></label>
-            </div>
-            <label><span>Lasts for (days)</span><input type="number" min="1" max="365" step="1" value={settings.usageDays} onChange={(event) => setSettings((current) => ({ ...current, usageDays: Math.max(1, Math.min(365, Number(event.target.value) || 1)) }))} /></label>
-            <p className="assistantMuted">{settings.usageUntil ? `This allowance runs until ${new Date(settings.usageUntil).toLocaleDateString()} (${Math.max(0, Math.ceil((settings.usageUntil - Date.now()) / 86400000))} day(s) left).` : "No end date set yet. Start the allowance to date it."} It is shared. Developer chats are free; only the proprietor's answers use it.</p>
-            <div className="assistantActions"><button type="button" className="assistantPrimary" onClick={startAllowance}>Start fresh at 100%</button><button type="button" className="assistantGhost" onClick={() => { const next = { ...settings, usagePercent: 100 }; setSettings(next); pushUsage(next); }}>Set balance to 100%</button></div>
-          </>}
-        </div>
-      </div>}
-    </section>
-
-    <nav className="assistantTabbar" aria-label="Workspace">
-      <button type="button" className={tab === "chats" ? "selected" : ""} onClick={() => setTab("chats")}>Chats</button>
-      {config.is_admin && <button type="button" className={tab === "models" ? "selected" : ""} onClick={() => { setTab("models"); setForm((current) => ({ ...current, id: current.id || settings.defaultModel, provider: settings.providerId, effort: settings.effort })); }}>Models</button>}
-      {<button type="button" className={tab === "usage" ? "selected" : ""} onClick={() => setTab("usage")}>Usage</button>}
-    </nav>
   </main>;
 }
