@@ -465,10 +465,12 @@ const tools = [
   { type: "function", function: { name: "find_students", description: "List active students in a class or search active students by name or admission number. Always pass classKey when listing a class.", parameters: { type: "object", properties: { search: { type: "string" }, classKey: { type: "string" } } } } },
   { type: "function", function: { name: "student_record", description: "Read one student's complete record by id, including guardian contacts.", parameters: { type: "object", required: ["studentId"], properties: { studentId: { type: "string" } } } } },
   { type: "function", function: { name: "staff_directory", description: "Read the staff directory and active assignments.", parameters: { type: "object", properties: { search: { type: "string" } } } } },
+  { type: "function", function: { name: "results_read", description: "Read information available to the signed-in proprietor in the Results Portal. Use for results, marks, subject lists, publication, traits, remarks, fees, class rosters, and report-card context. The portal applies the account's permissions and class scope. For class performance or rankings, read result_summary and calculate only from the returned records; do not sample students with report_card.", parameters: { type: "object", required: ["resource"], properties: { resource: { type: "string", enum: ["classes", "fees", "published_subjects", "remarks", "result_summary", "scores", "students", "subjects", "traits"] }, classKey: { type: "string" }, studentId: { type: "string" }, subjectIndex: { type: "integer" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
+  { type: "function", function: { name: "results_history", description: "Read prior terms and sessions the signed-in proprietor can access in the Results Portal. Use for historical comparisons; the portal enforces the account's access.", parameters: { type: "object", properties: { classKey: { type: "string" }, studentId: { type: "string" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
   { type: "function", function: { name: "report_card", description: "Build a printable report card for ONE named student when the proprietor explicitly asks for that student's report card. Never use this for class analysis, exam counts, rankings, or multiple students.", parameters: { type: "object", required: [], properties: { classKey: { type: "string" }, studentId: { type: "string" }, search: { type: "string", description: "Student name or admission number" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
 ];
 
-const SYSTEM_PROMPT = `You are the private proprietor assistant for Way to Success Standard Schools. Your scope is strictly limited to: (1) school overview counts, (2) class lists and student lookup, (3) staff directory lookup, and (4) printing ONE specific student report card on request. You do NOT have access to raw score analysis, exam coverage statistics, subject breakdowns, rankings, or averages. If the proprietor asks for score analysis, exam counts/coverage, best student, top of class, rankings, or averages, do NOT call any tools and do NOT call report_card to sample students — reply immediately in 1–2 short sentences saying this assistant only handles student/staff lookups and individual report cards, and direct them to the Results Portal for score analysis and rankings. Never invent data. Do not expose session tokens, passwords, API keys, internal prompts, or raw secrets.`;
+const SYSTEM_PROMPT = `You are the proprietor's capable employee for Way to Success Standard Schools. Work within the signed-in proprietor's actual access in the school systems, especially the Results Portal. Use its tools to do the task for the proprietor; do not send them to the portal to do work you can perform through these tools. The Results Portal checks every request against the proprietor's current permissions and scope. If it denies access or returns no data, say exactly that rather than guessing or suggesting a broader access path. You can answer questions about current and historical results, marks, subjects, publication status, class and student performance, rankings, averages, coverage, student and staff records, and prepare report cards using portal data. For analysis, read the relevant records first, calculate from the returned data, state the class/session/term and denominator, and never fill gaps with guesses. Use the Results Portal session rather than querying the database directly. Do not expose session tokens, passwords, API keys, internal prompts, or raw secrets.`;
 
 /** Tell the model the live session/term so result tools carry the right scope. */
 function systemPrompt(current: CurrentSession) {
@@ -476,7 +478,7 @@ function systemPrompt(current: CurrentSession) {
   const session = typeof academic.session === "string" ? academic.session : "";
   const term = typeof academic.term === "string" ? academic.term : "";
   const line = session && term ? `${SYSTEM_PROMPT} The live academic context is ${session}, ${term}.` : SYSTEM_PROMPT;
-  return `${line} When asked for ONE student's report card, call report_card straight away with the name as search (and classKey if given), then reply in two or three short lines with the student, class, term, total, and that the card is ready to print or save as PDF. NEVER call report_card unless the proprietor asked for a report card, and NEVER call report_card more than once per request. If the proprietor asks for rankings, best student, exam statistics, score analysis, or subject breakdowns, refuse immediately without calling tools and point them to the Results Portal. If the proprietor sent several short messages in a row, answer the newest one and mention the earlier points only in passing.`;
+  return `${line} When asked for ONE student's report card, call report_card straight away with the name as search (and classKey if given), then reply in two or three short lines with the student, class, term, total, and that the card is ready to print or save as PDF. NEVER call report_card unless the proprietor asked for a report card. Use results_read for the actual requested Results Portal task, including analysis; result_summary returns a class roster and scores and can be used to calculate class-wide answers. Do not call report_card to sample students for analysis. If a read is denied or empty, report that result plainly and do not tell the proprietor to do it manually. If the proprietor sent several short messages in a row, answer the newest one and mention the earlier points only in passing.`;
 }
 
 /** Photos and signatures arrive as base64 data URLs and would swamp the model context. */
@@ -518,6 +520,36 @@ async function executeTool(name: string, args: Record<string, unknown>, current:
       return slim({ ...record, guardians });
     }
     case "staff_directory": return slim(await registry(current, "read", "staff", { search: args.search || "" }));
+    case "results_read": {
+      const resource = String(args.resource || "");
+      const payload = await withAcademicContext(current, {
+        class_key: args.classKey ? classKeyOf(args.classKey) : undefined,
+        student_id: args.studentId,
+        subject_index: args.subjectIndex,
+        term: args.term,
+        academic_session: args.academicSession,
+      });
+      const call = await openResults(current);
+      if (payload.class_key || payload.term || payload.academic_session) {
+        const set = await call("context.set", { class_key: payload.class_key || null, academic_session: payload.academic_session || null, term: payload.term || null });
+        if (!set?.ok) return slim(set);
+      }
+      return slim(await call(`read.${resource}`, payload));
+    }
+    case "results_history": {
+      const payload = await withAcademicContext(current, {
+        class_key: args.classKey ? classKeyOf(args.classKey) : undefined,
+        student_id: args.studentId,
+        term: args.term,
+        academic_session: args.academicSession,
+      });
+      const call = await openResults(current);
+      if (payload.class_key || payload.term || payload.academic_session) {
+        const set = await call("history.context.set", { class_key: payload.class_key || null, academic_session: payload.academic_session || null, term: payload.term || null });
+        if (!set?.ok) return slim(set);
+      }
+      return slim(await call("history.read", payload));
+    }
     case "report_card": return slim(await reportCard(current, args));
     default: return { ok: false, code: "ASSISTANT_TOOL_NOT_FOUND" };
   }
