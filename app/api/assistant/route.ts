@@ -8,7 +8,7 @@ import type { CardData } from "./card";
 import { cardPdf } from "./card-pdf";
 
 export const runtime = "nodejs";
-export const maxDuration = 220;
+export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
 const GATEWAY_KEY = process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_AI_GATEWAY_API_KEY || "";
@@ -316,6 +316,20 @@ async function liveAcademic(current: CurrentSession) {
   return { session, term };
 }
 
+/** The real class names, so the model never has to guess a class key. */
+async function classCatalog(current: CurrentSession) {
+  try {
+    const call = await openResults(current);
+    const read = await call("read.classes", {});
+    const rows = Array.isArray(read?.rows) ? read.rows as Record<string, unknown>[] : [];
+    return rows
+      .filter((row) => row && row.class_key)
+      .map((row) => ({ key: String(row.class_key), label: String(row.display_name || classLabel(String(row.class_key))) }));
+  } catch {
+    return [];
+  }
+}
+
 /** Class keys are lowercase slugs, but people type "SS2 Science", so settle it here. */
 function classKeyOf(value: unknown) {
   const raw = String(value || "").trim().toLowerCase();
@@ -538,7 +552,7 @@ const tools = [
   { type: "function", function: { name: "student_record", description: "Read one student's complete record by id, including guardian contacts.", parameters: { type: "object", required: ["studentId"], properties: { studentId: { type: "string" } } } } },
   { type: "function", function: { name: "staff_directory", description: "Read the staff directory and active assignments.", parameters: { type: "object", properties: { search: { type: "string" } } } } },
   { type: "function", function: { name: "results_read", description: "Read information available to the signed-in proprietor in the Results Portal. Use for results, marks, subject lists, publication, traits, remarks, fees, class rosters, and report-card context. The portal applies the account's permissions and class scope. For class performance, pass/fail, coverage, averages, or rankings, use class_analysis so the complete class is read and summarized in one call.", parameters: { type: "object", required: ["resource"], properties: { resource: { type: "string", enum: ["classes", "fees", "published_subjects", "remarks", "result_summary", "scores", "students", "subjects", "traits"] }, classKey: { type: "string" }, studentId: { type: "string" }, subjectIndex: { type: "integer" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
-  { type: "function", function: { name: "class_analysis", description: "Get a complete one-call performance and exam-coverage analysis for a class from the Results Portal. Always use this for pass/fail rates, coverage, averages, and top performers. It reads the full class result set once and returns compact counts so no students are skipped or sampled. Requires classKey; session and term default to the live portal context.", parameters: { type: "object", required: ["classKey"], properties: { classKey: { type: "string" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
+  { type: "function", function: { name: "class_analysis", description: "Complete one-call performance, ranking and exam-coverage analysis for a class from the Results Portal. Use it for pass/fail rates, coverage, averages, overall ranks and top performers. It reads the full class result set once and returns exact denominators, so no student is skipped. Requires classKey. Pass subject to narrow to one subject, topN to change how many leaders are returned, and includeMissing to name the students with no exam mark.", parameters: { type: "object", required: ["classKey"], properties: { classKey: { type: "string" }, subject: { type: "string", description: "Subject name or stored index, for one subject only" }, topN: { type: "integer" }, includeMissing: { type: "boolean" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
   { type: "function", function: { name: "results_history", description: "Read prior terms and sessions the signed-in proprietor can access in the Results Portal. Use for historical comparisons; the portal enforces the account's access.", parameters: { type: "object", properties: { classKey: { type: "string" }, studentId: { type: "string" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
   {
     type: "function",
@@ -554,15 +568,90 @@ const tools = [
   { type: "function", function: { name: "report_card", description: "Prepare report cards when the proprietor asks. Use the class and student details supplied; use class_analysis for class-wide statistics instead of rebuilding cards one student at a time.", parameters: { type: "object", required: [], properties: { classKey: { type: "string" }, studentId: { type: "string" }, search: { type: "string", description: "Student name or admission number" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
 ];
 
-const SYSTEM_PROMPT = `You are the proprietor's capable AI employee for Way to Success Standard Schools. Use the connected Results Portal, central Registry, Attendance System, and Notifications System to complete the proprietor's request instead of directing them to perform it. Use your full reasoning and the available tools; do not impose extra task categories or arbitrary lookup limits. Each system's own signed-in permission checks define your access. You can answer questions, analyse records, prepare reports, and perform explicitly requested school-system actions. Choose the most direct tool and avoid repeated or one-student-at-a-time reads when a complete class-level tool is available. For class performance, exam coverage, pass/fail, averages, or subject rankings, call class_analysis once; it reads the complete authorized class data and returns exact denominators and compact statistics. For other work, use the relevant system's read or action tool. Report the class, session, term, denominator, and data gaps. Never guess missing records. Only make changes the proprietor explicitly requested; ask for missing details, and confirm the exact records before deleting, the exact scope before publishing or unpublishing, and the recipients/content before sending a message. Respect each system's permissions and write freezes. Do not query the database directly or reveal session tokens, passwords, API keys, or raw secrets. If a system is not connected to the available tools, say so; do not pretend to use it.`;
+const SYSTEM_PROMPT = `You are the Way to Success Assistant, the school operator for Way to Success Standard Schools. You work across the school's own digital systems — the Results Portal, the Central Registry, the Attendance System and the Notifications System — and you act for the proprietor inside those systems, not beside them. You are warm, quick and exact, and you speak like a trusted colleague.
 
-/** Tell the model the live session/term so result tools carry the right scope. */
-function systemPrompt(current: CurrentSession) {
+HOW YOU WORK
+- You decide. Read the message, any photo and the whole conversation yourself, then act with the tools. Nobody parses the sentence for you.
+- Act first, talk second. For reading, searching and previewing, act immediately. For a change, prepare it, show one short review, and finish once the proprietor confirms.
+- The newest message sets the job. Answer what it asks, in its own words. A tool call is how you get there, never a substitute for the answer.
+- Chain tools freely. Most jobs need a few calls: read the record, resolve the class or person, act, read back, report.
+- One chat can move across classes, people, terms and systems. Use the class, subject and term in the newest message; an earlier screen is only context. Never tell the proprietor to start a new chat for another class or system.
+- When a tool has already settled something, it is settled. Do not describe your own doubt about a name, class or date a tool matched. Act on it.
+- Never ask for what is already in the conversation or in a tool result. Short forms and everyday wording are enough: "SS2 sci" is SS2 Science, "1st term" is 1st Term, "CA" is continuous assessment.
+- Ask once, only where a wrong guess is costly: an ambiguous class or person, an unreadable figure, or two real choices. A value a tool returned is not a choice.
+- If a tool returns an error or a next-step hint, do what the hint says. Never refuse when the signed-in account is allowed the action.
+- You are not caged to one class, one subject, one term or one system. Follow the proprietor and keep going.
+
+CLASS AND RESULT ANALYSIS
+- For class performance, pass and failure rates, exam coverage, averages, rankings or top performers per subject, call class_analysis once. It reads the complete class result set in one request and does the arithmetic on the server.
+- Do not page through pupils or subjects one call at a time when class_analysis covers the job. Do not read every student record to answer a class question.
+- Use the numbers the tool returns exactly. Never count rows, average marks or work out a rate in your head.
+- Give the class, session, term, roster size and the denominator behind every rate. A subject with only a few exam marks is reported against those marks, not against the whole class, and you say so.
+- When the proprietor wants one subject or only the top performers, pass the subject or the limit to class_analysis instead of analysing the whole class twice.
+- Use results_read for a single record, one pupil's marks, traits, remarks or fees, and never for whole-class statistics.
+- Use results_history only for prior terms and sessions the proprietor can already see.
+- A report card is report_card, for the named pupil. Do not build cards to answer a class statistic.
+
+OTHER SYSTEM WORK
+- Registry: list and search students and staff, read a student's record and guardian contacts, and perform an explicitly requested Registry action with registry_request.
+- Attendance: read registers and status through attendance_request, and perform an explicitly requested attendance action with the same tool.
+- Notifications: read settings, recipients, templates and queues through notification_request. A send needs the exact recipients, template or message text and scope confirmed first.
+- Results Portal: use results_request for any portal action that the specialist tools do not cover, read or write. Every system applies the signed-in proprietor's own permissions; a refusal is that system's rule, not yours.
+- When a system is not reachable, say which one and what part was unavailable. Never fill the gap with a guess or send the proprietor off to do the work by hand.
+
+APPROVAL, PUBLICATION AND CONFIRMATION
+- Reading, searching, previewing, samples and reversible calculations are free and need no tap.
+- A school write returns a confirmation card. Say exactly what will change — record, class, subject, old and new value, or the exact recipients and text — and ask for the tap. Do not say it is done before the tap.
+- Publish, unpublish, delete, archive, a settings change, a staff change, a subject-catalogue change, a message send and a large batch always need the tap.
+- A pupil is changed one field at a time when the request names one field; a whole batch is one confirmation with its count.
+- Never overwrite or delete silently. Show the difference, or say what will be removed, and wait.
+
+AFTER EVERY WRITE
+- Verify by reading the record back, not by trusting the preview.
+- Report what actually changed: person, class, subject, old value, new value. Give the batch or message result and say what can be undone.
+- If the re-read does not show the change, say it did not save and do not call it done.
+
+INVESTIGATION
+- When something looks wrong, read the data first, explain the cause in plain words, then propose the smallest fix.
+- A subject is identified by its stored index, never by its position in a list. A hidden subject keeps its index and its marks.
+- If a figure looks impossible, check the denominator and the term before reporting it as a finding.
+
+LEARNER WORDS
+- Crèche, Nursery, KG and Primary classes: say "pupil" and "pupils".
+- JSS and SS classes: say "student" and "students". Never call a secondary learner a pupil.
+- Follow the class section in every reply, including lists and error sentences. On a whole-school answer say "learners".
+
+STYLE
+- Plain everyday words, short sentences, phone-friendly. Use "- " bullets when listing.
+- Never mention tool names, JSON, RPCs or internal codes. Never print tokens or keys.
+- One learner, subject or figure per line when listing.
+- A question you ask is a normal question, never a failure message.
+- Put learners in alphabetical order whenever you list a group.
+- A report card appears as a Save button under your reply, so do not paste file links; say the card is ready and name the pupil.
+- Answer greetings, thanks and simple explainers naturally, without tools.
+- Always finish with a sentence. Never end a turn on a tool call or a button label.`;
+
+/**
+ * The per-turn state the model needs: real class names, the live term and
+ * session, and the date. State only — the rules live in the prompt above.
+ */
+function systemPrompt(current: CurrentSession, classes: { key: string; label: string }[] = []) {
   const academic = (current.context.academic_context || {}) as Record<string, unknown>;
-  const session = typeof academic.session === "string" ? academic.session : "";
-  const term = typeof academic.term === "string" ? academic.term : "";
-  const line = session && term ? `${SYSTEM_PROMPT} The live academic context is ${session}, ${term}.` : SYSTEM_PROMPT;
-  return `${line} When asked for a report card, use report_card for the requested student or students and return the card link(s). For class-wide analysis, use class_analysis rather than reading students one by one. If a system denies an action or returns no data, say so plainly and state what was unavailable; never redirect the proprietor to do the work manually. If the proprietor sent several short messages in a row, address the newest request while retaining relevant earlier context.`;
+  const live = typeof academic.session === "string" && typeof academic.term === "string" && academic.session && academic.term
+    ? `${academic.session}, ${academic.term}`
+    : "not read yet";
+  const person = (current.context.person || {}) as Record<string, unknown>;
+  const envelope = {
+    SCHOOL_CONTEXT: {
+      school: "Way to Success Standard Schools",
+      today: new Date().toISOString().slice(0, 10),
+      signed_in_as: String(person.full_name || "Proprietor"),
+      live_academic_context: live,
+      classes: classes.map((row) => row.label),
+      systems: ["Results Portal", "Central Registry", "Attendance System", "Notifications System"],
+    },
+  };
+  return `${SYSTEM_PROMPT}\n\nTURN STATE\n${JSON.stringify(envelope)}`;
 }
 
 /** Keep complete school records; redact credentials and binary image data before model use. */
@@ -586,20 +675,20 @@ function slim(value: unknown, depth = 0, field = ""): unknown {
 /** Full-class aggregates keep large score sheets complete and out of model context. */
 async function classAnalysis(current: CurrentSession, args: Record<string, unknown>) {
   const requestedClass = classKeyOf(args.classKey);
-  if (!requestedClass) return { ok: false, code: "RESULT_CLASS_REQUIRED", detail: "Name the class to analyse." };
+  if (!requestedClass) return { ok: false, code: "RESULT_CLASS_REQUIRED", detail: "Name the class to analyse.", hint: "Call class_analysis again with one of the class names in TURN STATE." };
   const payload = await withAcademicContext(current, {
     class_key: requestedClass,
     term: args.term,
     academic_session: args.academicSession,
   });
-  if (!payload.term || !payload.academic_session) return { ok: false, code: "RESULT_ACADEMIC_CONTEXT_REQUIRED", detail: "The Results Portal has no current session and term." };
+  if (!payload.term || !payload.academic_session) return { ok: false, code: "RESULT_ACADEMIC_CONTEXT_REQUIRED", detail: "The Results Portal has no current session and term.", hint: "Say that no live term is set and ask the proprietor to set it in the Results Portal." };
 
   const call = await openResults(current);
   const set = await call("context.set", { class_key: payload.class_key, academic_session: payload.academic_session, term: payload.term });
   if (!set?.ok) return set;
   let summary = await call("read.result_summary", payload);
   if (summary?.code === "RESULT_CONTEXT_MISMATCH") summary = await call("read.result_summary", payload);
-  if (!summary?.ok) return summary;
+  if (!summary?.ok) return { ...summary, hint: "The class read failed. Check the class name, session and term in TURN STATE, then call class_analysis once more with corrected values." };
   const [subjectResponse, configResponse] = await Promise.all([
     call("read.subjects", { class_key: payload.class_key }),
     call("settings.read", {}),
@@ -635,7 +724,27 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
   }
   subjectIndexes.sort((a, b) => a - b);
 
-  const subjects = subjectIndexes.map((index) => {
+  // Narrowing to one subject keeps the whole class in scope, so the
+  // denominator is still the class and never a page of it.
+  const wantedSubject = String(args.subject || "").trim().toLowerCase();
+  let chosenIndexes = subjectIndexes;
+  if (wantedSubject) {
+    const numeric = Number(wantedSubject);
+    chosenIndexes = subjectIndexes.filter((index) => index === numeric || String(subjectNames.get(index) || "").toLowerCase() === wantedSubject || String(subjectNames.get(index) || "").toLowerCase().includes(wantedSubject));
+    if (!chosenIndexes.length) {
+      return {
+        ok: false,
+        code: "RESULT_SUBJECT_NOT_FOUND",
+        detail: `No subject matches "${String(args.subject)}" in ${classLabel(String(payload.class_key))}.`,
+        subjects: subjectIndexes.map((index) => subjectNames.get(index)),
+        hint: "Call class_analysis again with one of the subject names above, or leave the subject out for the whole class.",
+      };
+    }
+  }
+  const topN = Math.max(1, Math.min(25, Number(args.topN) || 5));
+  const missingWanted = args.includeMissing === true;
+
+  const subjects = chosenIndexes.map((index) => {
     const rowsByStudent = new Map<string, Record<string, unknown>>();
     for (const row of rawScores) {
       if (Number(row.subject_index) !== index) continue;
@@ -659,11 +768,14 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
     const passed = graded.filter((entry) => didPass(Number(entry.total)));
     const ranked = graded.slice().sort((a, b) => Number(b.total) - Number(a.total) || a.name.localeCompare(b.name));
     const cutoff = ranked.length >= 3 ? Number(ranked[2].total) : Number.NEGATIVE_INFINITY;
-    const leaders = ranked.filter((entry) => Number(entry.total) >= cutoff).slice(0, 5).map((entry) => ({
+    const leaders = ranked.filter((entry) => Number(entry.total) >= cutoff).slice(0, topN).map((entry) => ({
       name: entry.name,
       total: Number(entry.total),
       exam: entry.exam,
     }));
+    const missingNames = missingWanted
+      ? students.filter((student) => !exams.some((entry) => entry.studentId === String(student.id))).map((student) => String(student.name || "Student")).sort()
+      : undefined;
     const average = (values: number[]) => values.length ? Math.round(values.reduce((sum, n) => sum + n, 0) * 10 / values.length) / 10 : null;
     const examValues = exams.map((entry) => Number(entry.exam));
     const totals = marked.map((entry) => Number(entry.total));
@@ -683,10 +795,29 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
       failedOnPortalGradeScale: graded.length - passed.length,
       passRate: graded.length ? Math.round(passed.length * 1000 / graded.length) / 10 : null,
       topByTotal: leaders,
+      ...(missingNames ? { studentsWithoutExamNames: missingNames } : {}),
     };
   });
 
-  const expectedExamEntries = students.length * subjectIndexes.length;
+  // Overall position across every subject the class offers, computed from the
+  // same single read. A student with no exam mark is left out of the order.
+  const perStudent = new Map<string, { name: string; total: number; subjects: number }>();
+  for (const row of rawScores) {
+    const studentId = String(row.student_id || "");
+    if (!studentId || !studentNames.has(studentId)) continue;
+    if (!chosenIndexes.includes(Number(row.subject_index))) continue;
+    if (row.exam === "" || row.exam === null || row.exam === undefined) continue;
+    const entry = perStudent.get(studentId) || { name: studentNames.get(studentId) || "Student", total: 0, subjects: 0 };
+    entry.total += Number(totalOf(row)) || 0;
+    entry.subjects += 1;
+    perStudent.set(studentId, entry);
+  }
+  const ordered = [...perStudent.values()]
+    .filter((entry) => entry.subjects > 0)
+    .map((entry) => ({ name: entry.name, totalMarks: entry.total, subjects: entry.subjects, average: Math.round(entry.total * 10 / entry.subjects) / 10 }))
+    .sort((a, b) => b.average - a.average || b.totalMarks - a.totalMarks || a.name.localeCompare(b.name));
+
+  const expectedExamEntries = students.length * chosenIndexes.length;
   const actualExamEntries = subjects.reduce((sum, subject) => sum + subject.studentsWithExam, 0);
   const gradedCount = subjects.reduce((sum, subject) => sum + subject.gradedWithExam, 0);
   const passCount = subjects.reduce((sum, subject) => sum + subject.passedOnPortalGradeScale, 0);
@@ -698,7 +829,8 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
     term: payload.term,
     academicSession: payload.academic_session,
     rosterCount: students.length,
-    subjectCount: subjectIndexes.length,
+    subjectCount: chosenIndexes.length,
+    subjectsAnalysed: chosenIndexes.map((index) => subjectNames.get(index)),
     expectedExamEntries,
     recordedExamEntries: actualExamEntries,
     examCoverageRate: expectedExamEntries ? Math.round(actualExamEntries * 1000 / expectedExamEntries) / 10 : null,
@@ -707,11 +839,122 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
     totalFailCount: gradedCount - passCount,
     overallPassRate: gradedCount ? Math.round(passCount * 1000 / gradedCount) / 10 : null,
     passMethod: "The portal's grade scale applied to each recorded student's CA-plus-exam total; denominator includes only students with an exam mark.",
+    rankingMethod: "Average of each student's CA-plus-exam totals across the subjects analysed, highest first. Only students with at least one exam mark appear.",
+    studentsRanked: ordered.length,
+    topStudentsOverall: ordered.slice(0, topN),
+    bottomStudentsOverall: ordered.length > topN ? ordered.slice(-topN).reverse() : [],
     subjects,
   };
 }
 
-async function executeTool(name: string, args: Record<string, unknown>, current: CurrentSession) {
+/** Actions that change a school record and therefore need the proprietor's tap. */
+const CONFIRM_RESULT_ACTIONS = new Set([
+  "scores.enter",
+  "traits.enter",
+  "remarks.enter",
+  "fees.update",
+  "students.upsert",
+  "students.archive",
+  "settings.app_config.update",
+  "settings.provider_key.update",
+  "settings.override.set",
+  "settings.override.clear",
+  "staff.write_access.update",
+  "staff.write_access.bulk",
+  "agent_keys.create",
+  "agent_keys.revoke",
+]);
+
+function pendingWrites(name: string, args: Record<string, unknown>) {
+  if (name === "results_request") {
+    const action = String(args.action || "");
+    return CONFIRM_RESULT_ACTIONS.has(action) || action.startsWith("history.context");
+  }
+  if (name === "registry_request") return args.kind === "write";
+  if (name === "attendance_request") { const act = String(args.action || ""); return act !== "" && !/^(read|list|get|status|view)/i.test(act); }
+  if (name === "notification_request") { const act = String(args.action || ""); return act !== "" && !/^(read|list|get|status|view)/i.test(act) && /write|send|queue|bulk|import|create|update|delete|save|enable|disable/i.test(act); }
+  return false;
+}
+
+/** One short, exact sentence of what the tap will change. */
+function pendingSummary(name: string, args: Record<string, unknown>) {
+  const payload = (args.payload && typeof args.payload === "object" ? args.payload : {}) as Record<string, unknown>;
+  if (name === "results_request") {
+    const action = String(args.action || "");
+    const who = String(payload.student_id || payload.name || payload.admno || "the record");
+    const where = [payload.class_key, payload.term, payload.subject_index === undefined ? "" : `subject ${payload.subject_index}`].filter(Boolean).join(", ");
+    if (action === "scores.enter") return `Save marks for ${who}${where ? ` — ${where}` : ""}: CA1 ${payload.ca1 ?? "blank"}, CA2 ${payload.ca2 ?? "blank"}, CA3 ${payload.ca3 ?? "blank"}, exam ${payload.exam ?? "blank"}.`;
+    if (action === "traits.enter") return `Save the trait "${payload.trait_name || "trait"}" (${payload.rating ?? "blank"}) for ${who}${where ? ` — ${where}` : ""}.`;
+    if (action === "remarks.enter") return `Save the remark for ${who}${where ? ` — ${where}` : ""}.`;
+    if (action === "fees.update") return `Change the fee record for ${who}${where ? ` — ${where}` : ""}: total ${payload.total ?? "—"}, paid ${payload.paid ?? "—"}, debt ${payload.debt ?? "—"}.`;
+    if (action === "students.upsert") return `Save the student record for ${who}${payload.class_key ? ` in ${payload.class_key}` : ""}.`;
+    if (action === "students.archive") return `Archive ${who}${payload.reason ? ` — ${payload.reason}` : ""}. The record can be restored.`;
+    if (action === "settings.app_config.update") return "Save the school setting change shown above.";
+    return `Apply "${action}" to the Results Portal.`;
+  }
+  if (name === "registry_request") {
+    const target = String(payload.studentId || payload.staffId || payload.name || "the registry record");
+    return `Apply Registry change "${String(args.action || "")}" to ${target}.`;
+  }
+  if (name === "attendance_request") return `Apply attendance change "${String(args.action || "")}" through ${String(args.rpc || "")}.`;
+  if (name === "notification_request") return `Run notification action "${String(args.action || "")}".`;
+  return "Apply this change.";
+}
+
+/** Read the record back after a write, so "done" is never taken from the preview. */
+async function verifyWrite(name: string, args: Record<string, unknown>, current: CurrentSession, result: unknown) {
+  const record = (result && typeof result === "object" ? result : {}) as Record<string, unknown>;
+  if (record.ok !== true) return record;
+  const payload = (args.payload && typeof args.payload === "object" ? args.payload : {}) as Record<string, unknown>;
+  try {
+    if (name === "results_request" && String(args.action) === "scores.enter") {
+      const call = await openResults(current);
+      const read = await call("read.scores", {
+        class_key: payload.class_key,
+        student_id: payload.student_id,
+        subject_index: payload.subject_index,
+        term: payload.term,
+        academic_session: payload.academic_session,
+      });
+      const rows = Array.isArray(read?.rows) ? read.rows as Record<string, unknown>[] : [];
+      const row = rows.find((item) => String(item.student_id) === String(payload.student_id) && Number(item.subject_index) === Number(payload.subject_index));
+      return { ...record, verify: row ? { read_back: true, ca1: row.ca1, ca2: row.ca2, ca3: row.ca3, exam: row.exam } : { read_back: false } };
+    }
+    if (name === "results_request" && String(args.action) === "fees.update") {
+      const call = await openResults(current);
+      const read = await call("read.fees", { class_key: payload.class_key, student_id: payload.student_id, term: payload.term, academic_session: payload.academic_session });
+      const rows = Array.isArray(read?.rows) ? read.rows as Record<string, unknown>[] : [];
+      const row = rows.find((item) => String(item.student_id) === String(payload.student_id));
+      return { ...record, verify: row ? { read_back: true, total: row.total, paid: row.paid, debt: row.debt } : { read_back: false } };
+    }
+    if (name === "registry_request" && payload.studentId) {
+      const read = await registry(current, "read", "student", { studentId: payload.studentId });
+      const found = read?.student || read?.record || null;
+      return { ...record, verify: found ? { read_back: true, student: found } : { read_back: false } };
+    }
+  } catch {
+    return { ...record, verify: { read_back: false, note: "The change was sent but the read-back failed." } };
+  }
+  return record;
+}
+
+async function executeTool(name: string, args: Record<string, unknown>, current: CurrentSession, confirmed = false) {
+  if (pendingWrites(name, args) && !confirmed) {
+    const token = approvalToken(current, { tool: name, args });
+    return {
+      requires_confirmation: true,
+      summary: pendingSummary(name, args),
+      tool: name,
+      args,
+      token,
+      approval_token: token,
+    };
+  }
+  const result = await runTool(name, args, current);
+  return verifyWrite(name, args, current, result);
+}
+
+async function runTool(name: string, args: Record<string, unknown>, current: CurrentSession) {
   switch (name) {
     case "school_overview": {
       const [workspace, dashboard] = await Promise.all([
@@ -764,7 +1007,15 @@ async function executeTool(name: string, args: Record<string, unknown>, current:
         const set = await call("context.set", { class_key: payload.class_key || null, academic_session: payload.academic_session || null, term: payload.term || null });
         if (!set?.ok) return slim(set);
       }
-      return slim(await call(`read.${resource}`, payload));
+      const read = await call(`read.${resource}`, payload);
+      if (read?.ok === true && resource === "result_summary") {
+        read.hint = "This is a raw class read. For pass/fail, coverage, averages or rankings, call class_analysis once instead of reading this again.";
+      } else if (read?.ok !== true && !read?.hint) {
+        read.hint = contextScoped && !payload.class_key
+          ? "This read needs a class. Call it again with classKey."
+          : "This read failed. Do not repeat it unchanged; check the class, term or person, or use class_analysis for a whole class.";
+      }
+      return slim(read);
     }
     case "results_history": {
       const payload = await withAcademicContext(current, {
@@ -791,7 +1042,15 @@ async function executeTool(name: string, args: Record<string, unknown>, current:
       }
       return slim(await call(action, payload));
     }
-    case "report_card": return slim(await reportCard(current, args));
+    case "report_card": {
+      const made = await reportCard(current, args);
+      if (made.ok !== true && !made.hint) {
+        made.hint = made.code === "RESULT_STUDENT_AMBIGUOUS"
+          ? "Ask which of the named students, then call report_card with the chosen studentId."
+          : "Check the pupil name and class, then call report_card once more. Do not read student records to build the card yourself.";
+      }
+      return slim(made);
+    }
     default: return { ok: false, code: "ASSISTANT_TOOL_NOT_FOUND" };
   }
 }
@@ -977,11 +1236,35 @@ async function askProvider(url: string, settings: ModelSettings, style: Style, h
   return { turn };
 }
 
-async function gateway(messages: unknown[], settings: ModelSettings, current: CurrentSession): Promise<GatewaySuccess | GatewayFailure> {
+const MAX_TOOL_CALLS = 12;
+const TOOL_RESULT_CAP = 6000;
+
+/** Labels let a turn close with a sentence even when the model cannot be called again. */
+const DONE_LABELS: Record<string, string> = {
+  school_overview: "Read the school overview",
+  find_students: "Found the students",
+  student_record: "Read the student record",
+  staff_directory: "Read the staff directory",
+  class_analysis: "Analysed the class",
+  results_read: "Read the result records",
+  results_history: "Read the earlier results",
+  results_request: "Used the Results Portal",
+  registry_request: "Used the Central Registry",
+  attendance_request: "Used the Attendance System",
+  notification_request: "Used the Notifications System",
+  report_card: "Prepared the report card",
+};
+
+function capText(value: string, limit = TOOL_RESULT_CAP) {
+  if (value.length <= limit) return value;
+  return `${value.slice(0, limit)}\n… [shortened; ${value.length - limit} more characters in this result]`;
+}
+
+async function gateway(messages: unknown[], settings: ModelSettings, current: CurrentSession, budgetMs: number, classes: { key: string; label: string }[]): Promise<GatewaySuccess | GatewayFailure> {
   if (!settings.key) return { ok: false, status: 503, code: "ASSISTANT_MODEL_GATEWAY_NOT_CONFIGURED", detail: "No model API key is saved for this account." };
   let url = settings.url;
   let style: Style = /\/responses$/.test(url) ? "responses" : "chat";
-  const history: HistoryItem[] = [{ role: "system", content: systemPrompt(current) }];
+  const history: HistoryItem[] = [{ role: "system", content: systemPrompt(current, classes) }];
   for (const message of messages) {
     const item = message as Record<string, unknown>;
     if (typeof item.content !== "string") continue;
@@ -994,14 +1277,14 @@ async function gateway(messages: unknown[], settings: ModelSettings, current: Cu
   const seen = new Map<string, string>();
   let retriedStyle = false;
   const started = Date.now();
-  // Leave time for the job status write inside the route's 220s function limit.
-  const totalBudget = 195000;
+  const totalBudget = Math.max(8000, budgetMs);
   current.deadline = started + totalBudget;
   let partial = "";
   let ranOut = false;
   while (true) {
     const left = totalBudget - (Date.now() - started);
-    if (left < 12000) { ranOut = true; break; }
+    // A tool round needs real room; below this a closing answer is worth more.
+    if (left < 9000) { ranOut = true; break; }
     let answer = await askProvider(url, settings, style, history, Math.min(60000, left));
     if (answer.failure && style === "chat" && !retriedStyle && /responses/i.test(answer.failure.detail)) {
       retriedStyle = true;
@@ -1010,7 +1293,7 @@ async function gateway(messages: unknown[], settings: ModelSettings, current: Cu
       answer = await askProvider(url, settings, style, history, Math.min(60000, left));
     }
     if (answer.failure) {
-      if (answer.failure.code === "ASSISTANT_MODEL_TIMEOUT" && (partial || used.length)) { ranOut = true; break; }
+      if ((answer.failure.code === "ASSISTANT_MODEL_TIMEOUT" || answer.failure.code === "ASSISTANT_MODEL_BUSY" || answer.failure.code === "ASSISTANT_MODEL_RATE_LIMITED") && (partial || used.length)) { ranOut = true; break; }
       return answer.failure;
     }
     const turn = answer.turn as Turn;
@@ -1018,19 +1301,20 @@ async function gateway(messages: unknown[], settings: ModelSettings, current: Cu
     if (turn.text) partial = turn.text;
     history.push({ role: "assistant", text: turn.text, calls: turn.calls });
     for (const call of turn.calls) {
+      if (used.length >= MAX_TOOL_CALLS) { ranOut = true; break; }
       used.push(call.name);
       let args: Record<string, unknown> = {};
       try { args = JSON.parse(call.args || "{}"); } catch { args = {}; }
-      const key = `${call.name}:${JSON.stringify(call.name === "class_guardians" ? { classKey: args.classKey } : args)}`;
+      const key = `${call.name}:${JSON.stringify(args)}`;
       const cached = seen.get(key);
       if (cached) { history.push({ role: "tool", callId: call.id, content: cached }); continue; }
       let result: unknown;
       try {
         result = await executeTool(call.name, args, current);
       } catch (caught) {
-        result = { ok: false, code: "SCHOOL_SYSTEM_UNAVAILABLE", detail: (caught as Error)?.message || "The connected school system did not return a response." };
+        result = { ok: false, code: "SCHOOL_SYSTEM_UNAVAILABLE", detail: (caught as Error)?.message || "The connected school system did not return a response.", hint: "Nothing was changed. Say plainly which system did not answer and what is still missing." };
       }
-      if ((result as Record<string, unknown>).ok === false) {
+      if ((result as Record<string, unknown>).ok === false && !(result as Record<string, unknown>).hint) {
         (result as Record<string, unknown>).hint = "This call failed. Do not repeat it with the same arguments: use another tool or tell the proprietor plainly what could not be read.";
       } else if (/\[\]/.test(JSON.stringify(result)) && JSON.stringify(result).length < 400) {
         (result as Record<string, unknown>).hint = "Nothing came back for this. Change the arguments or use another tool rather than repeating it.";
@@ -1049,29 +1333,37 @@ async function gateway(messages: unknown[], settings: ModelSettings, current: Cu
       if ((result as Record<string, unknown>).requires_confirmation === true) {
         return { ok: true, text: (result as Record<string, unknown>).summary as string, usage: null, approval: result as Record<string, unknown>, steps: used };
       }
-      const content = JSON.stringify(slim(result));
+      const content = capText(JSON.stringify(slim(result)));
       seen.set(key, content);
       history.push({ role: "tool", callId: call.id, content });
     }
+    if (ranOut) break;
     if (Date.now() - started > totalBudget) { ranOut = true; break; }
   }
   const note = ranOut
-    ? "\n\nThis answer may be incomplete because a connected service did not finish in time."
-    : "\n\nThis answer may be incomplete because the connected service stopped this request.";
+    ? "\n\nThere was more to do than the time allowed, so any part still missing above was not reached."
+    : "\n\nA connected service stopped this request, so any part still missing above was not reached.";
   if (ranOut || !partial.trim()) {
-    const closing = await askProvider(
-      url,
-      settings,
-      style,
-      [...history, { role: "user", content: "Use only the completed tool results above. Give the best complete answer you can now, clearly say if any requested part is still missing, and do not ask the proprietor to continue the same request." }],
-      18000,
-      true,
-    );
-    if (!closing.failure && closing.turn && (closing.turn as Turn).text) {
-      return { ok: true, text: `${(closing.turn as Turn).text}${note}`, usage: null, steps: used, truncated: true };
+    const closingLeft = totalBudget - (Date.now() - started);
+    if (closingLeft >= 4000) {
+      const closing = await askProvider(
+        url,
+        settings,
+        style,
+        [...history, { role: "user", content: "Use only the completed tool results above. Give the best complete answer you can now, cite the exact tool numbers, clearly say if any requested part is still missing, and do not ask the proprietor to continue the same request." }],
+        Math.min(14000, closingLeft),
+        true,
+      );
+      if (!closing.failure && closing.turn && (closing.turn as Turn).text) {
+        return { ok: true, text: `${(closing.turn as Turn).text}${note}`, usage: null, steps: used, truncated: true, document: doc || undefined };
+      }
     }
   }
-  return { ok: true, text: partial.trim() ? `${partial.trim()}${note}` : note.trim(), usage: null, steps: used, truncated: true, document: doc || undefined };
+  const labels = [...new Set(used)].map((name) => DONE_LABELS[name]).filter(Boolean);
+  const fallback = labels.length
+    ? `${labels.join(", ")}.${partial.trim() ? `\n\n${partial.trim()}` : ""}${note}`
+    : `The connected school systems did not finish this request.${note}`;
+  return { ok: true, text: fallback, usage: null, steps: used, truncated: true, document: doc || undefined };
 }
 
 async function testConnection(settings: ModelSettings): Promise<Response> {
@@ -1092,8 +1384,14 @@ async function testConnection(settings: ModelSettings): Promise<Response> {
 }
 
 async function approve(token: string, current: CurrentSession) {
-  readApproval(current, token);
-  throw new IdentityApiError("ASSISTANT_TOOL_NOT_FOUND", 403);
+  const proposal = readApproval(current, token);
+  const tool = String(proposal.tool || "");
+  const args = (proposal.args && typeof proposal.args === "object" ? proposal.args : {}) as Record<string, unknown>;
+  if (!tool) throw new IdentityApiError("ASSISTANT_TOOL_NOT_FOUND", 403);
+  const summary = pendingSummary(tool, args);
+  const result = await executeTool(tool, args, current, true);
+  if ((result as Record<string, unknown>).requires_confirmation === true) throw new IdentityApiError("APPROVAL_INVALID", 400);
+  return { summary, tool, result };
 }
 
 class CardProblem extends Error {
@@ -1107,7 +1405,7 @@ class CardProblem extends Error {
 /** The report card page the assistant opens itself, in the portal's own design. */
 async function cardDocument(current: CurrentSession, request: NextRequest) {
   const params = request.nextUrl.searchParams;
-  current.deadline = Date.now() + 60000;
+  current.deadline = Date.now() + 48000;
   const studentId = String(params.get("card") || "");
   const classKey = String(params.get("class") || "");
   const payload = await withAcademicContext(current, {
@@ -1348,6 +1646,7 @@ function cardAsk(text: string): { classKey: string; label: string; search: strin
 }
 
 export async function POST(request: NextRequest) {
+  const startedAt = Date.now();
   try {
     if (!sameOriginOrMissing(request)) return error("ORIGIN_NOT_ALLOWED", 403);
     const current = await currentSession(request);
@@ -1406,6 +1705,10 @@ export async function POST(request: NextRequest) {
       : null;
 
     const runTurn = async (): Promise<Record<string, unknown>> => {
+      const requestStarted = Date.now();
+      const elapsed = requestStarted - startedAt;
+      const budgetMs = Math.min(50000, Math.max(9000, 50000 - elapsed));
+      current.deadline = requestStarted + budgetMs;
       let fastError = "";
       if (ask) {
         try {
@@ -1429,7 +1732,8 @@ export async function POST(request: NextRequest) {
         } catch (caught) { fastError = (caught as Error)?.message || String(caught); }
       }
 
-      const result = await gateway(messages, settings, current);
+      const classes = elapsed < 12000 ? await classCatalog(current) : [];
+      const result = await gateway(messages, settings, current, budgetMs, classes);
       if (!result.ok) {
         return { ok: false, code: result.code, detail: result.detail, model: settings.model };
       }
