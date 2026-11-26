@@ -44,6 +44,13 @@ assert.match(route, /printHint:/);
 // Band counts use the portal's own default bands until the school customises
 // them, so a breakdown always has real bands.
 assert.match(route, /const DEFAULT_GRADE_SCALE/);
+
+// Asking for the whole score list is one call that returns every row, and a
+// timed-out list still prints as tables instead of a sentence.
+assert.match(route, /list: \{ type: "boolean"/);
+assert.match(route, /let scoreSheet: Record<string, unknown>/);
+assert.match(route, /function scoreSheetText/);
+assert.match(route, /call class_analysis ONCE with list true/);
 assert.match(route, /Break a subject down when asked[^\n]*call class_analysis only ONCE/);
 
 // A write asks for a tap, and a tap is verified against the same call.
@@ -56,7 +63,8 @@ assert.match(route, /read\.remarks/);
 
 // A turn cannot end silent.
 assert.match(route, /const DONE_LABELS/);
-assert.match(route, /const fallback = facts.length/);
+assert.match(route, /const fallback = printed/);
+assert.match(route, /: facts\.length/);
 assert.match(route, /case "class_guardians"/);
 assert.match(route, /async function classGuardians/);
 assert.match(route, /guardian\.primaryPhone/);
