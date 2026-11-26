@@ -19,11 +19,11 @@ const PROVIDER_URL = GATEWAY_KEY ? GATEWAY_URL : `${DEEPSEEK_BASE}/chat/completi
 const DEFAULT_MODEL = process.env.WTS_ASSISTANT_DEFAULT_MODEL?.trim() || (GATEWAY_KEY ? "openai/gpt-4.1" : "deepseek-chat");
 
 type ModelOption = { id: string; label: string; description: string };
-type AppSession = { session_id: string; session_secret: string };
+type AppSession = { session_id: string; session_secret: string; attendance_client_code?: string; attendance_client_secret?: string };
 type CurrentSession = { id: string; secret: string; context: Record<string, unknown>; deadline?: number };
 
 /** How long a bridge call may wait, never past the turn's own deadline. */
-function bridgeTimeout(current: CurrentSession, cap = 45000) {
+function bridgeTimeout(current: CurrentSession, cap = 60000) {
   if (!current.deadline) return cap;
   return Math.max(7000, Math.min(cap, current.deadline - Date.now() - 4000));
 }
@@ -142,10 +142,14 @@ async function currentSession(request: Request): Promise<CurrentSession> {
   return { ...current, context };
 }
 
-async function mintAppSession(current: CurrentSession, app: "registry" | "results"): Promise<AppSession> {
+async function mintAppSession(current: CurrentSession, app: "registry" | "results" | "attendance" | "notifications"): Promise<AppSession> {
   const client = app === "registry"
     ? { id: "central_registry", target: "central_registry", redirect: `${portalOrigins.centralRegistry}/` }
-    : { id: "result_portal", target: "results", redirect: `${portalOrigins.results}/portal_core.html` };
+    : app === "attendance"
+      ? { id: "attendance", target: "attendance", redirect: `${portalOrigins.attendance}/` }
+      : app === "notifications"
+        ? { id: "notifications", target: "notifications", redirect: `${portalOrigins.notifications}/` }
+      : { id: "result_portal", target: "results", redirect: `${portalOrigins.results}/portal_core.html` };
   const code = randomBytes(32).toString("base64url");
   const verifier = randomBytes(48).toString("base64url");
   const challenge = createHash("sha256").update(verifier).digest("base64url");
@@ -175,7 +179,12 @@ async function mintAppSession(current: CurrentSession, app: "registry" | "result
   if (!exchanged?.ok || typeof exchanged.session_id !== "string" || typeof exchanged.session_secret !== "string") {
     throw new IdentityApiError(String(exchanged?.code || "SSO_EXCHANGE_FAILED"), 403);
   }
-  return { session_id: exchanged.session_id, session_secret: exchanged.session_secret };
+  return {
+    session_id: exchanged.session_id,
+    session_secret: exchanged.session_secret,
+    ...(typeof exchanged.attendance_client_code === "string" ? { attendance_client_code: exchanged.attendance_client_code } : {}),
+    ...(typeof exchanged.attendance_client_secret === "string" ? { attendance_client_secret: exchanged.attendance_client_secret } : {}),
+  };
 }
 
 /** One registry session for several reads, so contact lists do not pay for an SSO exchange each time. */
@@ -227,6 +236,69 @@ async function openResults(current: CurrentSession) {
 
 async function results(current: CurrentSession, action: string, payload: Record<string, unknown> = {}) {
   return (await openResults(current))(action, payload);
+}
+
+const ATTENDANCE_RPCS = new Set([
+  "attendance_strict_read_api",
+  "attendance_strict_write_api",
+  "attendance_qr_card_api",
+  "attendance_roster_sync_status_api",
+  "attendance_roster_sync_api",
+  "attendance_roster_sync_retry_api",
+]);
+
+async function attendanceRequest(current: CurrentSession, name: string, action: string, payload: Record<string, unknown> = {}) {
+  if (!ATTENDANCE_RPCS.has(name)) return { ok: false, code: "ATTENDANCE_RPC_NOT_ALLOWED" };
+  const session = await mintAppSession(current, "attendance");
+  if (!session.attendance_client_code || !session.attendance_client_secret) {
+    return { ok: false, code: "ATTENDANCE_SESSION_CREATE_FAILED" };
+  }
+  const response = await fetch(`${portalOrigins.attendance}/api/rpc`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Origin: portalOrigins.attendance,
+      Cookie: `wts_attendance_central_session=${encodeURIComponent(`${session.session_id}.${session.session_secret}`)}; wts_attendance_session=${encodeURIComponent(`${session.attendance_client_code}.${session.attendance_client_secret}`)}`,
+    },
+    body: JSON.stringify({ name, action, payload }),
+    cache: "no-store",
+    signal: AbortSignal.timeout(bridgeTimeout(current)),
+  });
+  return response.json().catch(() => ({ ok: false, code: "ATTENDANCE_INVALID_RESPONSE" }));
+}
+
+const NOTIFICATION_RPCS = new Set([
+  "school_notification_control_read_api",
+  "school_notification_control_write_api",
+  "school_notification_recipient_admin_read_api",
+  "school_notification_recipient_admin_write_api",
+  "school_guardian_import_admin_read_api",
+  "school_guardian_import_admin_write_api",
+  "school_notification_message_admin_write_api",
+  "school_notification_bulk_message_api",
+  "school_notification_template_send_api",
+]);
+
+async function notificationRequest(current: CurrentSession, name: string, action: string, payload: Record<string, unknown> = {}) {
+  if (!NOTIFICATION_RPCS.has(name)) return { ok: false, code: "NOTIFICATION_ACTION_NOT_ALLOWED" };
+  const session = await mintAppSession(current, "notifications");
+  if (!session.attendance_client_code || !session.attendance_client_secret) {
+    return { ok: false, code: "NOTIFICATION_SESSION_CREATE_FAILED" };
+  }
+  const response = await fetch(`${portalOrigins.notifications}/api/assistant-rpc`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name,
+      action,
+      payload,
+      clientCode: session.attendance_client_code,
+      clientSecret: session.attendance_client_secret,
+    }),
+    cache: "no-store",
+    signal: AbortSignal.timeout(bridgeTimeout(current)),
+  });
+  return response.json().catch(() => ({ ok: false, code: "NOTIFICATION_INVALID_RESPONSE" }));
 }
 
 /** Fill term and session from the live academic context when the model omits them. */
@@ -465,39 +537,24 @@ const tools = [
   { type: "function", function: { name: "find_students", description: "List active students in a class or search active students by name or admission number. Always pass classKey when listing a class.", parameters: { type: "object", properties: { search: { type: "string" }, classKey: { type: "string" } } } } },
   { type: "function", function: { name: "student_record", description: "Read one student's complete record by id, including guardian contacts.", parameters: { type: "object", required: ["studentId"], properties: { studentId: { type: "string" } } } } },
   { type: "function", function: { name: "staff_directory", description: "Read the staff directory and active assignments.", parameters: { type: "object", properties: { search: { type: "string" } } } } },
-  { type: "function", function: { name: "results_read", description: "Read information available to the signed-in proprietor in the Results Portal. Use for results, marks, subject lists, publication, traits, remarks, fees, class rosters, and report-card context. The portal applies the account's permissions and class scope. For class performance or rankings, read result_summary and calculate only from the returned records; do not sample students with report_card.", parameters: { type: "object", required: ["resource"], properties: { resource: { type: "string", enum: ["classes", "fees", "published_subjects", "remarks", "result_summary", "scores", "students", "subjects", "traits"] }, classKey: { type: "string" }, studentId: { type: "string" }, subjectIndex: { type: "integer" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
+  { type: "function", function: { name: "results_read", description: "Read information available to the signed-in proprietor in the Results Portal. Use for results, marks, subject lists, publication, traits, remarks, fees, class rosters, and report-card context. The portal applies the account's permissions and class scope. For class performance, pass/fail, coverage, averages, or rankings, use class_analysis so the complete class is read and summarized in one call.", parameters: { type: "object", required: ["resource"], properties: { resource: { type: "string", enum: ["classes", "fees", "published_subjects", "remarks", "result_summary", "scores", "students", "subjects", "traits"] }, classKey: { type: "string" }, studentId: { type: "string" }, subjectIndex: { type: "integer" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
+  { type: "function", function: { name: "class_analysis", description: "Get a complete one-call performance and exam-coverage analysis for a class from the Results Portal. Always use this for pass/fail rates, coverage, averages, and top performers. It reads the full class result set once and returns compact counts so no students are skipped or sampled. Requires classKey; session and term default to the live portal context.", parameters: { type: "object", required: ["classKey"], properties: { classKey: { type: "string" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
   { type: "function", function: { name: "results_history", description: "Read prior terms and sessions the signed-in proprietor can access in the Results Portal. Use for historical comparisons; the portal enforces the account's access.", parameters: { type: "object", properties: { classKey: { type: "string" }, studentId: { type: "string" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
   {
     type: "function",
     function: {
-      name: "results_write",
-      description: "Submit one explicitly requested result change through the signed-in proprietor's Results Portal session. Never call for a question or infer a change. Ask for any missing student, class, subject, component, or value. The portal enforces permissions and write freezes. Before publishing or unpublishing, state the exact class, subject, term, and session and get the proprietor's confirmation.",
-      parameters: {
-        type: "object",
-        required: ["action", "payload"],
-        properties: {
-          action: { type: "string", enum: ["scores.enter", "traits.enter", "remarks.enter", "fees.update", "results.publish", "results.unpublish"] },
-          payload: {
-            type: "object",
-            properties: {
-              student_id: { type: "string" }, class_key: { type: "string" }, subject_index: { type: "integer" },
-              term: { type: "string" }, academic_session: { type: "string" },
-              ca1: { type: "number" }, ca2: { type: "number" }, ca3: { type: "number" }, exam: { type: "number" },
-              clear: { type: "array", items: { type: "string", enum: ["ca1", "ca2", "ca3", "exam"] } },
-              trait_type: { type: "string" }, trait_name: { type: "string" }, rating: { type: "string" },
-              academic: { type: "string" }, form_master: { type: "string" }, principal: { type: "string" },
-              days_opened: { type: "integer" }, days_present: { type: "integer" },
-              total: { type: "number" }, paid: { type: "number" }, debt: { type: "number" },
-            },
-          },
-        },
-      },
+      name: "results_request",
+      description: "Use any Results Portal read or action for the proprietor through the signed-in portal session. Pass the portal action and its normal payload. Never call for a change unless the proprietor explicitly requested it. The Results Portal itself enforces permissions and write freezes.",
+      parameters: { type: "object", required: ["action"], properties: { action: { type: "string" }, payload: { type: "object", additionalProperties: true } } },
     },
   },
-  { type: "function", function: { name: "report_card", description: "Build a printable report card for ONE named student when the proprietor explicitly asks for that student's report card. Never use this for class analysis, exam counts, rankings, or multiple students.", parameters: { type: "object", required: [], properties: { classKey: { type: "string" }, studentId: { type: "string" }, search: { type: "string", description: "Student name or admission number" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
+  { type: "function", function: { name: "registry_request", description: "Use any central Registry read or action through the signed-in proprietor's Registry session. Pass kind read or write, the normal Registry action name and payload. The Registry enforces the proprietor's permissions and record scope.", parameters: { type: "object", required: ["kind", "action"], properties: { kind: { type: "string", enum: ["read", "write"] }, action: { type: "string" }, payload: { type: "object", additionalProperties: true } } } } },
+  { type: "function", function: { name: "attendance_request", description: "Use the connected Attendance System for attendance reads or actions through the proprietor's attendance session. The Attendance System checks account permissions. Only use the listed RPC names; pass its action and payload.", parameters: { type: "object", required: ["rpc", "action"], properties: { rpc: { type: "string", enum: ["attendance_strict_read_api", "attendance_strict_write_api", "attendance_qr_card_api", "attendance_roster_sync_status_api", "attendance_roster_sync_api", "attendance_roster_sync_retry_api"] }, action: { type: "string" }, payload: { type: "object", additionalProperties: true } } } } },
+  { type: "function", function: { name: "notification_request", description: "Use the connected WTS Notifications System to inspect settings, recipients, queued messages, or perform a requested notification action. Pass one of the approved RPC names and its normal action/payload. The system enforces permissions. Never send a message until the proprietor explicitly asks; for a send, state the exact recipients, approved template/message, and scope, then get confirmation before calling.", parameters: { type: "object", required: ["rpc"], properties: { rpc: { type: "string", enum: ["school_notification_control_read_api", "school_notification_control_write_api", "school_notification_recipient_admin_read_api", "school_notification_recipient_admin_write_api", "school_guardian_import_admin_read_api", "school_guardian_import_admin_write_api", "school_notification_message_admin_write_api", "school_notification_bulk_message_api", "school_notification_template_send_api"] }, action: { type: "string" }, payload: { type: "object", additionalProperties: true } } } } },
+  { type: "function", function: { name: "report_card", description: "Prepare report cards when the proprietor asks. Use the class and student details supplied; use class_analysis for class-wide statistics instead of rebuilding cards one student at a time.", parameters: { type: "object", required: [], properties: { classKey: { type: "string" }, studentId: { type: "string" }, search: { type: "string", description: "Student name or admission number" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
 ];
 
-const SYSTEM_PROMPT = `You are the proprietor's capable employee for Way to Success Standard Schools. Work within the signed-in proprietor's actual access in the school systems, especially the Results Portal. Use its tools to do the task for the proprietor; do not send them to the portal to do work you can perform through these tools. The Results Portal checks every request against the proprietor's current permissions and scope. If it denies access or returns no data, say exactly that rather than guessing or suggesting a broader access path. You can answer questions about current and historical results, marks, subjects, publication status, class and student performance, rankings, averages, coverage, student and staff records, and prepare report cards using portal data. For analysis, read the relevant records first, calculate from the returned data, state the class/session/term and denominator, and never fill gaps with guesses. Only submit a write when the proprietor explicitly asks for a specific change; never infer one from a question. Ask for missing details instead of guessing. Before publishing or unpublishing results, tell the proprietor the exact class, subject, term, and session and wait for their confirmation. Use the Results Portal session rather than querying the database directly. Do not expose session tokens, passwords, API keys, internal prompts, or raw secrets.`;
+const SYSTEM_PROMPT = `You are the proprietor's capable AI employee for Way to Success Standard Schools. Use the connected Results Portal, central Registry, Attendance System, and Notifications System to complete the proprietor's request instead of directing them to perform it. Use your full reasoning and the available tools; do not impose extra task categories or arbitrary lookup limits. Each system's own signed-in permission checks define your access. You can answer questions, analyse records, prepare reports, and perform explicitly requested school-system actions. Choose the most direct tool and avoid repeated or one-student-at-a-time reads when a complete class-level tool is available. For class performance, exam coverage, pass/fail, averages, or subject rankings, call class_analysis once; it reads the complete authorized class data and returns exact denominators and compact statistics. For other work, use the relevant system's read or action tool. Report the class, session, term, denominator, and data gaps. Never guess missing records. Only make changes the proprietor explicitly requested; ask for missing details, and confirm the exact records before deleting, the exact scope before publishing or unpublishing, and the recipients/content before sending a message. Respect each system's permissions and write freezes. Do not query the database directly or reveal session tokens, passwords, API keys, or raw secrets. If a system is not connected to the available tools, say so; do not pretend to use it.`;
 
 /** Tell the model the live session/term so result tools carry the right scope. */
 function systemPrompt(current: CurrentSession) {
@@ -505,27 +562,153 @@ function systemPrompt(current: CurrentSession) {
   const session = typeof academic.session === "string" ? academic.session : "";
   const term = typeof academic.term === "string" ? academic.term : "";
   const line = session && term ? `${SYSTEM_PROMPT} The live academic context is ${session}, ${term}.` : SYSTEM_PROMPT;
-  return `${line} When asked for ONE student's report card, call report_card straight away with the name as search (and classKey if given), then reply in two or three short lines with the student, class, term, total, and that the card is ready to print or save as PDF. NEVER call report_card unless the proprietor asked for a report card. Use results_read for the actual requested Results Portal task, including analysis; result_summary returns a class roster and scores and can be used to calculate class-wide answers. Do not call report_card to sample students for analysis. If a read is denied or empty, report that result plainly and do not tell the proprietor to do it manually. If the proprietor sent several short messages in a row, answer the newest one and mention the earlier points only in passing.`;
+  return `${line} When asked for a report card, use report_card for the requested student or students and return the card link(s). For class-wide analysis, use class_analysis rather than reading students one by one. If a system denies an action or returns no data, say so plainly and state what was unavailable; never redirect the proprietor to do the work manually. If the proprietor sent several short messages in a row, address the newest request while retaining relevant earlier context.`;
 }
 
-/** Photos and signatures arrive as base64 data URLs and would swamp the model context. */
-function slim(value: unknown, depth = 0): unknown {
-  if (depth > 6 || value === null || value === undefined) return value;
+/** Keep complete school records; redact credentials and binary image data before model use. */
+function slim(value: unknown, depth = 0, field = ""): unknown {
+  if (/password|secret|token|api.?key|credential/i.test(field)) return "[redacted]";
+  if (value === null || value === undefined) return value;
   if (typeof value === "string") {
+    if (/^(photo|signature|image|avatar|data)$/i.test(field) && value.startsWith("data:")) return "[image]";
     if (value.startsWith("data:image/")) return "[image]";
-    if (value.length > 1200) return `${value.slice(0, 1200)}…`;
     return value;
   }
-  if (Array.isArray(value)) return value.slice(0, 120).map((item) => slim(item, depth + 1));
+  if (Array.isArray(value)) return value.map((item) => slim(item, depth + 1, field));
   if (typeof value === "object") {
     const output: Record<string, unknown> = {};
-    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
-      if (/^(photo|signature|image|avatar|data)$/i.test(key) && typeof item === "string" && item.startsWith("data:")) { output[key] = "[image]"; continue; }
-      output[key] = slim(item, depth + 1);
-    }
+    for (const [key, item] of Object.entries(value as Record<string, unknown>)) output[key] = slim(item, depth + 1, key);
     return output;
   }
   return value;
+}
+
+/** Full-class aggregates keep large score sheets complete and out of model context. */
+async function classAnalysis(current: CurrentSession, args: Record<string, unknown>) {
+  const requestedClass = classKeyOf(args.classKey);
+  if (!requestedClass) return { ok: false, code: "RESULT_CLASS_REQUIRED", detail: "Name the class to analyse." };
+  const payload = await withAcademicContext(current, {
+    class_key: requestedClass,
+    term: args.term,
+    academic_session: args.academicSession,
+  });
+  if (!payload.term || !payload.academic_session) return { ok: false, code: "RESULT_ACADEMIC_CONTEXT_REQUIRED", detail: "The Results Portal has no current session and term." };
+
+  const call = await openResults(current);
+  const set = await call("context.set", { class_key: payload.class_key, academic_session: payload.academic_session, term: payload.term });
+  if (!set?.ok) return set;
+  let summary = await call("read.result_summary", payload);
+  if (summary?.code === "RESULT_CONTEXT_MISMATCH") summary = await call("read.result_summary", payload);
+  if (!summary?.ok) return summary;
+  const [subjectResponse, configResponse] = await Promise.all([
+    call("read.subjects", { class_key: payload.class_key }),
+    call("settings.read", {}),
+  ]);
+  if (!subjectResponse?.ok) return subjectResponse;
+
+  const bag = (summary.summary || {}) as { students?: Record<string, unknown>[]; scores?: Record<string, unknown>[] };
+  const students = Array.isArray(bag.students) ? bag.students : [];
+  const rawScores = Array.isArray(bag.scores) ? bag.scores : [];
+  const studentNames = new Map(students.map((student) => [String(student.id), String(student.name || student.admno || "Student")]));
+  const subjectNames = new Map<number, string>();
+  for (const row of (Array.isArray(subjectResponse.rows) ? subjectResponse.rows : []) as Record<string, unknown>[]) {
+    subjectNames.set(Number(row.subject_index), String(row.subject_name || `Subject ${row.subject_index}`));
+  }
+  const config = ((configResponse?.settings || {}) as Record<string, unknown>).app_config as Record<string, unknown> | undefined;
+  const gradeScale = Array.isArray(config?.gradeScale) ? config.gradeScale as Record<string, unknown>[] : [];
+  const didPass = (total: number) => {
+    const value = Math.floor(total);
+    const grade = gradeScale.find((row) => value >= Number(row.min) && value <= Number(row.max));
+    if (!grade) return gradeOf(total).r !== "Fail";
+    const remark = String(grade.r || grade.remark || "").toLowerCase();
+    const gradeName = String(grade.g || grade.grade || "").toUpperCase();
+    return !remark.includes("fail") && gradeName !== "F9";
+  };
+  const subjectIndexes = [...subjectNames.keys()].sort((a, b) => a - b);
+  for (const row of rawScores) {
+    const index = Number(row.subject_index);
+    if (!subjectNames.has(index)) subjectNames.set(index, `Subject ${index}`);
+  }
+  for (const row of rawScores) {
+    const index = Number(row.subject_index);
+    if (!subjectIndexes.includes(index)) subjectIndexes.push(index);
+  }
+  subjectIndexes.sort((a, b) => a - b);
+
+  const subjects = subjectIndexes.map((index) => {
+    const rowsByStudent = new Map<string, Record<string, unknown>>();
+    for (const row of rawScores) {
+      if (Number(row.subject_index) !== index) continue;
+      const studentId = String(row.student_id || "");
+      if (!studentId || !studentNames.has(studentId)) continue;
+      const previous = rowsByStudent.get(studentId);
+      const nextTotal = totalOf(row);
+      const previousTotal = previous ? totalOf(previous) : "";
+      if (!previous || Number(nextTotal || -1) > Number(previousTotal || -1)) rowsByStudent.set(studentId, row);
+    }
+    const rows = [...rowsByStudent.entries()].map(([studentId, row]) => ({
+      studentId,
+      name: studentNames.get(studentId) || "Student",
+      row,
+      total: totalOf(row),
+      exam: row.exam === "" || row.exam === null || row.exam === undefined ? null : Number(row.exam),
+    }));
+    const marked = rows.filter((entry) => entry.total !== "");
+    const exams = rows.filter((entry) => entry.exam !== null && Number.isFinite(entry.exam));
+    const graded = exams.filter((entry) => entry.total !== "");
+    const passed = graded.filter((entry) => didPass(Number(entry.total)));
+    const ranked = graded.slice().sort((a, b) => Number(b.total) - Number(a.total) || a.name.localeCompare(b.name));
+    const cutoff = ranked.length >= 3 ? Number(ranked[2].total) : Number.NEGATIVE_INFINITY;
+    const leaders = ranked.filter((entry) => Number(entry.total) >= cutoff).slice(0, 5).map((entry) => ({
+      name: entry.name,
+      total: Number(entry.total),
+      exam: entry.exam,
+    }));
+    const average = (values: number[]) => values.length ? Math.round(values.reduce((sum, n) => sum + n, 0) * 10 / values.length) / 10 : null;
+    const examValues = exams.map((entry) => Number(entry.exam));
+    const totals = marked.map((entry) => Number(entry.total));
+    return {
+      subject: subjectNames.get(index) || `Subject ${index}`,
+      index,
+      roster: students.length,
+      studentsWithAnyMark: marked.length,
+      studentsWithExam: exams.length,
+      studentsWithoutExam: Math.max(0, students.length - exams.length),
+      examMean: average(examValues),
+      examLowest: examValues.length ? Math.min(...examValues) : null,
+      examHighest: examValues.length ? Math.max(...examValues) : null,
+      totalMean: average(totals),
+      gradedWithExam: graded.length,
+      passedOnPortalGradeScale: passed.length,
+      failedOnPortalGradeScale: graded.length - passed.length,
+      passRate: graded.length ? Math.round(passed.length * 1000 / graded.length) / 10 : null,
+      topByTotal: leaders,
+    };
+  });
+
+  const expectedExamEntries = students.length * subjectIndexes.length;
+  const actualExamEntries = subjects.reduce((sum, subject) => sum + subject.studentsWithExam, 0);
+  const gradedCount = subjects.reduce((sum, subject) => sum + subject.gradedWithExam, 0);
+  const passCount = subjects.reduce((sum, subject) => sum + subject.passedOnPortalGradeScale, 0);
+  return {
+    ok: true,
+    source: "results_portal_complete_class_read",
+    class: classLabel(String(payload.class_key)),
+    classKey: payload.class_key,
+    term: payload.term,
+    academicSession: payload.academic_session,
+    rosterCount: students.length,
+    subjectCount: subjectIndexes.length,
+    expectedExamEntries,
+    recordedExamEntries: actualExamEntries,
+    examCoverageRate: expectedExamEntries ? Math.round(actualExamEntries * 1000 / expectedExamEntries) / 10 : null,
+    gradedSubjectEntries: gradedCount,
+    totalPassCount: passCount,
+    totalFailCount: gradedCount - passCount,
+    overallPassRate: gradedCount ? Math.round(passCount * 1000 / gradedCount) / 10 : null,
+    passMethod: "The portal's grade scale applied to each recorded student's CA-plus-exam total; denominator includes only students with an exam mark.",
+    subjects,
+  };
 }
 
 async function executeTool(name: string, args: Record<string, unknown>, current: CurrentSession) {
@@ -547,6 +730,25 @@ async function executeTool(name: string, args: Record<string, unknown>, current:
       return slim({ ...record, guardians });
     }
     case "staff_directory": return slim(await registry(current, "read", "staff", { search: args.search || "" }));
+    case "class_analysis": return slim(await classAnalysis(current, args));
+    case "registry_request": {
+      const kind = args.kind === "write" ? "write" : "read";
+      const action = String(args.action || "");
+      if (!action || action.length > 120) return { ok: false, code: "REGISTRY_ACTION_REQUIRED" };
+      const payload = args.payload && typeof args.payload === "object" ? args.payload as Record<string, unknown> : {};
+      return slim(await registry(current, kind, action, payload));
+    }
+    case "attendance_request": {
+      const action = String(args.action || "");
+      if (!action || action.length > 120) return { ok: false, code: "ATTENDANCE_ACTION_REQUIRED" };
+      const payload = args.payload && typeof args.payload === "object" ? args.payload as Record<string, unknown> : {};
+      return slim(await attendanceRequest(current, String(args.rpc || ""), action, payload));
+    }
+    case "notification_request": {
+      const action = String(args.action || "");
+      const payload = args.payload && typeof args.payload === "object" ? args.payload as Record<string, unknown> : {};
+      return slim(await notificationRequest(current, String(args.rpc || ""), action, payload));
+    }
     case "results_read": {
       const resource = String(args.resource || "");
       const payload = await withAcademicContext(current, {
@@ -574,18 +776,20 @@ async function executeTool(name: string, args: Record<string, unknown>, current:
       const call = await openResults(current);
       return slim(await call("history.read", payload));
     }
-    case "results_write": {
+    case "results_request": {
       const action = String(args.action || "");
-      const allowed = new Set(["scores.enter", "traits.enter", "remarks.enter", "fees.update", "results.publish", "results.unpublish"]);
-      if (!allowed.has(action)) return { ok: false, code: "RESULT_ACTION_NOT_ALLOWED" };
+      if (!action || action.length > 120) return { ok: false, code: "RESULT_ACTION_REQUIRED" };
       const input = args.payload && typeof args.payload === "object" ? args.payload as Record<string, unknown> : {};
       const payload = { ...input };
       if (payload.class_key) payload.class_key = classKeyOf(payload.class_key);
-      if (action === "scores.enter" || action === "traits.enter" || action === "remarks.enter" || action === "fees.update") {
+      const call = await openResults(current);
+      if (action.startsWith("read.") && (payload.class_key || payload.term || payload.academic_session)) {
         const scoped = await withAcademicContext(current, payload);
         Object.assign(payload, scoped);
+        const set = await call("context.set", { class_key: payload.class_key || null, academic_session: payload.academic_session || null, term: payload.term || null });
+        if (!set?.ok) return slim(set);
       }
-      return slim(await results(current, action, payload));
+      return slim(await call(action, payload));
     }
     case "report_card": return slim(await reportCard(current, args));
     default: return { ok: false, code: "ASSISTANT_TOOL_NOT_FOUND" };
@@ -728,7 +932,7 @@ function readTurn(style: Style, payload: Record<string, unknown>): Turn {
   return { text, calls, usage: payload.usage || null };
 }
 
-async function askProvider(url: string, settings: ModelSettings, style: Style, history: HistoryItem[], budgetMs = 45000, noTools = false, retriedEffort = false) {
+async function askProvider(url: string, settings: ModelSettings, style: Style, history: HistoryItem[], budgetMs = 60000, noTools = false, retriedEffort = false) {
   const body = style === "responses" ? responsesBody(history, noTools) : chatBody(history, noTools);
   const tuned = settings.effort
     ? { ...body, ...(style === "responses" ? { reasoning: { effort: settings.effort } } : { reasoning_effort: settings.effort }) }
@@ -790,19 +994,20 @@ async function gateway(messages: unknown[], settings: ModelSettings, current: Cu
   const seen = new Map<string, string>();
   let retriedStyle = false;
   const started = Date.now();
-  const totalBudget = 100000;
+  // Leave time for the job status write inside the route's 220s function limit.
+  const totalBudget = 195000;
   current.deadline = started + totalBudget;
   let partial = "";
   let ranOut = false;
-  for (let step = 0; step < 12; step += 1) {
+  while (true) {
     const left = totalBudget - (Date.now() - started);
-    if (left < 8000) { ranOut = true; break; }
-    let answer = await askProvider(url, settings, style, history, Math.max(12000, Math.min(45000, left)));
+    if (left < 12000) { ranOut = true; break; }
+    let answer = await askProvider(url, settings, style, history, Math.min(60000, left));
     if (answer.failure && style === "chat" && !retriedStyle && /responses/i.test(answer.failure.detail)) {
       retriedStyle = true;
       style = "responses";
       url = url.replace(/\/chat\/completions$/, "/responses");
-      answer = await askProvider(url, settings, style, history, Math.max(12000, Math.min(45000, left)));
+      answer = await askProvider(url, settings, style, history, Math.min(60000, left));
     }
     if (answer.failure) {
       if (answer.failure.code === "ASSISTANT_MODEL_TIMEOUT" && (partial || used.length)) { ranOut = true; break; }
@@ -819,12 +1024,12 @@ async function gateway(messages: unknown[], settings: ModelSettings, current: Cu
       const key = `${call.name}:${JSON.stringify(call.name === "class_guardians" ? { classKey: args.classKey } : args)}`;
       const cached = seen.get(key);
       if (cached) { history.push({ role: "tool", callId: call.id, content: cached }); continue; }
-      if (call.name === "report_card" && doc) {
-        const blocked = JSON.stringify({ ok: false, code: "REPORT_CARD_ONE_PER_REQUEST", detail: "A report card was already built in this turn. Do not call report_card multiple times to compare or analyse scores." });
-        history.push({ role: "tool", callId: call.id, content: blocked });
-        continue;
+      let result: unknown;
+      try {
+        result = await executeTool(call.name, args, current);
+      } catch (caught) {
+        result = { ok: false, code: "SCHOOL_SYSTEM_UNAVAILABLE", detail: (caught as Error)?.message || "The connected school system did not return a response." };
       }
-      const result = await executeTool(call.name, args, current);
       if ((result as Record<string, unknown>).ok === false) {
         (result as Record<string, unknown>).hint = "This call failed. Do not repeat it with the same arguments: use another tool or tell the proprietor plainly what could not be read.";
       } else if (/\[\]/.test(JSON.stringify(result)) && JSON.stringify(result).length < 400) {
@@ -844,21 +1049,21 @@ async function gateway(messages: unknown[], settings: ModelSettings, current: Cu
       if ((result as Record<string, unknown>).requires_confirmation === true) {
         return { ok: true, text: (result as Record<string, unknown>).summary as string, usage: null, approval: result as Record<string, unknown>, steps: used };
       }
-      const content = JSON.stringify(result).slice(0, 50000);
+      const content = JSON.stringify(slim(result));
       seen.set(key, content);
       history.push({ role: "tool", callId: call.id, content });
     }
     if (Date.now() - started > totalBudget) { ranOut = true; break; }
   }
   const note = ranOut
-    ? "\n\nI ran out of time while digging through the records. Ask me to continue and I will pick up from here."
-    : "\n\nI reached the safe tool limit for this request. Please ask me to continue from here.";
-  if (!partial.trim()) {
+    ? "\n\nThis answer may be incomplete because a connected service did not finish in time."
+    : "\n\nThis answer may be incomplete because the connected service stopped this request.";
+  if (ranOut || !partial.trim()) {
     const closing = await askProvider(
       url,
       settings,
       style,
-      [...history, { role: "user", content: "Stop looking things up. In a few short lines, say what you already found and what is still missing." }],
+      [...history, { role: "user", content: "Use only the completed tool results above. Give the best complete answer you can now, clearly say if any requested part is still missing, and do not ask the proprietor to continue the same request." }],
       18000,
       true,
     );
