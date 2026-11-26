@@ -36,6 +36,7 @@ assert.match(route, /const DONE_LABELS/);
 assert.match(route, /const fallback = facts.length/);
 assert.match(route, /case "class_guardians"/);
 assert.match(route, /async function classGuardians/);
+assert.match(route, /guardian\.primaryPhone/);
 assert.match(route, /The connected school systems did not finish this request/);
 
 // Every turn carries the real class names and live term.
