@@ -996,6 +996,7 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
         }),
       })),
       note: "rows[i] is roster[i]. A blank mark is null. List every row.",
+      debug: { classKey: payload.class_key, term: payload.term, students: students.length, scores: rawScores.length, indexes: chosenIndexes.length },
     };
   }
 
