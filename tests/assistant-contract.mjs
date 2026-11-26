@@ -15,6 +15,7 @@ for (const heading of ["HOW YOU WORK", "CLASS AND RESULT ANALYSIS", "APPROVAL, P
   assert.ok(route.includes(`\n${heading}\n`), `missing prompt layer: ${heading}`);
 }
 assert.match(route, /call class_analysis once/);
+assert.match(route, /call the write tool straight away/);
 assert.match(route, /Always finish with a sentence/);
 
 // One call reads the whole class and does the arithmetic on the server.
