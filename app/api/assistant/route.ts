@@ -941,6 +941,23 @@ async function verifyWrite(name: string, args: Record<string, unknown>, current:
       const row = rows.find((item) => String(item.student_id) === String(payload.student_id));
       return { ...record, verify: row ? { read_back: true, total: row.total, paid: row.paid, debt: row.debt } : { read_back: false } };
     }
+    if (name === "results_request" && String(args.action) === "remarks.enter") {
+      const call = await openResults(current);
+      await call("context.set", { class_key: payload.class_key, academic_session: payload.academic_session, term: payload.term });
+      const read = await call("read.remarks", { class_key: payload.class_key, student_id: payload.student_id, term: payload.term, academic_session: payload.academic_session });
+      const rows = Array.isArray(read?.rows) ? read.rows as Record<string, unknown>[] : [];
+      const row = rows.find((item) => String(item.student_id) === String(payload.student_id));
+      const wanted = String(payload.academic || "").trim();
+      return { ...record, verify: row ? { read_back: true, academic: row.academic, matches: String(row.academic || "").trim() === wanted } : { read_back: false } };
+    }
+    if (name === "results_request" && String(args.action) === "traits.enter") {
+      const call = await openResults(current);
+      await call("context.set", { class_key: payload.class_key, academic_session: payload.academic_session, term: payload.term });
+      const read = await call("read.traits", { class_key: payload.class_key, student_id: payload.student_id, term: payload.term, academic_session: payload.academic_session });
+      const rows = Array.isArray(read?.rows) ? read.rows as Record<string, unknown>[] : [];
+      const row = rows.find((item) => String(item.student_id) === String(payload.student_id) && String(item.trait_name) === String(payload.trait_name));
+      return { ...record, verify: row ? { read_back: true, trait_name: row.trait_name, rating: row.rating } : { read_back: false } };
+    }
     if (name === "registry_request" && payload.studentId) {
       const read = await registry(current, "read", "student", { studentId: payload.studentId });
       const found = read?.student || read?.record || null;
@@ -1502,9 +1519,23 @@ async function approve(token: string, current: CurrentSession) {
   const args = (proposal.args && typeof proposal.args === "object" ? proposal.args : {}) as Record<string, unknown>;
   if (!tool) throw new IdentityApiError("ASSISTANT_TOOL_NOT_FOUND", 403);
   const summary = pendingSummary(tool, args, await cardLabel(tool, args, current));
-  const result = await executeTool(tool, args, current, true);
-  if ((result as Record<string, unknown>).requires_confirmation === true) throw new IdentityApiError("APPROVAL_INVALID", 400);
-  return { summary, tool, result };
+  const result = await executeTool(tool, args, current, true) as Record<string, unknown>;
+  if (result.requires_confirmation === true) throw new IdentityApiError("APPROVAL_INVALID", 400);
+  // Say whether the record itself now shows the change.
+  const verify = (result.verify || {}) as Record<string, unknown>;
+  let note = "";
+  if (result.ok === true) {
+    const observed = result.code === "RESULT_REMARKS_SAVED" || result.code === "RESULT_TRAITS_SAVED" || verify.read_back === true;
+    if (observed) {
+      const seen = verify.academic !== undefined ? ` It now reads "${String(verify.academic ?? "")}".`
+        : verify.rating !== undefined ? ` It now reads ${String(verify.rating ?? "blank")}.`
+        : "";
+      note = ` Read back from the record.${seen}`;
+    } else if (verify.read_back === false) {
+      note = " The save was sent but the read-back does not show it yet; check the record before relying on it.";
+    }
+  }
+  return { summary: `${summary}${note}`, tool, result };
 }
 
 class CardProblem extends Error {

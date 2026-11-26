@@ -30,6 +30,7 @@ assert.match(route, /approvalToken\(current, \{ tool: name, args \}\)/);
 assert.match(route, /readApproval\(current, token\)/);
 assert.match(route, /async function verifyWrite/);
 assert.match(route, /read_back: true/);
+assert.match(route, /read\.remarks/);
 
 // A turn cannot end silent.
 assert.match(route, /const DONE_LABELS/);
