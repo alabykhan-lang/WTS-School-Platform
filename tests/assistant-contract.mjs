@@ -37,6 +37,10 @@ assert.match(route, /const fallback = facts.length/);
 assert.match(route, /case "class_guardians"/);
 assert.match(route, /async function classGuardians/);
 assert.match(route, /guardian\.primaryPhone/);
+
+// A remark keeps its text and the live term, however the model names them.
+assert.match(route, /payload\.academic = text/);
+assert.match(route, /await withAcademicContext\(current, payload\)/);
 assert.match(route, /The connected school systems did not finish this request/);
 
 // Every turn carries the real class names and live term.

@@ -559,7 +559,7 @@ const tools = [
     type: "function",
     function: {
       name: "results_request",
-      description: "Use any Results Portal read or action for the proprietor through the signed-in portal session. Pass the portal action and its normal payload. Never call for a change unless the proprietor explicitly requested it. The Results Portal itself enforces permissions and write freezes.",
+      description: "Use any Results Portal read or action for the proprietor through the signed-in portal session. Pass the portal action and its normal payload; class_key, student_id, term and academic_session are used as the portal expects, and the live term and session fill in by themselves. Common write actions: scores.enter (ca1, ca2, ca3, exam), traits.enter (trait_name, rating), remarks.enter (the remark text in academic), fees.update (total, paid, debt). Never call for a change unless the proprietor explicitly requested it. The Results Portal itself enforces permissions and write freezes.",
       parameters: { type: "object", required: ["action"], properties: { action: { type: "string" }, payload: { type: "object", additionalProperties: true } } },
     },
   },
@@ -896,7 +896,10 @@ function pendingSummary(name: string, args: Record<string, unknown>) {
     const where = [payload.class_key, payload.term, payload.subject_index === undefined ? "" : `subject ${payload.subject_index}`].filter(Boolean).join(", ");
     if (action === "scores.enter") return `Save marks for ${who}${where ? ` — ${where}` : ""}: CA1 ${payload.ca1 ?? "blank"}, CA2 ${payload.ca2 ?? "blank"}, CA3 ${payload.ca3 ?? "blank"}, exam ${payload.exam ?? "blank"}.`;
     if (action === "traits.enter") return `Save the trait "${payload.trait_name || "trait"}" (${payload.rating ?? "blank"}) for ${who}${where ? ` — ${where}` : ""}.`;
-    if (action === "remarks.enter") return `Save the remark for ${who}${where ? ` — ${where}` : ""}.`;
+    if (action === "remarks.enter") {
+      const text = String(payload.academic ?? payload.remark ?? payload.remarks ?? payload.text ?? "").trim();
+      return `Save the remark for ${who}${where ? ` — ${where}` : ""}${text ? `: "${text}"` : ""}.`;
+    }
     if (action === "fees.update") return `Change the fee record for ${who}${where ? ` — ${where}` : ""}: total ${payload.total ?? "—"}, paid ${payload.paid ?? "—"}, debt ${payload.debt ?? "—"}.`;
     if (action === "students.upsert") return `Save the student record for ${who}${payload.class_key ? ` in ${payload.class_key}` : ""}.`;
     if (action === "students.archive") return `Archive ${who}${payload.reason ? ` — ${payload.reason}` : ""}. The record can be restored.`;
@@ -1087,6 +1090,22 @@ async function runTool(name: string, args: Record<string, unknown>, current: Cur
       const input = args.payload && typeof args.payload === "object" ? args.payload as Record<string, unknown> : {};
       const payload = { ...input };
       if (payload.class_key) payload.class_key = classKeyOf(payload.class_key);
+      // A write carries the same live term and session as a read, so the clerk
+      // never has to repeat what the portal already knows.
+      if (!action.startsWith("read.") && (payload.class_key || payload.student_id)) {
+        Object.assign(payload, await withAcademicContext(current, payload));
+      }
+      // Everyday field names map onto the portal's own columns.
+      if (action === "remarks.enter") {
+        const text = payload.academic ?? payload.remark ?? payload.remarks ?? payload.text;
+        if (text !== undefined) payload.academic = text;
+        delete payload.remark; delete payload.remarks; delete payload.text;
+      }
+      if (action === "traits.enter") {
+        if (payload.trait && payload.trait_name === undefined) payload.trait_name = payload.trait;
+        if (payload.value && payload.rating === undefined) payload.rating = payload.value;
+        delete payload.trait; delete payload.value;
+      }
       const call = await openResults(current);
       if (action.startsWith("read.") && (payload.class_key || payload.term || payload.academic_session)) {
         const scoped = await withAcademicContext(current, payload);
@@ -1094,7 +1113,19 @@ async function runTool(name: string, args: Record<string, unknown>, current: Cur
         const set = await call("context.set", { class_key: payload.class_key || null, academic_session: payload.academic_session || null, term: payload.term || null });
         if (!set?.ok) return slim(set);
       }
-      return slim(await call(action, payload));
+      const answer = await call(action, payload);
+      if (answer?.ok !== true && !answer?.hint) {
+        const needs: Record<string, string> = {
+          "scores.enter": "class_key, student_id, subject_index, term and academic_session, plus ca1, ca2, ca3, exam",
+          "traits.enter": "class_key, student_id, trait_name and rating",
+          "remarks.enter": "class_key, student_id and the remark text as academic",
+          "fees.update": "class_key, student_id and the fee figures",
+        };
+        answer.hint = needs[action]
+          ? `The portal refused "${action}". Send it again with ${needs[action]}.`
+          : `The portal refused "${action}". Check the payload fields and call it again.`;
+      }
+      return slim(answer);
     }
     case "report_card": {
       const made = await reportCard(current, args);
@@ -1799,6 +1830,7 @@ export async function POST(request: NextRequest) {
         } catch (caught) { fastError = (caught as Error)?.message || String(caught); }
       }
 
+      if (elapsed < 12000) await liveAcademic(current).catch(() => null);
       const classes = elapsed < 12000 ? await classCatalog(current) : [];
       const result = await gateway(messages, settings, current, budgetMs, classes);
       if (!result.ok) {
