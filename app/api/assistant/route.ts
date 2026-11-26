@@ -1199,6 +1199,26 @@ function pendingSummary(name: string, args: Record<string, unknown>, label: { wh
   return "Apply this change.";
 }
 
+/**
+ * A read replica can trail a write, so a verify read is tried a few times before
+ * it is called a miss. The last row seen is returned either way, so a stale
+ * record can be described instead of guessed at.
+ */
+async function verifyRow<T>(read: () => Promise<T | null>, matches: (row: T) => boolean) {
+  let last: T | null = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const row = await read().catch(() => null);
+    if (row) {
+      last = row;
+      if (matches(row)) return { row, matched: true };
+    }
+    if (attempt < 2) await new Promise((step) => setTimeout(step, 400));
+  }
+  return { row: last, matched: false };
+}
+
+const sameMark = (left: unknown, right: unknown) => (left === null || left === undefined || left === "" ? null : Number(left)) === (right === null || right === undefined || right === "" ? null : Number(right));
+
 /** Read the record back after a write, so "done" is never taken from the preview. */
 async function verifyWrite(name: string, args: Record<string, unknown>, current: CurrentSession, result: unknown) {
   const record = (result && typeof result === "object" ? result : {}) as Record<string, unknown>;
@@ -1207,40 +1227,52 @@ async function verifyWrite(name: string, args: Record<string, unknown>, current:
   try {
     if (name === "results_request" && String(args.action) === "scores.enter") {
       const call = await openResults(current);
-      const read = await call("read.scores", {
-        class_key: payload.class_key,
-        student_id: payload.student_id,
-        subject_index: payload.subject_index,
-        term: payload.term,
-        academic_session: payload.academic_session,
-      });
-      const rows = Array.isArray(read?.rows) ? read.rows as Record<string, unknown>[] : [];
-      const row = rows.find((item) => String(item.student_id) === String(payload.student_id) && Number(item.subject_index) === Number(payload.subject_index));
-      return { ...record, verify: row ? { read_back: true, ca1: row.ca1, ca2: row.ca2, ca3: row.ca3, exam: row.exam } : { read_back: false } };
+      const found = await verifyRow(async () => {
+        const read = await call("read.scores", {
+          class_key: payload.class_key,
+          student_id: payload.student_id,
+          subject_index: payload.subject_index,
+          term: payload.term,
+          academic_session: payload.academic_session,
+        });
+        const rows = Array.isArray(read?.rows) ? read.rows as Record<string, unknown>[] : [];
+        return rows.find((item) => String(item.student_id) === String(payload.student_id) && Number(item.subject_index) === Number(payload.subject_index)) || null;
+      }, (row) => sameMark(row.ca1, payload.ca1) && sameMark(row.ca2, payload.ca2) && sameMark(row.ca3, payload.ca3) && sameMark(row.exam, payload.exam));
+      const row = found.row;
+      return { ...record, verify: row ? { read_back: true, matched: found.matched, ca1: row.ca1, ca2: row.ca2, ca3: row.ca3, exam: row.exam } : { read_back: false } };
     }
     if (name === "results_request" && String(args.action) === "fees.update") {
       const call = await openResults(current);
-      const read = await call("read.fees", { class_key: payload.class_key, student_id: payload.student_id, term: payload.term, academic_session: payload.academic_session });
-      const rows = Array.isArray(read?.rows) ? read.rows as Record<string, unknown>[] : [];
-      const row = rows.find((item) => String(item.student_id) === String(payload.student_id));
-      return { ...record, verify: row ? { read_back: true, total: row.total, paid: row.paid, debt: row.debt } : { read_back: false } };
+      const found = await verifyRow(async () => {
+        const read = await call("read.fees", { class_key: payload.class_key, student_id: payload.student_id, term: payload.term, academic_session: payload.academic_session });
+        const rows = Array.isArray(read?.rows) ? read.rows as Record<string, unknown>[] : [];
+        return rows.find((item) => String(item.student_id) === String(payload.student_id)) || null;
+      }, (row) => sameMark(row.total, payload.total) && sameMark(row.paid, payload.paid) && sameMark(row.debt, payload.debt));
+      const row = found.row;
+      return { ...record, verify: row ? { read_back: true, matched: found.matched, total: row.total, paid: row.paid, debt: row.debt } : { read_back: false } };
     }
     if (name === "results_request" && String(args.action) === "remarks.enter") {
       const call = await openResults(current);
       await call("context.set", { class_key: payload.class_key, academic_session: payload.academic_session, term: payload.term });
-      const read = await call("read.remarks", { class_key: payload.class_key, student_id: payload.student_id, term: payload.term, academic_session: payload.academic_session });
-      const rows = Array.isArray(read?.rows) ? read.rows as Record<string, unknown>[] : [];
-      const row = rows.find((item) => String(item.student_id) === String(payload.student_id));
       const wanted = String(payload.academic || "").trim();
-      return { ...record, verify: row ? { read_back: true, academic: row.academic, matches: String(row.academic || "").trim() === wanted } : { read_back: false } };
+      const found = await verifyRow(async () => {
+        const read = await call("read.remarks", { class_key: payload.class_key, student_id: payload.student_id, term: payload.term, academic_session: payload.academic_session });
+        const rows = Array.isArray(read?.rows) ? read.rows as Record<string, unknown>[] : [];
+        return rows.find((item) => String(item.student_id) === String(payload.student_id)) || null;
+      }, (row) => String(row.academic || "").trim() === wanted);
+      const row = found.row;
+      return { ...record, verify: row ? { read_back: true, matched: found.matched, academic: row.academic } : { read_back: false } };
     }
     if (name === "results_request" && String(args.action) === "traits.enter") {
       const call = await openResults(current);
       await call("context.set", { class_key: payload.class_key, academic_session: payload.academic_session, term: payload.term });
-      const read = await call("read.traits", { class_key: payload.class_key, student_id: payload.student_id, term: payload.term, academic_session: payload.academic_session });
-      const rows = Array.isArray(read?.rows) ? read.rows as Record<string, unknown>[] : [];
-      const row = rows.find((item) => String(item.student_id) === String(payload.student_id) && String(item.trait_name) === String(payload.trait_name));
-      return { ...record, verify: row ? { read_back: true, trait_name: row.trait_name, rating: row.rating } : { read_back: false } };
+      const found = await verifyRow(async () => {
+        const read = await call("read.traits", { class_key: payload.class_key, student_id: payload.student_id, term: payload.term, academic_session: payload.academic_session });
+        const rows = Array.isArray(read?.rows) ? read.rows as Record<string, unknown>[] : [];
+        return rows.find((item) => String(item.student_id) === String(payload.student_id) && String(item.trait_name) === String(payload.trait_name)) || null;
+      }, (row) => String(row.rating ?? "") === String(payload.rating ?? ""));
+      const row = found.row;
+      return { ...record, verify: row ? { read_back: true, matched: found.matched, trait_name: row.trait_name, rating: row.rating } : { read_back: false } };
     }
     if (name === "registry_request" && payload.studentId) {
       const read = await registry(current, "read", "student", { studentId: payload.studentId });
@@ -1872,16 +1904,15 @@ async function approve(token: string, current: CurrentSession) {
   // Say whether the record itself now shows the change.
   const verify = (result.verify || {}) as Record<string, unknown>;
   let note = "";
+  const blank = (value: unknown) => (value === null || value === undefined || value === "" ? "blank" : String(value));
+  const seen = verify.ca1 !== undefined ? ` It now reads CA1 ${blank(verify.ca1)}, CA2 ${blank(verify.ca2)}, CA3 ${blank(verify.ca3)}, exam ${blank(verify.exam)}.`
+    : verify.academic !== undefined ? ` It now reads "${String(verify.academic ?? "")}".`
+    : verify.rating !== undefined ? ` It now reads ${String(verify.rating ?? "blank")}.`
+    : "";
   if (result.ok === true) {
-    const observed = result.code === "RESULT_REMARKS_SAVED" || result.code === "RESULT_TRAITS_SAVED" || verify.read_back === true;
-    if (observed) {
-      const seen = verify.academic !== undefined ? ` It now reads "${String(verify.academic ?? "")}".`
-        : verify.rating !== undefined ? ` It now reads ${String(verify.rating ?? "blank")}.`
-        : "";
-      note = ` Read back from the record.${seen}`;
-    } else if (verify.read_back === false) {
-      note = " The save was sent but the read-back does not show it yet; check the record before relying on it.";
-    }
+    if (verify.read_back === true && verify.matched !== false) note = ` Read back from the record.${seen}`;
+    else if (verify.read_back === true) note = ` The record still shows an older value.${seen} Reload the sheet before relying on it.`;
+    else if (verify.read_back === false) note = " The save was sent but the read-back does not show it yet; check the record before relying on it.";
   }
   return { summary: `${summary}${note}`, tool, result };
 }

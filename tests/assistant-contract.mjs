@@ -114,6 +114,9 @@ assert.match(ui, />Models<\/button>/);
 assert.match(ui, />Usage<\/button>/);
 assert.doesNotMatch(ui, /assistantApproval/, "the old yellow approval bar is gone");
 // The reply layer is prose and bullets, and settles pushback first.
+assert.match(route, /async function verifyRow/);
+assert.match(route, /matched: found\.matched/);
+assert.match(route, /Read back from the record\./);
 assert.match(route, /never a table/);
 assert.match(route, /settle that point first/);
 assert.match(route, /barely started/);
