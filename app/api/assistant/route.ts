@@ -549,6 +549,7 @@ function readApproval(current: CurrentSession, token: string) {
 const tools = [
   { type: "function", function: { name: "school_overview", description: "Read the current school dashboard and academic context.", parameters: { type: "object", properties: {} } } },
   { type: "function", function: { name: "find_students", description: "List active students in a class or search active students by name or admission number. Always pass classKey when listing a class.", parameters: { type: "object", properties: { search: { type: "string" }, classKey: { type: "string" } } } } },
+  { type: "function", function: { name: "class_guardians", description: "Check every student's guardian phone in one class in one call. Returns who has a guardian phone and who has none. Use it for 'who has no guardian phone', missing contacts, or a reachability check instead of reading students one by one.", parameters: { type: "object", required: ["classKey"], properties: { classKey: { type: "string" } } } } },
   { type: "function", function: { name: "student_record", description: "Read one student's complete record by id, including guardian contacts.", parameters: { type: "object", required: ["studentId"], properties: { studentId: { type: "string" } } } } },
   { type: "function", function: { name: "staff_directory", description: "Read the staff directory and active assignments.", parameters: { type: "object", properties: { search: { type: "string" } } } } },
   { type: "function", function: { name: "results_read", description: "Read information available to the signed-in proprietor in the Results Portal. Use for results, marks, subject lists, publication, traits, remarks, fees, class rosters, and report-card context. The portal applies the account's permissions and class scope. For class performance, pass/fail, coverage, averages, or rankings, use class_analysis so the complete class is read and summarized in one call.", parameters: { type: "object", required: ["resource"], properties: { resource: { type: "string", enum: ["classes", "fees", "published_subjects", "remarks", "result_summary", "scores", "students", "subjects", "traits"] }, classKey: { type: "string" }, studentId: { type: "string" }, subjectIndex: { type: "integer" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
@@ -593,11 +594,21 @@ CLASS AND RESULT ANALYSIS
 - A report card is report_card, for the named pupil. Do not build cards to answer a class statistic.
 
 OTHER SYSTEM WORK
-- Registry: list and search students and staff, read a student's record and guardian contacts, and perform an explicitly requested Registry action with registry_request.
+- Registry: list and search students and staff, read a student's record and guardian contacts, check a whole class's guardian phones, and perform an explicitly requested Registry action with registry_request.
 - Attendance: read registers and status through attendance_request, and perform an explicitly requested attendance action with the same tool.
 - Notifications: read settings, recipients, templates and queues through notification_request. A send needs the exact recipients, template or message text and scope confirmed first.
 - Results Portal: use results_request for any portal action that the specialist tools do not cover, read or write. Every system applies the signed-in proprietor's own permissions; a refusal is that system's rule, not yours.
 - When a system is not reachable, say which one and what part was unavailable. Never fill the gap with a guess or send the proprietor off to do the work by hand.
+
+TOOLS BY JOB
+- Class marks, pass/fail, coverage, averages, ranks, top performers: class_analysis (once).
+- Who has no guardian phone, a reachability check: class_guardians (once).
+- A class roster, a person by name or admission number: find_students.
+- One pupil's record, guardian contacts, fees, traits, remarks: student_record or results_read.
+- Staff list: staff_directory.
+- One report card: report_card.
+- Anything else in a system: results_request, registry_request, attendance_request or notification_request with its normal action.
+- Do not use a general request tool for a job a specialist tool already covers.
 
 APPROVAL, PUBLICATION AND CONFIRMATION
 - Reading, searching, previewing, samples and reversible calculations are free and need no tap.
@@ -954,6 +965,48 @@ async function executeTool(name: string, args: Record<string, unknown>, current:
   return verifyWrite(name, args, current, result);
 }
 
+/** Whole-class guardian contact check in one tool call, in parallel behind the scenes. */
+async function classGuardians(current: CurrentSession, args: Record<string, unknown>) {
+  const classKey = classKeyOf(args.classKey);
+  if (!classKey) return { ok: false, code: "REGISTRY_CLASS_REQUIRED", detail: "Name the class.", hint: "Call class_guardians again with one of the class names in TURN STATE." };
+  const call = await openRegistry(current);
+  const roster = await call("read", "students", { classKey, status: "active" });
+  const rows = (Array.isArray(roster?.students) ? roster.students : Array.isArray(roster?.rows) ? roster.rows : []) as Record<string, unknown>[];
+  if (!rows.length) return { ok: false, code: "REGISTRY_CLASS_EMPTY", detail: `No active students in ${classLabel(classKey)}.`, hint: "Check the class name; if the class is right, the roster really is empty." };
+  const shown = rows.slice(0, 200);
+  const withPhone: Record<string, unknown>[] = [];
+  const without: Record<string, unknown>[] = [];
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < shown.length) {
+      const person = shown[cursor];
+      cursor += 1;
+      const guardians = await guardiansFor(call, current, String(person.id)).catch(() => []);
+      const phone = guardians
+        .map((guardian) => String(guardian.phone || guardian.mobile || guardian.phone_primary || guardian.telephone || ""))
+        .find((value) => value.trim());
+      if (phone) withPhone.push({ name: String(person.name || ""), admno: String(person.admno || ""), guardianPhone: phone });
+      else without.push({ name: String(person.name || ""), admno: String(person.admno || "") });
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(6, shown.length) }, worker));
+  const byName = (a: Record<string, unknown>, b: Record<string, unknown>) => String(a.name).localeCompare(String(b.name));
+  withPhone.sort(byName);
+  without.sort(byName);
+  const counted = withPhone.length + without.length;
+  return {
+    ok: true,
+    class: classLabel(classKey),
+    rosterCount: rows.length,
+    checked: counted,
+    withGuardianPhoneCount: withPhone.length,
+    withoutGuardianPhoneCount: without.length,
+    withoutGuardianPhone: without,
+    withGuardianPhone: withPhone,
+    ...(rows.length > shown.length ? { note: `Only the first ${shown.length} students were checked.` } : {}),
+  };
+}
+
 async function runTool(name: string, args: Record<string, unknown>, current: CurrentSession) {
   switch (name) {
     case "school_overview": {
@@ -964,6 +1017,7 @@ async function runTool(name: string, args: Record<string, unknown>, current: Cur
       return slim({ workspace, dashboard });
     }
     case "find_students": return slim(await registry(current, "read", "students", { search: args.search || "", classKey: args.classKey ? classKeyOf(args.classKey) : null, status: "active" }));
+    case "class_guardians": return slim(await classGuardians(current, args));
     case "student_record": {
       const call = await openRegistry(current);
       const [record, guardians] = await Promise.all([
@@ -1243,6 +1297,7 @@ const TOOL_RESULT_CAP = 6000;
 const DONE_LABELS: Record<string, string> = {
   school_overview: "Read the school overview",
   find_students: "Found the students",
+  class_guardians: "Checked the guardian contacts",
   student_record: "Read the student record",
   staff_directory: "Read the staff directory",
   class_analysis: "Analysed the class",
@@ -1272,6 +1327,7 @@ async function gateway(messages: unknown[], settings: ModelSettings, current: Cu
     else if (item.role === "user") history.push({ role: "user", content: item.content });
   }
   const used: string[] = [];
+  const facts: string[] = [];
   /** Details of the last report card built, so the client can open it on the portal itself. */
   let doc: CardDoc | null = null;
   const seen = new Map<string, string>();
@@ -1284,7 +1340,7 @@ async function gateway(messages: unknown[], settings: ModelSettings, current: Cu
   while (true) {
     const left = totalBudget - (Date.now() - started);
     // A tool round needs real room; below this a closing answer is worth more.
-    if (left < 9000) { ranOut = true; break; }
+    if (left < 11000) { ranOut = true; break; }
     let answer = await askProvider(url, settings, style, history, Math.min(60000, left));
     if (answer.failure && style === "chat" && !retriedStyle && /responses/i.test(answer.failure.detail)) {
       retriedStyle = true;
@@ -1333,6 +1389,15 @@ async function gateway(messages: unknown[], settings: ModelSettings, current: Cu
       if ((result as Record<string, unknown>).requires_confirmation === true) {
         return { ok: true, text: (result as Record<string, unknown>).summary as string, usage: null, approval: result as Record<string, unknown>, steps: used };
       }
+      if ((result as Record<string, unknown>).ok === true) {
+        const made = result as Record<string, unknown>;
+        if (call.name === "class_analysis") facts.push(`${made.class}: ${made.rosterCount} students, ${made.overallPassRate ?? "no"}% overall pass on ${made.gradedSubjectEntries} graded entries, exam coverage ${made.examCoverageRate ?? "unknown"}%`);
+        else if (call.name === "class_guardians") facts.push(`${made.class}: ${made.withoutGuardianPhoneCount} of ${made.checked} students with no guardian phone`);
+        else if (call.name === "find_students") {
+          const rows = Array.isArray(made.students) ? made.students : Array.isArray(made.rows) ? made.rows : [];
+          if (rows.length) facts.push(`${rows.length} students found`);
+        } else if (call.name === "report_card" && made.student) facts.push(`report card built for ${String((made.student as Record<string, unknown>).name || "")}`);
+      }
       const content = capText(JSON.stringify(slim(result)));
       seen.set(key, content);
       history.push({ role: "tool", callId: call.id, content });
@@ -1360,9 +1425,11 @@ async function gateway(messages: unknown[], settings: ModelSettings, current: Cu
     }
   }
   const labels = [...new Set(used)].map((name) => DONE_LABELS[name]).filter(Boolean);
-  const fallback = labels.length
-    ? `${labels.join(", ")}.${partial.trim() ? `\n\n${partial.trim()}` : ""}${note}`
-    : `The connected school systems did not finish this request.${note}`;
+  const fallback = facts.length
+    ? `Here is what the records returned: ${facts.join("; ")}.${note}`
+    : labels.length
+      ? `${labels.join(", ")}.${partial.trim() ? `\n\n${partial.trim()}` : ""}${note}`
+      : `The connected school systems did not finish this request.${note}`;
   return { ok: true, text: fallback, usage: null, steps: used, truncated: true, document: doc || undefined };
 }
 
