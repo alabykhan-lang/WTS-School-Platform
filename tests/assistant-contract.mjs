@@ -50,4 +50,13 @@ assert.match(route, /The connected school systems did not finish this request/);
 assert.match(route, /async function classCatalog/);
 assert.match(route, /classes: classes.map\(\(row\) => row.label\)/);
 
+// The proprietor's own answers charge the meter on the server; a developer
+// test never moves it, and the client shows the returned balance.
+assert.match(route, /async function chargeUsage/);
+assert.match(route, /if \(!isAdmin && answer\.ok === true\)/);
+const ui = await readFile(new URL("../app/_components/ProprietorAssistant.tsx", import.meta.url), "utf8");
+assert.match(ui, /config\.is_admin && <>\s*<div className="assistantPair">/, "the balance fields still show for a proprietor");
+assert.match(ui, /const charged = value\.usage as/);
+assert.doesNotMatch(ui, /current\.usagePercent - current\.perReplyCost/, "the client still counts the answer itself");
+
 console.log("Assistant contract passed");

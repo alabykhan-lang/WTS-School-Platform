@@ -482,6 +482,25 @@ async function saveUsage(current: CurrentSession, raw: unknown) {
   return results(current, "settings.app_config.update", { config: { ...(config || {}), assistant_usage: usage } });
 }
 
+/**
+ * One answer by the proprietor costs one step. It is charged here, on the
+ * server, so a developer test never moves the meter and the client cannot
+ * count the same answer twice.
+ */
+async function chargeUsage(current: CurrentSession): Promise<Usage | null> {
+  try {
+    const usage = await readUsage(current);
+    if (!usage) return null;
+    const next = { ...usage, percent: Math.max(0, Math.round((usage.percent - usage.cost) * 10) / 10) };
+    const read = await results(current, "settings.read", {});
+    const config = ((read?.settings || {}) as Record<string, unknown>).app_config as Record<string, unknown> | undefined;
+    await results(current, "settings.app_config.update", { config: { ...(config || {}), assistant_usage: next } });
+    return next;
+  } catch {
+    return null;
+  }
+}
+
 /** The card's own settings: the signature and which parts of the card to print. */
 const CARD_FORM_DEFAULTS = { ca: 3, classAvg: true, highest: true, remark: true };
 
@@ -1926,6 +1945,10 @@ export async function POST(request: NextRequest) {
       after(async () => {
         try {
           const payload = await runTurn();
+          if (!isAdmin && payload.ok === true) {
+            const charged = await chargeUsage(current);
+            if (charged) payload.usage = charged;
+          }
           await callPrivilegedRpc("school_assistant_job_upsert", {
             p_session_id: current.id,
             p_session_secret: current.secret,
@@ -1946,7 +1969,12 @@ export async function POST(request: NextRequest) {
       return Response.json({ ok: true, job_id: jobId, status: "running" }, { headers: noStoreHeaders() });
     }
 
-    return Response.json(await runTurn(), { headers: noStoreHeaders() });
+    const answer = await runTurn();
+    if (!isAdmin && answer.ok === true) {
+      const charged = await chargeUsage(current);
+      if (charged) answer.usage = charged;
+    }
+    return Response.json(answer, { headers: noStoreHeaders() });
   } catch (caught) {
     return resultErrorResponse(caught);
   }
