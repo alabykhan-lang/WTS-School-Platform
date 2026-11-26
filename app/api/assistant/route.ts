@@ -613,6 +613,7 @@ CLASS AND RESULT ANALYSIS
 - A term fills up bit by bit: CA, then tests, then exam one subject after another. That is normal, never a fault to report.
 - "Current" means every mark recorded so far, CA and any exam already entered. Leave basis at current and score all of it. Only when the proprietor says exam alone, test alone, first CA alone, second CA or third CA alone do you pass that basis and grade on that part only.
 - Give the class, session, term, roster size and the denominator behind every rate. A subject with only a few marks on the chosen basis is reported against those marks, not against the whole class, and you say so.
+- Marks are out of 10 for each CA and out of 70 for the exam; quote the maximum with any average and never invent one.
 - Never say a class has no data, or tell the proprietor to finish the exam, when CA is recorded. Answer with what is in the records and mention how much of the exam is in yet.
 - Break a subject down when asked, even for "just show me" or "simply". Call class_analysis with that subject and breakdown true, then give the bands as a short list, the strongest and weakest rows, and where the marks were lost (the component averages). Print the whole table only when the hint says to; otherwise top five and bottom five.
 - one whole-class call already returns every subject with its own marks, rates and leaders, plus the overall order. Do not call it again once per subject. Pass subject only when the proprietor asks about exactly one subject, and topN only to change how many leaders are shown.
@@ -920,10 +921,10 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
       basis.fields.forEach((field, fieldIndex) => { marks[field] = entry.marks[fieldIndex]; });
       return { position: position + 1, name: entry.name, percent: entry.percent, grade: band?.grade || "", remark: band?.remark || "", ...marks };
     });
-    const componentAverages: Record<string, number | null> = {};
+    const componentAverages: Record<string, { mean: number | null; max: number }> = {};
     for (const field of basis.fields) {
       const values = table.map((row) => row[field] as number | null).filter((value): value is number => value !== null);
-      componentAverages[field] = values.length ? Math.round(values.reduce((sum, value) => sum + value, 0) * 10 / values.length) / 10 : null;
+      componentAverages[field] = { mean: values.length ? Math.round(values.reduce((sum, value) => sum + value, 0) * 10 / values.length) / 10 : null, max: MAX_MARK[field] };
     }
     breakdown = {
       subject: single.subject,
@@ -979,6 +980,7 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
     basis: basisKey in BASIS ? basisKey : "current",
     basisLabel: basis.label,
     basisFields: basis.fields,
+    maxMarks: MAX_MARK,
     rosterCount: students.length,
     subjectCount: chosenIndexes.length,
     subjectsAnalysed: chosenIndexes.map((index) => subjectNames.get(index)),
