@@ -51,6 +51,11 @@ assert.match(route, /list: \{ type: "boolean"/);
 assert.match(route, /let scoreSheet: Record<string, unknown>/);
 assert.match(route, /function scoreSheetText/);
 assert.match(route, /call class_analysis ONCE with list true/);
+
+// A plain "list every score" question is answered by the sheet printer without
+// a model round, so it cannot loop or time out.
+assert.match(route, /function sheetAsk/);
+assert.match(route, /scoreSheetText\(made\.scoreSheet/);
 assert.match(route, /Break a subject down when asked[^\n]*call class_analysis only ONCE/);
 
 // A write asks for a tap, and a tap is verified against the same call.

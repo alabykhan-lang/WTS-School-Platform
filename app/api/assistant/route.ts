@@ -2061,6 +2061,26 @@ function cardAsk(text: string): { classKey: string; label: string; search: strin
   return { classKey: cls ? cls[0] : "", label: cls ? cls[0].replace(/\s+/g, " ").toUpperCase() : "", search };
 }
 
+/**
+ * "Give me every score in JSS 1" is a whole score sheet, which the assistant
+ * can print itself in one read. Only the no-subject form is taken here; a named
+ * subject keeps the model, because the subject has to be matched first.
+ */
+function sheetAsk(text: string): { classKey: string } | null {
+  if (!/\b(list|all|every|whole|full|entire)\b/i.test(text)) return null;
+  if (!/\b(scores?|marks?|results?|sheet|records?|recorded)\b/i.test(text)) return null;
+  const cls = text.match(/\b(creche|kg\s*1|kg1|kg\s*2|kg2|nursery\s*[12]|primary\s*[1-6]|pry\s*[1-6]|basic\s*[1-6]|jss\s*[1-3][a-z]?|ss\s*[1-3][a-z]?(?:\s*(?:science|arts|commercial|general))?)\b/i);
+  if (!cls) return null;
+  const rest = text
+    .replace(cls[0], " ")
+    .replace(/\b(list|all|every|whole|full|entire|scores?|marks?|results?|sheet|records?|recorded|students?|pupils?|subjects?|of|for|me|please|give|show|their|the|in|a|an|and|current|now)\b/gi, " ")
+    .replace(/[^a-z' .\-]/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (rest.length > 3) return null; // a subject name is in there
+  return { classKey: classKeyOf(cls[0]) };
+}
+
 export async function POST(request: NextRequest) {
   const startedAt = Date.now();
   try {
@@ -2119,9 +2139,11 @@ export async function POST(request: NextRequest) {
     if (!messages.length) return error("ASSISTANT_MESSAGE_REQUIRED");
 
     const lastUser = [...messages].reverse().find((message) => (message as Record<string, unknown>).role === "user");
-    const ask = lastUser && typeof (lastUser as Record<string, unknown>).content === "string"
-      ? cardAsk(String((lastUser as Record<string, unknown>).content))
-      : null;
+    const said = lastUser && typeof (lastUser as Record<string, unknown>).content === "string"
+      ? String((lastUser as Record<string, unknown>).content)
+      : "";
+    const ask = said ? cardAsk(said) : null;
+    const sheetAskHere = said ? sheetAsk(said) : null;
 
     const runTurn = async (): Promise<Record<string, unknown>> => {
       const requestStarted = Date.now();
@@ -2129,6 +2151,21 @@ export async function POST(request: NextRequest) {
       const budgetMs = Math.min(50000, Math.max(9000, 50000 - elapsed));
       current.deadline = requestStarted + budgetMs;
       let fastError = "";
+      if (sheetAskHere && !ask) {
+        try {
+          const made = await classAnalysis(current, { classKey: sheetAskHere.classKey, list: true }) as Record<string, unknown>;
+          if (made.ok === true && made.scoreSheet) {
+            return {
+              ok: true,
+              model: settings.model,
+              text: `${scoreSheetText(made.scoreSheet as Record<string, unknown>)}\n\nThat is every row in the records. Name one subject if you want it on its own.`,
+              usage: null,
+              steps: ["class_analysis"],
+            };
+          }
+          fastError = `${String(made.code || "")}: ${String(made.detail || "")}`;
+        } catch (caught) { fastError = (caught as Error)?.message || String(caught); }
+      }
       if (ask) {
         try {
           let made = await reportCard(current, { classKey: ask.classKey, search: ask.search });
