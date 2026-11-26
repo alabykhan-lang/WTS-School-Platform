@@ -530,7 +530,8 @@ async function executeTool(name: string, args: Record<string, unknown>, current:
         academic_session: args.academicSession,
       });
       const call = await openResults(current);
-      if (payload.class_key || payload.term || payload.academic_session) {
+      const contextScoped = ["fees", "published_subjects", "remarks", "result_summary", "scores", "traits"].includes(resource);
+      if (contextScoped && payload.class_key && payload.term && payload.academic_session) {
         const set = await call("context.set", { class_key: payload.class_key || null, academic_session: payload.academic_session || null, term: payload.term || null });
         if (!set?.ok) return slim(set);
       }
@@ -544,10 +545,6 @@ async function executeTool(name: string, args: Record<string, unknown>, current:
         academic_session: args.academicSession,
       });
       const call = await openResults(current);
-      if (payload.class_key || payload.term || payload.academic_session) {
-        const set = await call("history.context.set", { class_key: payload.class_key || null, academic_session: payload.academic_session || null, term: payload.term || null });
-        if (!set?.ok) return slim(set);
-      }
       return slim(await call("history.read", payload));
     }
     case "report_card": return slim(await reportCard(current, args));
