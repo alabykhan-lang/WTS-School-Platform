@@ -1733,7 +1733,8 @@ function scoreSheetText(sheet: Record<string, unknown>) {
   const maxMarks = (sheet.maxMarks || {}) as Record<string, number>;
   const subjects = Array.isArray(sheet.subjects) ? sheet.subjects as Record<string, unknown>[] : [];
   const head = basisFields.map((field) => `${field.toUpperCase()} /${maxMarks[field] ?? ""}`);
-  const parts = [`${sheet.class}, ${sheet.term}, ${sheet.academicSession} — all ${roster.length} learners, every score on record (${sheet.basisLabel}).`];
+  const debug = (sheet.debug || {}) as Record<string, unknown>;
+  const parts = [`${sheet.class} [${debug.classKey}, ${debug.term}] — ${debug.students} students, ${debug.scores} marks, ${debug.indexes} subjects; roster ${roster.length}, every score on record (${sheet.basisLabel}).`];
   for (const subject of subjects) {
     const rows = Array.isArray(subject.rows) ? subject.rows as Record<string, unknown>[] : [];
     parts.push(`\n**${subject.subject}** — ${rows.length} scored\n\n| # | Learner | ${head.join(" | ")} | % |\n|---|---|${basisFields.map(() => "---").join("|")}|---|`);
