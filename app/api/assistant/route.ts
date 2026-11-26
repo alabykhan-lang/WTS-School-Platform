@@ -1466,6 +1466,9 @@ async function runTool(name: string, args: Record<string, unknown>, current: Cur
         const set = await call("context.set", { class_key: payload.class_key || null, academic_session: payload.academic_session || null, term: payload.term || null });
         if (!set?.ok) return slim(set);
       }
+      // Hand the enriched payload back to the caller, so the read-back that
+      // follows uses the same term and session as the write.
+      args.payload = payload;
       const answer = await call(action, payload);
       if (answer?.ok !== true && !answer?.hint) {
         const needs: Record<string, string> = {
