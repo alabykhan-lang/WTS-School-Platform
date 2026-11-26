@@ -572,7 +572,7 @@ const tools = [
   { type: "function", function: { name: "student_record", description: "Read one student's complete record by id, including guardian contacts.", parameters: { type: "object", required: ["studentId"], properties: { studentId: { type: "string" } } } } },
   { type: "function", function: { name: "staff_directory", description: "Read the staff directory and active assignments.", parameters: { type: "object", properties: { search: { type: "string" } } } } },
   { type: "function", function: { name: "results_read", description: "Read information available to the signed-in proprietor in the Results Portal. Use for results, marks, subject lists, publication, traits, remarks, fees, class rosters, and report-card context. The portal applies the account's permissions and class scope. For class performance, pass/fail, coverage, averages, or rankings, use class_analysis so the complete class is read and summarized in one call.", parameters: { type: "object", required: ["resource"], properties: { resource: { type: "string", enum: ["classes", "fees", "published_subjects", "remarks", "result_summary", "scores", "students", "subjects", "traits"] }, classKey: { type: "string" }, studentId: { type: "string" }, subjectIndex: { type: "integer" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
-  { type: "function", function: { name: "class_analysis", description: "One call gives a complete class analysis from the Results Portal: coverage, per-subject pass/fail rates, per-subject top performers, and the overall top and bottom order. It reads the whole class once and does the arithmetic on the server. Use it for every class performance question and call it only once per class. Requires classKey. basis defaults to current, which uses every mark recorded so far and compares percentages so a learner whose exam is not entered yet still ranks; name a basis only when the proprietor asks to grade on that part alone. Pass subject only for exactly one subject; topN changes how many leaders are returned; includeMissing names learners with nothing on the chosen basis.", parameters: { type: "object", required: ["classKey"], properties: { classKey: { type: "string" }, basis: { type: "string", enum: ["current", "ca", "ca1", "ca2", "ca3", "exam"], description: "current = every recorded mark (default); ca = all continuous assessment; ca1, ca2, ca3 = that single CA; exam = exam only" }, subject: { type: "string", description: "Subject name or stored index, for one subject only" }, topN: { type: "integer" }, includeMissing: { type: "boolean" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
+  { type: "function", function: { name: "class_analysis", description: "One call gives a complete class analysis from the Results Portal: coverage, per-subject pass/fail rates, per-subject top performers, and the overall top and bottom order. It reads the whole class once and does the arithmetic on the server. Use it for every class performance question and call it only once per class. Requires classKey. basis defaults to current, which uses every mark recorded so far and compares percentages so a learner whose exam is not entered yet still ranks; name a basis only when the proprietor asks to grade on that part alone. Pass subject only for exactly one subject; topN changes how many leaders are returned; includeMissing names learners with nothing on the chosen basis; breakdown true with one subject adds the simple full breakdown of that subject.", parameters: { type: "object", required: ["classKey"], properties: { classKey: { type: "string" }, basis: { type: "string", enum: ["current", "ca", "ca1", "ca2", "ca3", "exam"], description: "current = every recorded mark (default); ca = all continuous assessment; ca1, ca2, ca3 = that single CA; exam = exam only" }, subject: { type: "string", description: "Subject name or stored index, for one subject only" }, topN: { type: "integer" }, includeMissing: { type: "boolean" }, breakdown: { type: "boolean", description: "With one subject: add the simple breakdown - every learner's mark, band counts and component averages" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
   { type: "function", function: { name: "results_history", description: "Read prior terms and sessions the signed-in proprietor can access in the Results Portal. Use for historical comparisons; the portal enforces the account's access.", parameters: { type: "object", properties: { classKey: { type: "string" }, studentId: { type: "string" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
   {
     type: "function",
@@ -614,6 +614,7 @@ CLASS AND RESULT ANALYSIS
 - "Current" means every mark recorded so far, CA and any exam already entered. Leave basis at current and score all of it. Only when the proprietor says exam alone, test alone, first CA alone, second CA or third CA alone do you pass that basis and grade on that part only.
 - Give the class, session, term, roster size and the denominator behind every rate. A subject with only a few marks on the chosen basis is reported against those marks, not against the whole class, and you say so.
 - Never say a class has no data, or tell the proprietor to finish the exam, when CA is recorded. Answer with what is in the records and mention how much of the exam is in yet.
+- Break a subject down when asked, even for "just show me" or "simply". Call class_analysis with that subject and breakdown true, then give the bands as a short list, the strongest and weakest rows, and where the marks were lost (the component averages). Print the whole table only when the hint says to; otherwise top five and bottom five.
 - one whole-class call already returns every subject with its own marks, rates and leaders, plus the overall order. Do not call it again once per subject. Pass subject only when the proprietor asks about exactly one subject, and topN only to change how many leaders are shown.
 - Use results_read for a single record, one pupil's marks, traits, remarks or fees, and never for whole-class statistics.
 - Use results_history only for prior terms and sessions the proprietor can already see.
@@ -876,6 +877,67 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
     };
   });
 
+  // One subject, broken down into the simplest form that still answers: who
+  // scored what, how the class fell into bands, and where the marks were lost.
+  let breakdown: Record<string, unknown> | undefined;
+  if (args.breakdown === true) {
+    if (chosenIndexes.length !== 1) {
+      return {
+        ok: false,
+        code: "RESULT_SUBJECT_REQUIRED_FOR_BREAKDOWN",
+        detail: "A breakdown covers one subject at a time.",
+        subjects: subjectIndexes.map((index) => subjectNames.get(index)),
+        hint: "Call class_analysis again with one subject from the list and breakdown true.",
+      };
+    }
+    const index = chosenIndexes[0];
+    const single = subjects[0];
+    const rowsByStudent = new Map<string, Record<string, unknown>>();
+    for (const row of rawScores) {
+      if (Number(row.subject_index) !== index) continue;
+      const studentId = String(row.student_id || "");
+      if (!studentId || !studentNames.has(studentId)) continue;
+      const previous = rowsByStudent.get(studentId);
+      if (!previous || Number(totalOf(row) || -1) > Number(totalOf(previous) || -1)) rowsByStudent.set(studentId, row);
+    }
+    const entries = [...rowsByStudent.entries()].map(([studentId, row]) => ({
+      name: studentNames.get(studentId) || "Student",
+      percent: percentOf(row),
+      marks: basis.fields.map((field) => markOf(row, field)),
+    })).filter((entry) => entry.percent !== null)
+      .sort((a, b) => Number(b.percent) - Number(a.percent) || a.name.localeCompare(b.name));
+    const bandRows = (gradeScale.length ? gradeScale : []).map((row) => ({
+      grade: String(row.g || row.grade || ""),
+      remark: String(row.r || row.remark || ""),
+      min: Number(row.min),
+      max: Number(row.max),
+      count: 0 as number,
+    })).sort((a, b) => b.min - a.min);
+    const table: Record<string, unknown>[] = entries.map((entry, position) => {
+      const band = bandRows.find((row) => Number(entry.percent) >= row.min && Number(entry.percent) <= row.max);
+      if (band) band.count += 1;
+      const marks: Record<string, number | null> = {};
+      basis.fields.forEach((field, fieldIndex) => { marks[field] = entry.marks[fieldIndex]; });
+      return { position: position + 1, name: entry.name, percent: entry.percent, grade: band?.grade || "", remark: band?.remark || "", ...marks };
+    });
+    const componentAverages: Record<string, number | null> = {};
+    for (const field of basis.fields) {
+      const values = table.map((row) => row[field] as number | null).filter((value): value is number => value !== null);
+      componentAverages[field] = values.length ? Math.round(values.reduce((sum, value) => sum + value, 0) * 10 / values.length) / 10 : null;
+    }
+    breakdown = {
+      subject: single.subject,
+      basisLabel: basis.label,
+      bandsLabel: "Counts per grade band on the portal's own grade scale, highest band first.",
+      bands: bandRows,
+      componentAverages,
+      table,
+      printHint: table.length <= 30
+        ? "Print the bands, then the whole table."
+        : "Print the bands, then the top five and bottom five rows of the table, and say the table holds the rest.",
+    };
+  }
+
   // Overall position across every subject analysed, from the same single read.
   // Each learner is averaged on the subjects where they have the chosen marks.
   const perStudent = new Map<string, { name: string; percentSum: number; totalMarks: number; subjects: number; examSubjects: number }>();
@@ -933,6 +995,7 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
     topStudentsOverall: ordered.slice(0, topN),
     bottomStudentsOverall: ordered.length > topN ? ordered.slice(-topN).reverse() : [],
     subjects,
+    ...(breakdown ? { breakdown } : {}),
   };
 }
 
@@ -1903,6 +1966,9 @@ export async function POST(request: NextRequest) {
     }
 
     const isAdmin = authorityIsAdmin(current.context);
+    // A test turn is the developer checking the assistant. It never moves the
+    // proprietor's balance, whether the flag comes from the app or a header.
+    const isTestRun = body.test === true || request.headers.get("x-assistant-test") === "1";
 
     if (body.action === "usage") {
       const saved = await saveUsage(current, body.usage);
@@ -2004,7 +2070,7 @@ export async function POST(request: NextRequest) {
       after(async () => {
         try {
           const payload = await runTurn();
-          if (!isAdmin && payload.ok === true) {
+          if (!isAdmin && !isTestRun && payload.ok === true) {
             const charged = await chargeUsage(current);
             if (charged) payload.usage = charged;
           }
@@ -2029,7 +2095,7 @@ export async function POST(request: NextRequest) {
     }
 
     const answer = await runTurn();
-    if (!isAdmin && answer.ok === true) {
+    if (!isAdmin && !isTestRun && answer.ok === true) {
       const charged = await chargeUsage(current);
       if (charged) answer.usage = charged;
     }

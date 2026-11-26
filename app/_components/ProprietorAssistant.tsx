@@ -204,6 +204,9 @@ export function ProprietorAssistant() {
   const [threads, setThreads] = useState<Thread[]>([]);
   const [activeId, setActiveId] = useState("");
   const [tab, setTab] = useState<"chats" | "models" | "usage">("chats");
+  const [testMode, setTestMode] = useState(false);
+  const testRef = useRef(false);
+  testRef.current = testMode;
   const [drawer, setDrawer] = useState(false);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
@@ -257,6 +260,7 @@ export function ProprietorAssistant() {
           if (typeof shared.until === "number") loaded.usageUntil = shared.until;
         }
         setSettings(loaded);
+        try { setTestMode(localStorage.getItem(`wts-assistant-test:${personId}`) === "on"); } catch { setTestMode(false); }
         try {
           const wanted = localStorage.getItem(`wts-assistant-notify:${personId}`);
           setNotify(wanted === "on" && (!("Notification" in window) || Notification.permission === "granted") ? "on" : wanted === "denied" ? "denied" : "off");
@@ -657,6 +661,7 @@ export function ProprietorAssistant() {
                 provider_key: config?.is_admin ? settings.providerKey : "",
                 provider_url: config?.is_admin ? settings.providerUrl : "",
                 effort: settings.effort,
+                test: testRef.current,
               }),
             });
             startValue = await response.json();
@@ -894,6 +899,7 @@ export function ProprietorAssistant() {
           <textarea value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Message the assistant…" rows={1} aria-label="Message"/>
           <button type="submit" disabled={busy || !draft.trim()} aria-label="Send">↑</button>
           {!config.is_admin && <small>{`${settings.usagePercent.toFixed(0)}% allowance left`}</small>}
+          <button type="button" className={`assistantBell${testMode ? " on" : ""}`} onClick={() => setTestMode((on) => { const next = !on; try { localStorage.setItem(`wts-assistant-test:${config.person?.id || "signed-in-user"}`, next ? "on" : "off"); } catch { /* private mode */ } return next; })} aria-pressed={testMode} title="Test turns are free and do not use the balance">🧪 Test</button>
           <button type="button" className={`assistantBell${notify === "on" ? " on" : ""}`} onClick={toggleNotify} aria-pressed={notify === "on"} title="Tell me here when the answer is ready">{notify === "on" ? "🔔 Notify me" : "🔕 Notify me"}</button>
         </form>
       </>}
@@ -962,7 +968,7 @@ export function ProprietorAssistant() {
       {tab === "usage" && <div className="assistantPane">
         <div className="assistantCard">
           <h2>Usage balance</h2>
-          {config.is_admin && <p className="assistantMuted">The balance counts down as the account answers. You set the level and the cost below.</p>}
+          {config.is_admin && <p className="assistantMuted">The balance counts down as the account answers. You set the level and the cost below. Test turns and your own turns are free.</p>}
           <div className="assistantMeter">
             <div className="assistantRing" style={{ ["--usage" as string]: `${settings.usagePercent}%` }}><span>{Math.round(settings.usagePercent)}%</span></div>
             <div><strong>{settings.usagePercent <= 0 ? "Empty" : "Remaining"}</strong><small>{settings.usagePercent <= 20 && settings.usagePercent > 0 ? "Running low" : config.is_admin ? "Manual balance for this account" : "Your balance"}</small></div>

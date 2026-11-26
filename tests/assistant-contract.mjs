@@ -30,6 +30,13 @@ assert.match(route, /const BASIS: Record<string, \{ fields: string\[\]; label: s
 assert.match(route, /basis: \{ type: "string", enum: \["current", "ca", "ca1", "ca2", "ca3", "exam"\]/);
 assert.match(route, /const percentOf = /);
 assert.match(route, /Leave basis at current/);
+// A test turn leaves the proprietor's balance alone, and a subject can be
+// broken down on request.
+assert.match(route, /const isTestRun = body\.test === true \|\| request\.headers\.get\("x-assistant-test"\) === "1";/);
+assert.match(route, /!isAdmin && !isTestRun && payload\.ok === true/);
+assert.match(route, /RESULT_SUBJECT_REQUIRED_FOR_BREAKDOWN/);
+assert.match(route, /const componentAverages/);
+assert.match(route, /printHint:/);
 
 // A write asks for a tap, and a tap is verified against the same call.
 assert.match(route, /requires_confirmation: true/);
@@ -59,7 +66,7 @@ assert.match(route, /classes: classes.map\(\(row\) => row.label\)/);
 // The proprietor's own answers charge the meter on the server; a developer
 // test never moves it, and the client shows the returned balance.
 assert.match(route, /async function chargeUsage/);
-assert.match(route, /if \(!isAdmin && answer\.ok === true\)/);
+assert.match(route, /if \(!isAdmin && !isTestRun && answer\.ok === true\)/);
 const ui = await readFile(new URL("../app/_components/ProprietorAssistant.tsx", import.meta.url), "utf8");
 assert.match(ui, /config\.is_admin && <>\s*<div className="assistantPair">\s*<label><span>Balance \(%\)<\/span><input/, "the balance fields still show for a proprietor");
 assert.match(ui, /const charged = value\.usage as/);
