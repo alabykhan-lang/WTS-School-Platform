@@ -1717,7 +1717,7 @@ async function gateway(messages: unknown[], settings: ModelSettings, current: Cu
   const labels = [...new Set(used)].map((name) => DONE_LABELS[name]).filter(Boolean);
   const printed = sheet ? scoreSheetText(sheet) : "";
   const fallback = printed
-    ? `${printed}${note}`
+    ? `${printed}\n\nThat is every row in the records. Name one subject if you want it on its own.`
     : facts.length
     ? `Here is what the records returned: ${facts.join("; ")}.${note}`
     : labels.length
