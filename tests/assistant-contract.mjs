@@ -55,6 +55,8 @@ assert.match(route, /call class_analysis ONCE with list true/);
 // A plain "list every score" question is answered by the sheet printer without
 // a model round, so it cannot loop or time out.
 assert.match(route, /function sheetAsk/);
+// "JSS 1" and "jss-1" must reach the stored jss1 class.
+assert.match(route, /const compact = slug\.replace/);
 assert.match(route, /scoreSheetText\(made\.scoreSheet/);
 assert.match(route, /Break a subject down when asked[^\n]*call class_analysis only ONCE/);
 

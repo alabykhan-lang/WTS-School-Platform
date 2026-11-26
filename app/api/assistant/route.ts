@@ -335,8 +335,10 @@ function classKeyOf(value: unknown) {
   const raw = String(value || "").trim().toLowerCase();
   if (!raw) return "";
   const slug = raw.replace(/[\s_]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
+  // "JSS 1", "jss-1" and "jss1" are the same class to the school.
+  const compact = slug.replace(/^(creche|kg|nursery|primary|pry|basic|jss|ss)-?(\d[a-z]?)(?:-(.+))?$/, (_all, head: string, number: string, tail?: string) => `${head === "pry" ? "primary" : head}${number}${tail ? `-${tail}` : ""}`);
   const aliases: Record<string, string> = { ss1: "ss1-general", ss2: "ss2-general", ss3: "ss3-general" };
-  return aliases[slug] || slug;
+  return aliases[compact] || compact;
 }
 
 /** "ss2-science" reads as "SS2 Science" when no display name is saved. */
@@ -2154,7 +2156,7 @@ export async function POST(request: NextRequest) {
       if (sheetAskHere && !ask) {
         try {
           const made = await classAnalysis(current, { classKey: sheetAskHere.classKey, list: true }) as Record<string, unknown>;
-          if (made.ok === true && made.scoreSheet) {
+          if (made.ok === true && made.scoreSheet && Number((made.rosterCount as number) || 0) > 0) {
             return {
               ok: true,
               model: settings.model,
