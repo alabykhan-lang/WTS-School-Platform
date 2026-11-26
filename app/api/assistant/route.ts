@@ -1178,7 +1178,13 @@ function pendingSummary(name: string, args: Record<string, unknown>, label: { wh
     const action = String(args.action || "");
     const who = label.who || String(payload.student_id || payload.name || payload.admno || "the record");
     const where = label.where || [payload.class_key, payload.term, payload.subject_index === undefined ? "" : `subject ${payload.subject_index}`].filter(Boolean).join(", ");
-    if (action === "scores.enter") return `Save marks for ${who}${where ? ` — ${where}` : ""}: CA1 ${payload.ca1 ?? "blank"}, CA2 ${payload.ca2 ?? "blank"}, CA3 ${payload.ca3 ?? "blank"}, exam ${payload.exam ?? "blank"}.`;
+    if (action === "scores.enter") {
+      const parts = MARK_FIELDS
+        .filter((field) => payload[field] !== undefined)
+        .map((field) => `${field === "exam" ? "exam" : field.toUpperCase()} ${payload[field] === null || payload[field] === "" ? "blank" : payload[field]}`);
+      const rest = parts.length < MARK_FIELDS.length ? " The other marks stay as they are." : "";
+      return `Save marks for ${who}${where ? ` — ${where}` : ""}${parts.length ? `: ${parts.join(", ")}` : ""}.${rest}`;
+    }
     if (action === "traits.enter") return `Save the trait "${payload.trait_name || "trait"}" (${payload.rating ?? "blank"}) for ${who}${where ? ` — ${where}` : ""}.`;
     if (action === "remarks.enter") {
       const text = String(payload.academic ?? payload.remark ?? payload.remarks ?? payload.text ?? "").trim();
@@ -1217,6 +1223,8 @@ async function verifyRow<T>(read: () => Promise<T | null>, matches: (row: T) => 
   return { row: last, matched: false };
 }
 
+const MARK_FIELDS = ["ca1", "ca2", "ca3", "exam"] as const;
+
 const sameMark = (left: unknown, right: unknown) => (left === null || left === undefined || left === "" ? null : Number(left)) === (right === null || right === undefined || right === "" ? null : Number(right));
 
 /** Read the record back after a write, so "done" is never taken from the preview. */
@@ -1228,8 +1236,7 @@ async function verifyWrite(name: string, args: Record<string, unknown>, current:
     if (name === "results_request" && String(args.action) === "scores.enter") {
       const call = await openResults(current);
       // The sheet read needs the class, term and session in session context first.
-      const ctx = await call("context.set", { class_key: payload.class_key, academic_session: payload.academic_session, term: payload.term });
-      let debug = `ctx=${String((ctx as Record<string, unknown>)?.code || "ok")} cl=${String(payload.class_key)} t=${String(payload.term)} s=${String(payload.academic_session)};`;
+      await call("context.set", { class_key: payload.class_key, academic_session: payload.academic_session, term: payload.term });
       const found = await verifyRow(async () => {
         const read = await call("read.scores", {
           class_key: payload.class_key,
@@ -1239,11 +1246,10 @@ async function verifyWrite(name: string, args: Record<string, unknown>, current:
           academic_session: payload.academic_session,
         });
         const rows = Array.isArray(read?.rows) ? read.rows as Record<string, unknown>[] : [];
-        debug += `${String((read as Record<string, unknown>)?.code || "no-code")}|${rows.length}`;
         return rows.find((item) => String(item.student_id) === String(payload.student_id) && Number(item.subject_index) === Number(payload.subject_index)) || null;
-      }, (row) => sameMark(row.ca1, payload.ca1) && sameMark(row.ca2, payload.ca2) && sameMark(row.ca3, payload.ca3) && sameMark(row.exam, payload.exam));
+      }, (row) => MARK_FIELDS.every((field) => payload[field] === undefined || sameMark(row[field], payload[field])));
       const row = found.row;
-      return { ...record, verify: row ? { read_back: true, matched: found.matched, ca1: row.ca1, ca2: row.ca2, ca3: row.ca3, exam: row.exam, debug } : { read_back: false, debug } };
+      return { ...record, verify: row ? { read_back: true, matched: found.matched, ca1: row.ca1, ca2: row.ca2, ca3: row.ca3, exam: row.exam } : { read_back: false } };
     }
     if (name === "results_request" && String(args.action) === "fees.update") {
       const call = await openResults(current);
