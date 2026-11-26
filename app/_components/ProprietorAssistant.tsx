@@ -20,13 +20,6 @@ const FALLBACK_MODELS: Model[] = [
   { id: "deepseek-chat", label: "DeepSeek Chat", description: "Everyday school requests" },
   { id: "deepseek-reasoner", label: "DeepSeek Reasoner", description: "Longer reasoning tasks" },
 ];
-const STARTERS = [
-  "How many active students do we have in each class?",
-  "Show the current school dashboard.",
-  "Find a student and show their class and guardian contacts.",
-  "List the staff directory.",
-];
-
 /** Provider errors arrive as raw JSON; keep the one sentence the provider sent. */
 function saidText(raw: unknown) {
   const text = String(raw || "").trim();
@@ -869,10 +862,13 @@ export function ProprietorAssistant() {
         <div className="assistantConversation">
           {!activeThread?.messages.length && <div className="assistantWelcome">
             <span className="assistantOrb">✦</span>
-            <p className="assistantEyebrow">LIVE SCHOOL DATA · CONFIRMATION BEFORE CHANGES</p>
-            <h2>What should we handle?</h2>
-            <p>Ask about students, staff, classes, or results. I read live records and ask before saving a change.</p>
-            <div className="assistantStarters">{STARTERS.map((prompt) => <button key={prompt} type="button" onClick={() => send(undefined, prompt)}><span>{prompt}</span><b>↗</b></button>)}</div>
+            <p className="assistantEyebrow">YOUR SCHOOL'S VIRTUAL STAFF</p>
+            <h2>Always here for the school.</h2>
+            <p>Ask for figures, a pupil record, or a change to save — any hour, any day. Bring a rough idea for the school as well and we will think it through together.</p>
+            <div className="assistantOnDuty">
+              <div className="assistantOnDutyHead"><span className="assistantPulse"/>On duty now</div>
+              <p>I never close, never rush you, and always check live records before I answer. Type below whenever you are ready.</p>
+            </div>
           </div>}
           {activeThread?.messages.map((message, index) => {
             const doc = message.doc;

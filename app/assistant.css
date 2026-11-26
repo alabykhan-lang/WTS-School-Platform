@@ -66,10 +66,12 @@
 .assistantOrb { display: grid; place-items: center; width: 52px; height: 52px; margin: 0 auto 18px; border-radius: 16px; background: var(--wts-green); color: #eafff5; font-size: 24px; box-shadow: 0 10px 24px #0f7c5c2e; }
 .assistantWelcome h2 { font-family: Georgia, serif; font-size: clamp(24px, 3.4vw, 32px); margin: 0 0 10px; }
 .assistantWelcome > p:not(.assistantEyebrow) { color: var(--wts-muted); line-height: 1.6; margin: 0 auto 22px; max-width: 470px; font-size: 14px; }
-.assistantStarters { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; text-align: left; }
-.assistantStarters button { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; border: 1px solid var(--wts-line); background: #fff; border-radius: 11px; padding: 13px; font-size: 13px; line-height: 1.45; color: #2a4a5c; cursor: pointer; }
-.assistantStarters button:hover { border-color: var(--wts-green); box-shadow: 0 8px 18px #10243b0a; }
-.assistantStarters b { color: var(--wts-green); }
+.assistantOnDuty { position: relative; overflow: hidden; text-align: left; border: 1px solid #b9e6d4; border-radius: 16px; padding: 18px 20px; background: linear-gradient(150deg, #effaf4, #ffffff 65%); box-shadow: 0 14px 30px #0f7c5c14; }
+.assistantOnDuty::after { content: "✦"; position: absolute; right: -6px; bottom: -18px; font-size: 74px; color: #0f7c5c0f; }
+.assistantOnDutyHead { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #0d6b50; margin-bottom: 8px; }
+.assistantPulse { width: 8px; height: 8px; border-radius: 50%; background: var(--wts-green); box-shadow: 0 0 0 0 #0f7c5c66; animation: assistantPulse 2.4s ease-out infinite; }
+@keyframes assistantPulse { 0% { box-shadow: 0 0 0 0 #0f7c5c66; } 70% { box-shadow: 0 0 0 9px #0f7c5c00; } 100% { box-shadow: 0 0 0 0 #0f7c5c00; } }
+.assistantOnDuty p { position: relative; margin: 0; font-size: 13.5px; line-height: 1.6; color: #33566a; }
 
 .assistantMessage { display: grid; grid-template-columns: 34px minmax(0, 1fr); column-gap: 10px; align-items: start; margin: 18px 0; }
 .assistantMessage.user { grid-template-columns: minmax(0, 1fr) 34px; }
@@ -205,7 +207,6 @@
   .assistantConversation { min-height: 0; }
   .assistantGhost { padding: 8px 10px; font-size: 11.5px; }
   .assistantConversation { padding: 18px 14px 12px; }
-  .assistantStarters { grid-template-columns: 1fr; }
   .assistantBubble { max-width: 85%; }
   .assistantMessage.printable .assistantBubble { max-width: 94%; }
   .assistantMessage.printable .assistantTable td:not(:first-child), .assistantMessage.printable .assistantTable th:not(:first-child) { white-space: normal; text-align: center; }
