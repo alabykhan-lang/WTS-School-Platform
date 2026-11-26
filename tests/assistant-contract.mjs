@@ -21,9 +21,15 @@ assert.match(route, /Always finish with a sentence/);
 // One call reads the whole class and does the arithmetic on the server.
 assert.match(route, /topStudentsOverall/);
 assert.match(route, /bottomStudentsOverall/);
-assert.match(route, /studentsWithoutExamNames/);
+assert.match(route, /studentsWithoutMarkOnBasis/);
 assert.match(route, /passMethod:/);
 assert.match(route, /rankingMethod:/);
+// A half-entered term is analysed on the marks that exist; a named part
+// narrows the basis instead of blanking the exam.
+assert.match(route, /const BASIS: Record<string, \{ fields: string\[\]; label: string \}>/);
+assert.match(route, /basis: \{ type: "string", enum: \["current", "ca", "ca1", "ca2", "ca3", "exam"\]/);
+assert.match(route, /const percentOf = /);
+assert.match(route, /Leave basis at current/);
 
 // A write asks for a tap, and a tap is verified against the same call.
 assert.match(route, /requires_confirmation: true/);

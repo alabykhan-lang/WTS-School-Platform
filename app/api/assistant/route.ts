@@ -572,7 +572,7 @@ const tools = [
   { type: "function", function: { name: "student_record", description: "Read one student's complete record by id, including guardian contacts.", parameters: { type: "object", required: ["studentId"], properties: { studentId: { type: "string" } } } } },
   { type: "function", function: { name: "staff_directory", description: "Read the staff directory and active assignments.", parameters: { type: "object", properties: { search: { type: "string" } } } } },
   { type: "function", function: { name: "results_read", description: "Read information available to the signed-in proprietor in the Results Portal. Use for results, marks, subject lists, publication, traits, remarks, fees, class rosters, and report-card context. The portal applies the account's permissions and class scope. For class performance, pass/fail, coverage, averages, or rankings, use class_analysis so the complete class is read and summarized in one call.", parameters: { type: "object", required: ["resource"], properties: { resource: { type: "string", enum: ["classes", "fees", "published_subjects", "remarks", "result_summary", "scores", "students", "subjects", "traits"] }, classKey: { type: "string" }, studentId: { type: "string" }, subjectIndex: { type: "integer" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
-  { type: "function", function: { name: "class_analysis", description: "One call gives a complete class analysis from the Results Portal: coverage, per-subject pass/fail rates, per-subject top performers, and the overall top and bottom order. It reads the whole class once and does the arithmetic on the server. Use it for every class performance question and call it only once per class. Requires classKey. Pass subject only for exactly one subject; topN changes how many leaders are returned; includeMissing names students with no exam mark.", parameters: { type: "object", required: ["classKey"], properties: { classKey: { type: "string" }, subject: { type: "string", description: "Subject name or stored index, for one subject only" }, topN: { type: "integer" }, includeMissing: { type: "boolean" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
+  { type: "function", function: { name: "class_analysis", description: "One call gives a complete class analysis from the Results Portal: coverage, per-subject pass/fail rates, per-subject top performers, and the overall top and bottom order. It reads the whole class once and does the arithmetic on the server. Use it for every class performance question and call it only once per class. Requires classKey. basis defaults to current, which uses every mark recorded so far and compares percentages so a learner whose exam is not entered yet still ranks; name a basis only when the proprietor asks to grade on that part alone. Pass subject only for exactly one subject; topN changes how many leaders are returned; includeMissing names learners with nothing on the chosen basis.", parameters: { type: "object", required: ["classKey"], properties: { classKey: { type: "string" }, basis: { type: "string", enum: ["current", "ca", "ca1", "ca2", "ca3", "exam"], description: "current = every recorded mark (default); ca = all continuous assessment; ca1, ca2, ca3 = that single CA; exam = exam only" }, subject: { type: "string", description: "Subject name or stored index, for one subject only" }, topN: { type: "integer" }, includeMissing: { type: "boolean" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
   { type: "function", function: { name: "results_history", description: "Read prior terms and sessions the signed-in proprietor can access in the Results Portal. Use for historical comparisons; the portal enforces the account's access.", parameters: { type: "object", properties: { classKey: { type: "string" }, studentId: { type: "string" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
   {
     type: "function",
@@ -610,7 +610,10 @@ CLASS AND RESULT ANALYSIS
 - For class performance, pass and failure rates, exam coverage, averages, rankings or top performers per subject, call class_analysis once. It reads the complete class result set in one request and does the arithmetic on the server.
 - Do not page through pupils or subjects one call at a time when class_analysis covers the job. Do not read every student record to answer a class question.
 - Use the numbers the tool returns exactly. Never count rows, average marks or work out a rate in your head.
-- Give the class, session, term, roster size and the denominator behind every rate. A subject with only a few exam marks is reported against those marks, not against the whole class, and you say so.
+- A term fills up bit by bit: CA, then tests, then exam one subject after another. That is normal, never a fault to report.
+- "Current" means every mark recorded so far, CA and any exam already entered. Leave basis at current and score all of it. Only when the proprietor says exam alone, test alone, first CA alone, second CA or third CA alone do you pass that basis and grade on that part only.
+- Give the class, session, term, roster size and the denominator behind every rate. A subject with only a few marks on the chosen basis is reported against those marks, not against the whole class, and you say so.
+- Never say a class has no data, or tell the proprietor to finish the exam, when CA is recorded. Answer with what is in the records and mention how much of the exam is in yet.
 - one whole-class call already returns every subject with its own marks, rates and leaders, plus the overall order. Do not call it again once per subject. Pass subject only when the proprietor asks about exactly one subject, and topN only to change how many leaders are shown.
 - Use results_read for a single record, one pupil's marks, traits, remarks or fees, and never for whole-class statistics.
 - Use results_history only for prior terms and sessions the proprietor can already see.
@@ -778,6 +781,42 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
   const topN = Math.max(1, Math.min(25, Number(args.topN) || 5));
   const missingWanted = args.includeMissing === true;
 
+  // Marks land subject by subject through the term, so a class is normally
+  // half recorded. "current" therefore scores each learner on whatever is
+  // recorded and compares percentages, instead of treating a blank exam as
+  // zero. Naming one part (exam alone, first CA alone) narrows the basis.
+  const MAX_MARK: Record<string, number> = { ca1: 10, ca2: 10, ca3: 10, exam: 70 };
+  const BASIS: Record<string, { fields: string[]; label: string }> = {
+    current: { fields: ["ca1", "ca2", "ca3", "exam"], label: "every recorded mark" },
+    all: { fields: ["ca1", "ca2", "ca3", "exam"], label: "every recorded mark" },
+    ca: { fields: ["ca1", "ca2", "ca3"], label: "continuous assessment only" },
+    test: { fields: ["ca1", "ca2", "ca3"], label: "continuous assessment only" },
+    ca1: { fields: ["ca1"], label: "first CA only" },
+    ca2: { fields: ["ca2"], label: "second CA only" },
+    ca3: { fields: ["ca3"], label: "third CA only" },
+    exam: { fields: ["exam"], label: "exam only" },
+  };
+  const basisKey = String(args.basis || "current").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const basis = BASIS[basisKey] || BASIS.current;
+  const markOf = (row: Record<string, unknown>, field: string) => {
+    const value = row[field];
+    if (value === "" || value === null || value === undefined) return null;
+    const number = Number(value);
+    return Number.isFinite(number) ? number : null;
+  };
+  const percentOf = (row: Record<string, unknown>) => {
+    let scored = 0;
+    let possible = 0;
+    for (const field of basis.fields) {
+      const mark = markOf(row, field);
+      if (mark === null) continue;
+      scored += mark;
+      possible += MAX_MARK[field];
+    }
+    if (!possible) return null;
+    return Math.round(scored * 1000 / possible) / 10;
+  };
+
   const subjects = chosenIndexes.map((index) => {
     const rowsByStudent = new Map<string, Record<string, unknown>>();
     for (const row of rawScores) {
@@ -794,25 +833,27 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
       name: studentNames.get(studentId) || "Student",
       row,
       total: totalOf(row),
-      exam: row.exam === "" || row.exam === null || row.exam === undefined ? null : Number(row.exam),
+      percent: percentOf(row),
+      exam: markOf(row, "exam"),
     }));
-    const marked = rows.filter((entry) => entry.total !== "");
-    const exams = rows.filter((entry) => entry.exam !== null && Number.isFinite(entry.exam));
-    const graded = exams.filter((entry) => entry.total !== "");
-    const passed = graded.filter((entry) => didPass(Number(entry.total)));
-    const ranked = graded.slice().sort((a, b) => Number(b.total) - Number(a.total) || a.name.localeCompare(b.name));
-    const cutoff = ranked.length >= 3 ? Number(ranked[2].total) : Number.NEGATIVE_INFINITY;
-    const leaders = ranked.filter((entry) => Number(entry.total) >= cutoff).slice(0, topN).map((entry) => ({
+    // A learner counts once any mark on the chosen basis is there.
+    const marked = rows.filter((entry) => entry.percent !== null);
+    const exams = rows.filter((entry) => entry.exam !== null);
+    const passed = marked.filter((entry) => didPass(Number(entry.percent)));
+    const ranked = marked.slice().sort((a, b) => Number(b.percent) - Number(a.percent) || a.name.localeCompare(b.name));
+    const cutoff = ranked.length >= 3 ? Number(ranked[2].percent) : Number.NEGATIVE_INFINITY;
+    const leaders = ranked.filter((entry) => Number(entry.percent) >= cutoff).slice(0, chosenIndexes.length === 1 ? topN : Math.min(topN, 3)).map((entry) => ({
       name: entry.name,
-      total: Number(entry.total),
+      percent: Number(entry.percent),
+      total: entry.total === "" ? null : Number(entry.total),
       exam: entry.exam,
     }));
     const missingNames = missingWanted
-      ? students.filter((student) => !exams.some((entry) => entry.studentId === String(student.id))).map((student) => String(student.name || "Student")).sort()
+      ? students.filter((student) => !marked.some((entry) => entry.studentId === String(student.id))).map((student) => String(student.name || "Student")).sort()
       : undefined;
     const average = (values: number[]) => values.length ? Math.round(values.reduce((sum, n) => sum + n, 0) * 10 / values.length) / 10 : null;
     const examValues = exams.map((entry) => Number(entry.exam));
-    const totals = marked.map((entry) => Number(entry.total));
+    const percentages = marked.map((entry) => Number(entry.percent));
     return {
       subject: subjectNames.get(index) || `Subject ${index}`,
       index,
@@ -823,37 +864,48 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
       examMean: average(examValues),
       examLowest: examValues.length ? Math.min(...examValues) : null,
       examHighest: examValues.length ? Math.max(...examValues) : null,
-      totalMean: average(totals),
-      gradedWithExam: graded.length,
+      percentMean: average(percentages),
+      percentLowest: percentages.length ? Math.min(...percentages) : null,
+      percentHighest: percentages.length ? Math.max(...percentages) : null,
+      gradedOnBasis: marked.length,
       passedOnPortalGradeScale: passed.length,
-      failedOnPortalGradeScale: graded.length - passed.length,
-      passRate: graded.length ? Math.round(passed.length * 1000 / graded.length) / 10 : null,
-      topByTotal: leaders,
-      ...(missingNames ? { studentsWithoutExamNames: missingNames } : {}),
+      failedOnPortalGradeScale: marked.length - passed.length,
+      passRate: marked.length ? Math.round(passed.length * 1000 / marked.length) / 10 : null,
+      topByPercent: leaders,
+      ...(missingNames ? { studentsWithoutMarkOnBasis: missingNames } : {}),
     };
   });
 
-  // Overall position across every subject the class offers, computed from the
-  // same single read. A student with no exam mark is left out of the order.
-  const perStudent = new Map<string, { name: string; total: number; subjects: number }>();
+  // Overall position across every subject analysed, from the same single read.
+  // Each learner is averaged on the subjects where they have the chosen marks.
+  const perStudent = new Map<string, { name: string; percentSum: number; totalMarks: number; subjects: number; examSubjects: number }>();
   for (const row of rawScores) {
     const studentId = String(row.student_id || "");
     if (!studentId || !studentNames.has(studentId)) continue;
     if (!chosenIndexes.includes(Number(row.subject_index))) continue;
-    if (row.exam === "" || row.exam === null || row.exam === undefined) continue;
-    const entry = perStudent.get(studentId) || { name: studentNames.get(studentId) || "Student", total: 0, subjects: 0 };
-    entry.total += Number(totalOf(row)) || 0;
+    const percent = percentOf(row);
+    if (percent === null) continue;
+    const entry = perStudent.get(studentId) || { name: studentNames.get(studentId) || "Student", percentSum: 0, totalMarks: 0, subjects: 0, examSubjects: 0 };
+    entry.percentSum += percent;
+    entry.totalMarks += Number(totalOf(row)) || 0;
     entry.subjects += 1;
+    if (markOf(row, "exam") !== null) entry.examSubjects += 1;
     perStudent.set(studentId, entry);
   }
   const ordered = [...perStudent.values()]
     .filter((entry) => entry.subjects > 0)
-    .map((entry) => ({ name: entry.name, totalMarks: entry.total, subjects: entry.subjects, average: Math.round(entry.total * 10 / entry.subjects) / 10 }))
-    .sort((a, b) => b.average - a.average || b.totalMarks - a.totalMarks || a.name.localeCompare(b.name));
+    .map((entry) => ({
+      name: entry.name,
+      averagePercent: Math.round(entry.percentSum * 10 / entry.subjects) / 10,
+      totalMarks: entry.totalMarks,
+      subjects: entry.subjects,
+      subjectsWithExam: entry.examSubjects,
+    }))
+    .sort((a, b) => b.averagePercent - a.averagePercent || b.totalMarks - a.totalMarks || a.name.localeCompare(b.name));
 
   const expectedExamEntries = students.length * chosenIndexes.length;
   const actualExamEntries = subjects.reduce((sum, subject) => sum + subject.studentsWithExam, 0);
-  const gradedCount = subjects.reduce((sum, subject) => sum + subject.gradedWithExam, 0);
+  const gradedCount = subjects.reduce((sum, subject) => sum + subject.gradedOnBasis, 0);
   const passCount = subjects.reduce((sum, subject) => sum + subject.passedOnPortalGradeScale, 0);
   return {
     ok: true,
@@ -862,6 +914,9 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
     classKey: payload.class_key,
     term: payload.term,
     academicSession: payload.academic_session,
+    basis: basisKey in BASIS ? basisKey : "current",
+    basisLabel: basis.label,
+    basisFields: basis.fields,
     rosterCount: students.length,
     subjectCount: chosenIndexes.length,
     subjectsAnalysed: chosenIndexes.map((index) => subjectNames.get(index)),
@@ -872,8 +927,8 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
     totalPassCount: passCount,
     totalFailCount: gradedCount - passCount,
     overallPassRate: gradedCount ? Math.round(passCount * 1000 / gradedCount) / 10 : null,
-    passMethod: "The portal's grade scale applied to each recorded student's CA-plus-exam total; denominator includes only students with an exam mark.",
-    rankingMethod: "Average of each student's CA-plus-exam totals across the subjects analysed, highest first. Only students with at least one exam mark appear.",
+    passMethod: "Each learner is scored on the marks recorded on the chosen basis, as a percentage of the maximum for those parts, then the portal's grade scale is applied. The denominator is the learners with a mark on that basis, never the whole roster.",
+    rankingMethod: "Average of each learner's percentage across the subjects analysed, highest first, on the chosen basis. A learner appears once they have a mark on that basis in any subject.",
     studentsRanked: ordered.length,
     topStudentsOverall: ordered.slice(0, topN),
     bottomStudentsOverall: ordered.length > topN ? ordered.slice(-topN).reverse() : [],
