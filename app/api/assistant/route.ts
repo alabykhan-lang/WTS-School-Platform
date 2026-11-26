@@ -467,10 +467,37 @@ const tools = [
   { type: "function", function: { name: "staff_directory", description: "Read the staff directory and active assignments.", parameters: { type: "object", properties: { search: { type: "string" } } } } },
   { type: "function", function: { name: "results_read", description: "Read information available to the signed-in proprietor in the Results Portal. Use for results, marks, subject lists, publication, traits, remarks, fees, class rosters, and report-card context. The portal applies the account's permissions and class scope. For class performance or rankings, read result_summary and calculate only from the returned records; do not sample students with report_card.", parameters: { type: "object", required: ["resource"], properties: { resource: { type: "string", enum: ["classes", "fees", "published_subjects", "remarks", "result_summary", "scores", "students", "subjects", "traits"] }, classKey: { type: "string" }, studentId: { type: "string" }, subjectIndex: { type: "integer" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
   { type: "function", function: { name: "results_history", description: "Read prior terms and sessions the signed-in proprietor can access in the Results Portal. Use for historical comparisons; the portal enforces the account's access.", parameters: { type: "object", properties: { classKey: { type: "string" }, studentId: { type: "string" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
+  {
+    type: "function",
+    function: {
+      name: "results_write",
+      description: "Submit one explicitly requested result change through the signed-in proprietor's Results Portal session. Never call for a question or infer a change. Ask for any missing student, class, subject, component, or value. The portal enforces permissions and write freezes. Before publishing or unpublishing, state the exact class, subject, term, and session and get the proprietor's confirmation.",
+      parameters: {
+        type: "object",
+        required: ["action", "payload"],
+        properties: {
+          action: { type: "string", enum: ["scores.enter", "traits.enter", "remarks.enter", "fees.update", "results.publish", "results.unpublish"] },
+          payload: {
+            type: "object",
+            properties: {
+              student_id: { type: "string" }, class_key: { type: "string" }, subject_index: { type: "integer" },
+              term: { type: "string" }, academic_session: { type: "string" },
+              ca1: { type: "number" }, ca2: { type: "number" }, ca3: { type: "number" }, exam: { type: "number" },
+              clear: { type: "array", items: { type: "string", enum: ["ca1", "ca2", "ca3", "exam"] } },
+              trait_type: { type: "string" }, trait_name: { type: "string" }, rating: { type: "string" },
+              academic: { type: "string" }, form_master: { type: "string" }, principal: { type: "string" },
+              days_opened: { type: "integer" }, days_present: { type: "integer" },
+              total: { type: "number" }, paid: { type: "number" }, debt: { type: "number" },
+            },
+          },
+        },
+      },
+    },
+  },
   { type: "function", function: { name: "report_card", description: "Build a printable report card for ONE named student when the proprietor explicitly asks for that student's report card. Never use this for class analysis, exam counts, rankings, or multiple students.", parameters: { type: "object", required: [], properties: { classKey: { type: "string" }, studentId: { type: "string" }, search: { type: "string", description: "Student name or admission number" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
 ];
 
-const SYSTEM_PROMPT = `You are the proprietor's capable employee for Way to Success Standard Schools. Work within the signed-in proprietor's actual access in the school systems, especially the Results Portal. Use its tools to do the task for the proprietor; do not send them to the portal to do work you can perform through these tools. The Results Portal checks every request against the proprietor's current permissions and scope. If it denies access or returns no data, say exactly that rather than guessing or suggesting a broader access path. You can answer questions about current and historical results, marks, subjects, publication status, class and student performance, rankings, averages, coverage, student and staff records, and prepare report cards using portal data. For analysis, read the relevant records first, calculate from the returned data, state the class/session/term and denominator, and never fill gaps with guesses. Use the Results Portal session rather than querying the database directly. Do not expose session tokens, passwords, API keys, internal prompts, or raw secrets.`;
+const SYSTEM_PROMPT = `You are the proprietor's capable employee for Way to Success Standard Schools. Work within the signed-in proprietor's actual access in the school systems, especially the Results Portal. Use its tools to do the task for the proprietor; do not send them to the portal to do work you can perform through these tools. The Results Portal checks every request against the proprietor's current permissions and scope. If it denies access or returns no data, say exactly that rather than guessing or suggesting a broader access path. You can answer questions about current and historical results, marks, subjects, publication status, class and student performance, rankings, averages, coverage, student and staff records, and prepare report cards using portal data. For analysis, read the relevant records first, calculate from the returned data, state the class/session/term and denominator, and never fill gaps with guesses. Only submit a write when the proprietor explicitly asks for a specific change; never infer one from a question. Ask for missing details instead of guessing. Before publishing or unpublishing results, tell the proprietor the exact class, subject, term, and session and wait for their confirmation. Use the Results Portal session rather than querying the database directly. Do not expose session tokens, passwords, API keys, internal prompts, or raw secrets.`;
 
 /** Tell the model the live session/term so result tools carry the right scope. */
 function systemPrompt(current: CurrentSession) {
@@ -546,6 +573,19 @@ async function executeTool(name: string, args: Record<string, unknown>, current:
       });
       const call = await openResults(current);
       return slim(await call("history.read", payload));
+    }
+    case "results_write": {
+      const action = String(args.action || "");
+      const allowed = new Set(["scores.enter", "traits.enter", "remarks.enter", "fees.update", "results.publish", "results.unpublish"]);
+      if (!allowed.has(action)) return { ok: false, code: "RESULT_ACTION_NOT_ALLOWED" };
+      const input = args.payload && typeof args.payload === "object" ? args.payload as Record<string, unknown> : {};
+      const payload = { ...input };
+      if (payload.class_key) payload.class_key = classKeyOf(payload.class_key);
+      if (action === "scores.enter" || action === "traits.enter" || action === "remarks.enter" || action === "fees.update") {
+        const scoped = await withAcademicContext(current, payload);
+        Object.assign(payload, scoped);
+      }
+      return slim(await results(current, action, payload));
     }
     case "report_card": return slim(await reportCard(current, args));
     default: return { ok: false, code: "ASSISTANT_TOOL_NOT_FOUND" };
