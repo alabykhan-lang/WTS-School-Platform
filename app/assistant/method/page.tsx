@@ -37,7 +37,7 @@ const rules: { heading: string; body: string[] }[] = [
   {
     heading: "Checking a figure",
     body: [
-      "Ask \"show me the source table\" and the assistant returns one row per learner and subject: the marks, a Percent column, the total out of 100 and whether that learner passed.",
+      "Ask \"show me the source table\" and the assistant returns one row per learner and subject: the marks, the marks recorded out of, a Percent of that recorded total, the total out of 100 and whether that learner passed.",
       "Every answer can also be printed or copied on its own from the buttons under it.",
     ],
   },

@@ -651,12 +651,12 @@ CLASS AND RESULT ANALYSIS
 - Pass and fail always use the portal's own grading and nothing else: a learner's total out of 100 (CA1 + CA2 + CA3 + exam) at or above the pass mark. class_analysis returns that mark as passMark and the rule as passRuleLine. Put passRuleLine in every answer that carries a pass or fail figure, word for word, before the rate. State it in every answer with a pass or fail figure, so the formula is on the page. Never mix an exam-only rate with a total rate, and never use a rate the tool did not return.
 - When the question is about the exam, quote the exam score itself from rankedMark, not the total. The same holds for any named part: quote the score for that part, and let the total sit beside it if it helps. A top or weakest list always quotes the ranked score and names every learner on it; if five share second place, all five are listed.
 - Every rate names the class, session, term, roster size and its denominator. The denominator is the whole class (passDenominator): say "40 of 64 passed", not "40 of 62". A learner with no mark on the basis counts as not passing and is named in passRateNote; give that note in the same breath as the rate. Never headline passRateOfMarked when passRate differs.
-- State the range with any average, from percentLowest to percentHighest, and the maximum mark.
+- State the range with any average. On a named part (exam, one CA) give it in that part's raw marks, e.g. "from 14 to 67", using basisLowestMark and basisHighestMark (examLowest and examHighest for the exam). Use percentLowest to percentHighest only on the mixed current basis.
 - Marks are out of 10 for each CA and out of 70 for the exam; quote the maximum with any average and never invent one.
 - Never say a class has no data, or tell the proprietor to finish the exam, when CA is recorded. Answer with what is in the records and mention how much of the exam is in yet.
 - overallPassRate counts graded subject entries, not learners. Quote it as "40 of 64 graded entries passed" and use a subject's passRate when the question is about that subject.
 - A learner with no exam mark has no total that can pass, so they count as not passing until the exam lands. When a passRateNote is returned, say it in the same breath as the rate and name the learners it gives. Never quote an exam-only rate and call it the pass rate.
-- Missing exam marks across the school: call class_analysis once with NO classKey. It returns the gap lines ready to use. Reply with missingHeadline word for word, then missingGapsText as its lines, then classesNoExamLine word for word, then subjectsWithNoExamAtAll per class as a count ("Ten of the 12 subjects have no exam mark at all"), never a name dump, and never move a name to another subject. If missingGapsText is empty say so plainly. Say if classesSkipped is not empty and name those classes as not read. Coverage goes last.
+- Missing exam marks across the school: call class_analysis once with NO classKey. It returns the gap lines ready to use. Reply with missingHeadline word for word, then missingGapsText as its lines, then classesNoExamLine word for word, then noExamSubjectsText as its lines (these name the blank subjects, so always include them), then coverage last. If skippedText is not empty, end with it. Never move a name to another subject.
 - "Which class is most competitive", "which classes are best or worst", or any comparison between classes: call class_analysis once with NO classKey. It compares every class on its own average and pass rate. Name the strongest class first with its figure, then the weakest, and keep the rest to the few that matter.
 - Break a subject down when asked, even for "just show me" or "simply", and call class_analysis only ONCE. Leave subject out and pass breakdown true and you get every subject broken down in the same call; add subject only when the proprietor named one subject, which also returns the full table.
 - In a breakdown give the bands as a short list, the strongest and weakest few, and where the marks were lost (component averages against their maximums). Print the whole table only when the hint says to; otherwise top five and bottom five.
@@ -796,7 +796,10 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
       const item = queue.shift();
       if (!item) return;
       current.progress?.(`Reading ${item.label}`);
-      const made = await classAnalysisOne(current, { ...args, classKey: item.key, breakdown: false, list: false, includeMissing: true }, sharedGrades) as Record<string, unknown>;
+      let made = await classAnalysisOne(current, { ...args, classKey: item.key, breakdown: false, list: false, includeMissing: true }, sharedGrades) as Record<string, unknown>;
+      // One class can be shed while ten are read at once; try it once more
+      // before writing it off.
+      if (made.ok !== true) made = await classAnalysisOne(current, { ...args, classKey: item.key, breakdown: false, list: false, includeMissing: true }, sharedGrades) as Record<string, unknown>;
       if (made.ok !== true) { skipped.push({ class: item.label, code: String(made.code || "UNREAD") }); continue; }
       const noExam = Array.isArray(made.learnersWithNoExamMarkAtAll) ? made.learnersWithNoExamMarkAtAll as string[] : [];
       const subjectsHere = Array.isArray(made.subjects) ? made.subjects as Record<string, unknown>[] : [];
@@ -848,6 +851,14 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
   const classesNoExamLine = emptyClasses.length
     ? `${emptyClasses.length} classes have no exam mark at all yet: ${emptyClasses.join(", ")}.`
     : "";
+  const noExamSubjectsText = ranked
+    .flatMap((row) => (Array.isArray(row.subjectsWithNoExamAtAll) && (row.subjectsWithNoExamAtAll as string[]).length
+      ? [`- ${String(row.class)}: ${(row.subjectsWithNoExamAtAll as string[]).length} of ${String(row.subjects)} subjects with no exam mark at all (${(row.subjectsWithNoExamAtAll as string[]).join(", ")})`]
+      : []))
+    .join("\n");
+  const skippedText = skipped.length
+    ? `${skipped.length} classes were not read, so they are missing here: ${skipped.map((row) => row.class).join(", ")}.`
+    : "";
   return {
     ok: true,
     mode: "school_compare",
@@ -865,10 +876,12 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
     missingHeadline,
     missingGapsText,
     classesNoExamLine,
+    noExamSubjectsText,
+    skippedText,
     classesWithNoExamMarkAtAll: schoolNoExam.map((row) => ({ class: row.class, count: row.names.length })),
     classesWithNoExamAtAll: emptyClasses,
     method: "Classes are ordered by their average learner percentage on the chosen basis, with the pass rate breaking ties. Classes with no marks on that basis are left out.",
-    hint: "Name the mostCompetitive class first with its average and pass rate, then the leastCompetitive, then only the few in between that matter. Say the exam is barely in where coverage is low. For a missing-scores question, quote missingHeadline, missingGapsText and classesNoExamLine.",
+    hint: "Name the mostCompetitive class first with its average and pass rate, then the leastCompetitive, then only the few in between that matter. Say the exam is barely in where coverage is low. For a missing-scores question, quote missingHeadline, missingGapsText, classesNoExamLine, noExamSubjectsText and skippedText.",
   };
 }
 
@@ -1091,6 +1104,9 @@ async function classAnalysisOne(current: CurrentSession, args: Record<string, un
     const average = (values: number[]) => values.length ? Math.round(values.reduce((sum, n) => sum + n, 0) * 10 / values.length) / 10 : null;
     const examValues = exams.map((entry) => Number(entry.exam));
     const percentages = marked.map((entry) => Number(entry.percent));
+    const partMarks = basis.fields.length === 1
+      ? marked.map((entry) => markOf(entry.row, basis.fields[0])).filter((mark): mark is number => mark !== null)
+      : [];
     return {
       subject: subjectNames.get(index) || `Subject ${index}`,
       index,
@@ -1104,6 +1120,7 @@ async function classAnalysisOne(current: CurrentSession, args: Record<string, un
       percentMean: average(percentages),
       percentLowest: percentages.length ? Math.min(...percentages) : null,
       percentHighest: percentages.length ? Math.max(...percentages) : null,
+      ...(partMarks.length ? { basisLowestMark: Math.min(...partMarks), basisHighestMark: Math.max(...partMarks) } : {}),
       gradedOnBasis: marked.length,
       passedOnPortalGradeScale: passed.length,
       failedOnPortalGradeScale: students.length - passed.length,
@@ -1268,19 +1285,25 @@ async function classAnalysisOne(current: CurrentSession, args: Record<string, un
         if (!named.has(entry.name)) continue;
         const marks: Record<string, number | null> = {};
         for (const field of basis.fields) marks[field] = markOf(entry.row, field);
+        // The advertised percentage is the total against the marks recorded in
+        // the row, so a learner with a blank CA is out of what is there, not 100.
+        const recorded = ["ca1", "ca2", "ca3", "exam"].reduce((sum, field) => sum + (markOf(entry.row, field) ?? 0), 0);
+        const total = Number(entry.total) || 0;
         out.push({
           learner: entry.name,
           subject: subjectNames.get(index) || `Subject ${index}`,
           marks,
-          percent: entry.percent,
+          percent: recorded ? Math.round(total * 1000 / recorded) / 10 : null,
+          basisPercent: entry.percent,
+          marksRecordedOutOf: recorded,
           totalOutOf100: entry.total === "" ? null : Number(entry.total),
-          pass: didPass(Number(entry.total) || 0),
+          pass: didPass(total),
         });
       }
     }
     sourceTable = out.slice(0, 400);
   }
-  const sourceColumns = ["Learner", "Subject", ...basis.fields.map((field) => field.toUpperCase()), "Percent", "Total /100", "Pass"];
+  const sourceColumns = ["Learner", "Subject", ...basis.fields.map((field) => field.toUpperCase()), "Recorded /", "Percent", "Total /100", "Pass"];
   return {
     ok: true,
     source: "results_portal_complete_class_read",
@@ -1318,7 +1341,7 @@ async function classAnalysisOne(current: CurrentSession, args: Record<string, un
     ...(breakdown ? { breakdown } : {}),
     ...(breakdowns ? { breakdowns, breakdownsHint: "Every subject is here. Name one of them for its full table." } : {}),
     ...(scoreSheet ? { scoreSheet } : {}),
-    ...(sourceTable ? { sourceTable, sourceTableColumns: sourceColumns, sourceTableHint: `One row per learner and subject, in the column order sourceTableColumns: the marks on the basis, the percent that ranks, the total out of 100 and pass/fail. Print the Percent column with its % sign. A total below 100 with a blank mark is out of what was recorded.` } : {}),
+    ...(sourceTable ? { sourceTable, sourceTableColumns: sourceColumns, sourceTableHint: `One row per learner and subject, in the column order sourceTableColumns. Percent is the total as a share of the marks recorded for that row, and "Recorded /" shows what that share is out of, so a blank CA gives a percentage out of 90, not 100. Print every column including Percent with its % sign and Recorded /.` } : {}),
   };
 }
 
@@ -2037,13 +2060,13 @@ async function gateway(messages: unknown[], settings: ModelSettings, current: Cu
       }
       if ((result as Record<string, unknown>).ok === true) {
         const made = result as Record<string, unknown>;
-        if (call.name === "class_analysis" && made.mode !== "school_compare") {
+        if (call.name === "class_analysis" && made.mode === "school_compare") {
+          compare = made;
+        } else if (call.name === "class_analysis") {
           const line = `${made.class}: ${made.rosterCount} students, ${made.overallPassRate ?? "no"}% overall pass on ${made.gradedSubjectEntries} graded entries, exam coverage ${made.examCoverageRate ?? "unknown"}%`;
           if (!facts.includes(line)) facts.push(line);
           if (made.scoreSheet) sheet = made.scoreSheet as Record<string, unknown>;
-          if (made.mode === "school_compare") compare = made;
-        }
-        else if (call.name === "class_guardians") facts.push(`${made.class}: ${made.withoutGuardianPhoneCount} of ${made.checked} students with no guardian phone`);
+        } else if (call.name === "class_guardians") facts.push(`${made.class}: ${made.withoutGuardianPhoneCount} of ${made.checked} students with no guardian phone`);
         else if (call.name === "find_students") {
           const rows = Array.isArray(made.students) ? made.students : Array.isArray(made.rows) ? made.rows : [];
           if (rows.length) facts.push(`${rows.length} students found`);
@@ -2128,6 +2151,13 @@ function compareText(compare: Record<string, unknown>) {
     "",
     `That is every class compared on the marks on record (${String(compare.basis || "current")}).`,
   ];
+  if (compare.missingHeadline) {
+    parts.push("", String(compare.missingHeadline));
+    if (compare.missingGapsText) parts.push(String(compare.missingGapsText));
+    if (compare.classesNoExamLine) parts.push(String(compare.classesNoExamLine));
+    if (compare.noExamSubjectsText) parts.push(String(compare.noExamSubjectsText));
+    if (compare.skippedText) parts.push(String(compare.skippedText));
+  }
   return parts.join("\n");
 }
 
