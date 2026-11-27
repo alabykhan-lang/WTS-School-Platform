@@ -797,7 +797,7 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
     // One portal session per worker, so four classes read at once without four
     // identity sign-ins per class or a shared context fighting itself. Each
     // worker starts a beat after the last so the sign-ins do not stampede.
-    if (index) await new Promise((resolve) => setTimeout(resolve, index * 400));
+    if (index) await new Promise((resolve) => setTimeout(resolve, index * 300));
     let call: ResultsCall | null = null;
     try { call = await openResults(current); } catch { call = null; }
     for (;;) {
@@ -844,7 +844,7 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
       ...(noExamSubjects.length ? { subjectsWithNoExamAtAll: noExamSubjects } : {}),
     });
   };
-  await Promise.all(Array.from({ length: 4 }, (_, index) => worker(index)));
+  await Promise.all(Array.from({ length: 6 }, (_, index) => worker(index)));
   for (const item of again) {
     current.progress?.(`Reading ${item.label}`);
     const retryCall = await openResults(current).catch(() => null);
