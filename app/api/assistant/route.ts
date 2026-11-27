@@ -142,7 +142,21 @@ async function currentSession(request: Request): Promise<CurrentSession> {
   return { ...current, context };
 }
 
+/** One app session per request per app, so a school-wide read pays for one SSO exchange, not one per class. */
+const appSessionCache = new WeakMap<CurrentSession, Map<string, Promise<AppSession>>>();
+
 async function mintAppSession(current: CurrentSession, app: "registry" | "results" | "attendance" | "notifications"): Promise<AppSession> {
+  let perCurrent = appSessionCache.get(current);
+  if (!perCurrent) { perCurrent = new Map(); appSessionCache.set(current, perCurrent); }
+  const hit = perCurrent.get(app);
+  if (hit) return hit;
+  const made = mintAppSessionOnce(current, app);
+  perCurrent.set(app, made);
+  made.catch(() => { if (perCurrent?.get(app) === made) perCurrent.delete(app); });
+  return made;
+}
+
+async function mintAppSessionOnce(current: CurrentSession, app: "registry" | "results" | "attendance" | "notifications"): Promise<AppSession> {
   const client = app === "registry"
     ? { id: "central_registry", target: "central_registry", redirect: `${portalOrigins.centralRegistry}/` }
     : app === "attendance"
