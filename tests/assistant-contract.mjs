@@ -151,7 +151,7 @@ assert.match(ui, /Reason: \$\{approval\.reason/);
 // Long answers lead with a summary line, and the timeout sentence is plain.
 assert.match(route, /On a long answer, put the headline first/);
 assert.doesNotMatch(route, /There was more to do than the time allowed/);
-assert.match(route, /ask for the missing part and I will carry on/);
+assert.match(route, /A connected system did not answer, so a part of this may be missing/);
 
 // Live progress and the published method page answer the speed and trust points.
 assert.match(route, /current\.progress\?\.\(progressText/);

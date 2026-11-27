@@ -659,6 +659,7 @@ OTHER SYSTEM WORK
 - Notifications: read settings, recipients, templates and queues through notification_request. A send needs the exact recipients, template or message text and scope confirmed first.
 - Results Portal: use results_request for any portal action that the specialist tools do not cover, read or write. Every system applies the signed-in proprietor's own permissions; a refusal is that system's rule, not yours.
 - When a system is not reachable, say which one and what part was unavailable. Never fill the gap with a guess or send the proprietor off to do the work by hand.
+- The Registry has no home address field anywhere. An address can only come from a guardian, so read the guardians and stop: no guardian means no address is stored. Say that in one line and offer to add the guardian, never hunt other Registry actions for it.
 - When a field the proprietor asked for is simply empty in the record, say that in one flat line: "No home address is stored for him." Do not offer two readings side by side and do not hedge with "it may exist but not be reachable". If a lookup did not finish, name the part that was not checked instead of talking about time.
 
 TOOLS BY JOB
@@ -1513,7 +1514,13 @@ async function runTool(name: string, args: Record<string, unknown>, current: Cur
         call("read", "student", { studentId: args.studentId }),
         guardiansFor(call, current, String(args.studentId)),
       ]);
-      return slim({ ...record, guardians });
+      const list = Array.isArray(guardians) ? guardians : [];
+      // The Registry keeps no address of its own; a guardian record is the only
+      // place one can sit. Saying so stops the model hunting other actions.
+      const addressNote = list.length
+        ? "The Registry keeps no address on the student; a guardian record is the only place one can sit."
+        : "The Registry keeps no address on the student and no guardian is linked, so no address is stored anywhere.";
+      return slim({ ...record, guardians, addressNote });
     }
     case "staff_directory": return slim(await registry(current, "read", "staff", { search: args.search || "" }));
     case "class_analysis": return slim(await classAnalysis(current, args));
@@ -1883,6 +1890,7 @@ async function gateway(messages: unknown[], settings: ModelSettings, current: Cu
   current.deadline = started + totalBudget;
   let partial = "";
   let ranOut = false;
+  let failures = 0;
   while (true) {
     const left = totalBudget - (Date.now() - started);
     // A tool round needs real room; below this a closing answer is worth more.
@@ -1917,6 +1925,7 @@ async function gateway(messages: unknown[], settings: ModelSettings, current: Cu
       } catch (caught) {
         result = { ok: false, code: "SCHOOL_SYSTEM_UNAVAILABLE", detail: (caught as Error)?.message || "The connected school system did not return a response.", hint: "Nothing was changed. Say plainly which system did not answer and what is still missing." };
       }
+      if ((result as Record<string, unknown>).ok === false) failures += 1;
       if ((result as Record<string, unknown>).ok === false && !(result as Record<string, unknown>).hint) {
         (result as Record<string, unknown>).hint = "This call failed. Do not repeat it with the same arguments: use another tool or tell the proprietor plainly what could not be read.";
       } else if (/\[\]/.test(JSON.stringify(result)) && JSON.stringify(result).length < 400) {
@@ -1959,9 +1968,11 @@ async function gateway(messages: unknown[], settings: ModelSettings, current: Cu
     if (ranOut) break;
     if (Date.now() - started > totalBudget) { ranOut = true; break; }
   }
-  const note = ranOut
-    ? "\n\nSome of that is still to do — ask for the missing part and I will carry on from here."
-    : "\n\nA connected system did not answer, so a part of this may be missing.";
+  // A clean run that simply used the time says nothing extra; the model already
+  // answered. Only a failed part needs the plain sentence.
+  const note = failures
+    ? "\n\nA connected system did not answer, so a part of this may be missing."
+    : "";
   if (ranOut || !partial.trim()) {
     const closingLeft = totalBudget - (Date.now() - started);
     if (closingLeft >= 4000) {
