@@ -825,7 +825,9 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
         roster: made.rosterCount,
         subjects: made.subjectCount,
         averagePercent: made.classAveragePercent,
-        passRate: made.overallPassRate,
+        passRate: made.learnerPassRate,
+        passCount: made.learnerPassCount,
+        passDenominator: made.rosterCount,
         examCoverage: made.examCoverageRate,
         learnersWithNoExamMarkAtAll: noExam.length,
         ...(examGaps.length ? { examGapsBySubject: examGaps } : {}),
@@ -867,6 +869,8 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
     term: live.term,
     academicSession: live.academic_session,
     classesCompared: ranked.length,
+    passMark: passMarkOf(sharedGrades),
+    passRuleLine: `Pass is the total out of 100 (CA1 + CA2 + CA3, up to 30, plus the exam, up to 70) at ${passMarkOf(sharedGrades)} or more.`,
     classesSkipped: skipped.length ? skipped : undefined,
     mostCompetitive: ranked[0],
     leastCompetitive: ranked[ranked.length - 1],
@@ -881,7 +885,7 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
     classesWithNoExamMarkAtAll: schoolNoExam.map((row) => ({ class: row.class, count: row.names.length })),
     classesWithNoExamAtAll: emptyClasses,
     method: "Classes are ordered by their average learner percentage on the chosen basis, with the pass rate breaking ties. Classes with no marks on that basis are left out.",
-    hint: "Name the mostCompetitive class first with its average and pass rate, then the leastCompetitive, then only the few in between that matter. Say the exam is barely in where coverage is low. For a missing-scores question, quote missingHeadline, missingGapsText, classesNoExamLine, noExamSubjectsText and skippedText.",
+    hint: "Name the mostCompetitive class first with its average and pass rate, then the leastCompetitive, then only the few in between that matter. Put passRuleLine in before the figures. Say the exam is barely in where coverage is low. For a missing-scores question, quote missingHeadline, missingGapsText, classesNoExamLine, noExamSubjectsText and skippedText.",
   };
 }
 
@@ -1340,6 +1344,10 @@ async function classAnalysisOne(current: CurrentSession, args: Record<string, un
     passMethod: `Pass/fail is counted on the learner's total out of 100 against the pass mark of ${passMark}, exactly as the portal grades. The denominator is the whole class, so a learner with no mark on the chosen basis counts as not passing and is named. Each ranked percentage is a share of the maximum for the recorded marks on the chosen basis.`,
     rankingMethod: "Each learner is averaged on their percentage in the subjects analysed, highest first, on the chosen basis. A learner appears once they have a mark on that basis in any subject. Learners level on the same percentage share the position and are all listed.",
     studentsRanked: ordered.length,
+    // A learner-level rate for the class as a whole: the learner's average on
+    // this basis against the same pass mark, over the whole class.
+    learnerPassCount: ordered.filter((entry) => didPass(entry.averagePercent)).length,
+    learnerPassRate: students.length ? Math.round(ordered.filter((entry) => didPass(entry.averagePercent)).length * 1000 / students.length) / 10 : null,
     learnersWithNoExamMarkAtAll: noExamAtAll,
     learnersWithNoExamMarkAtAllCount: noExamAtAll.length,
     topStudentsOverall: orderedTied.map(({ percent: _percent, ...rest }) => rest),
@@ -1962,6 +1970,18 @@ const DEFAULT_GRADE_SCALE: Record<string, unknown>[] = [
   { min: 0, max: 39, g: "F9", r: "Fail" },
 ];
 
+/** The live pass mark: the lowest band that is not a fail, default 40. */
+function passMarkOf(gradeScale: Record<string, unknown>[]) {
+  const marks = gradeScale
+    .filter((row) => {
+      const remark = String(row.r || row.remark || "").toLowerCase();
+      return !remark.includes("fail") && String(row.g || row.grade || "").toUpperCase() !== "F9";
+    })
+    .map((row) => Number(row.min))
+    .filter((value) => Number.isFinite(value));
+  return marks.length ? Math.min(...marks) : 40;
+}
+
 /** Labels let a turn close with a sentence even when the model cannot be called again. */
 const DONE_LABELS: Record<string, string> = {
   school_overview: "Read the school overview",
@@ -2148,16 +2168,19 @@ function compareText(compare: Record<string, unknown>) {
   const ranked = Array.isArray(compare.ranked) ? compare.ranked as Record<string, unknown>[] : [];
   const top = (compare.mostCompetitive || {}) as Record<string, unknown>;
   const low = (compare.leastCompetitive || {}) as Record<string, unknown>;
-  const line = (row: Record<string, unknown>) => `${row.class}: ${row.averagePercent}% average, ${row.passRate}% pass on ${String(row.subjects)} subjects`;
+  const line = (row: Record<string, unknown>) => `${row.class}: ${row.averagePercent}% average; ${row.passCount ?? "?"} of ${row.passDenominator ?? "?"} learners pass (${row.passRate}%)`;
   const parts = [
     `${String(top.class)} is the strongest class right now — ${line(top).replace(`${String(top.class)}: `, "")}.`,
     `The weakest is ${line(low)}.`,
     "",
+  ];
+  if (compare.passRuleLine) parts.push(String(compare.passRuleLine), "");
+  parts.push(
     "In order:",
     ...ranked.map((row) => `- ${line(row)}`),
     "",
-    `That is every class compared on the marks on record (${String(compare.basis || "current")}).`,
-  ];
+    `That is every class compared on the marks on record (${String(compare.basis || "current")}), as a learner's average across all subjects against the same pass mark.`,
+  );
   if (compare.missingHeadline) {
     parts.push("", String(compare.missingHeadline));
     if (compare.missingGapsText) parts.push(String(compare.missingGapsText));
