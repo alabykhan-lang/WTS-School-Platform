@@ -1288,9 +1288,13 @@ async function classAnalysisOne(current: CurrentSession, args: Record<string, un
         if (!named.has(entry.name)) continue;
         const marks: Record<string, number | null> = {};
         for (const field of basis.fields) marks[field] = markOf(entry.row, field);
-        // The advertised percentage is the total against the marks recorded in
-        // the row, so a learner with a blank CA is out of what is there, not 100.
-        const recorded = ["ca1", "ca2", "ca3", "exam"].reduce((sum, field) => sum + (markOf(entry.row, field) ?? 0), 0);
+        // The advertised percentage is the total against the most that could be
+        // scored in the marks actually recorded, so a learner with a blank CA is
+        // out of 90, not 100.
+        const recorded = (["ca1", "ca2", "ca3"] as const).reduce(
+          (sum, field) => sum + (markOf(entry.row, field) === null ? 0 : 10),
+          markOf(entry.row, "exam") === null ? 0 : 70,
+        );
         const total = Number(entry.total) || 0;
         out.push({
           learner: entry.name,
