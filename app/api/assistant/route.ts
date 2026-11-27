@@ -656,7 +656,7 @@ CLASS AND RESULT ANALYSIS
 - Never say a class has no data, or tell the proprietor to finish the exam, when CA is recorded. Answer with what is in the records and mention how much of the exam is in yet.
 - overallPassRate counts graded subject entries, not learners. Quote it as "40 of 64 graded entries passed" and use a subject's passRate when the question is about that subject.
 - A learner with no exam mark has no total that can pass, so they count as not passing until the exam lands. When a passRateNote is returned, say it in the same breath as the rate and name the learners it gives. Never quote an exam-only rate and call it the pass rate.
-- Missing exam marks across the school: call class_analysis once with NO classKey and includeMissing true. Lead with learnersWithNoExamMarkAtAll — "Only three learners in classes where the exam has started have no exam mark at all: ..." with their names and classes — then each class's examGapsBySubject, naming every learner against its own subject, then classesWithNoExamAtAll as a count and the class names. Then give subjectsWithNoExamAtAll per class as a count ("nine subjects have no exam mark at all"), not a name dump. Never move a name from one subject to another. Coverage goes last.
+- Missing exam marks across the school: call class_analysis once with NO classKey and includeMissing true. Lead with learnersWithNoExamMarkAtAll — "Only three learners in classes where the exam has started have no exam mark at all: ..." with their names and classes. Then, per class, every examGapsBySubject entry with the subject and every blank learner named ("JSS 1 CCA: Adesola Mubashir, Nurudeen Rodiat"). Then classesWithNoExamAtAll with its count and class names. Then subjectsWithNoExamAtAll per class as a count ("Ten of the 12 subjects have no exam mark at all"), not a name dump, and never move a name to another subject. Coverage goes last.
 - "Which class is most competitive", "which classes are best or worst", or any comparison between classes: call class_analysis once with NO classKey. It compares every class on its own average and pass rate. Name the strongest class first with its figure, then the weakest, and keep the rest to the few that matter.
 - Break a subject down when asked, even for "just show me" or "simply", and call class_analysis only ONCE. Leave subject out and pass breakdown true and you get every subject broken down in the same call; add subject only when the proprietor named one subject, which also returns the full table.
 - In a breakdown give the bands as a short list, the strongest and weakest few, and where the marks were lost (component averages against their maximums). Print the whole table only when the hint says to; otherwise top five and bottom five.
@@ -800,10 +800,16 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
       if (made.ok !== true) { skipped.push({ class: item.label, code: String(made.code || "UNREAD") }); continue; }
       const noExam = Array.isArray(made.learnersWithNoExamMarkAtAll) ? made.learnersWithNoExamMarkAtAll as string[] : [];
       const subjectsHere = Array.isArray(made.subjects) ? made.subjects as Record<string, unknown>[] : [];
-      // A class with no exam in any subject is listed on its own, not name by name.
-      const everySubjectEmpty = subjectsHere.length > 0 && subjectsHere.every((subject) => !Number(subject.studentsWithExam || 0));
-      if (noExam.length && everySubjectEmpty) emptyClasses.push(item.label);
-      else if (noExam.length) schoolNoExam.push({ class: item.label, names: noExam });
+      // A class with no exam in any subject is listed on its own, and its
+      // per-subject counts are dropped so they do not repeat the same fact.
+      const roster = Number(made.rosterCount || 0);
+      const everySubjectEmpty = (roster > 0 && noExam.length >= roster) || (subjectsHere.length > 0 && subjectsHere.every((subject) => !Number(subject.studentsWithExam || 0)));
+      if (everySubjectEmpty) {
+        emptyClasses.push(roster ? `${item.label} (${roster})` : item.label);
+        if (!roster && noExam.length) schoolNoExam.push({ class: item.label, names: noExam });
+        continue;
+      }
+      if (noExam.length) schoolNoExam.push({ class: item.label, names: noExam });
       if (!Number(made.gradedSubjectEntries || 0)) continue;
       const examGaps = subjectsHere
         .filter((subject) => Number(subject.studentsWithExam || 0) > 0 && Array.isArray(subject.studentsWithoutMarkOnBasis) && (subject.studentsWithoutMarkOnBasis as unknown[]).length)
