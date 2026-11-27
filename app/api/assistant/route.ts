@@ -656,7 +656,7 @@ CLASS AND RESULT ANALYSIS
 - Never say a class has no data, or tell the proprietor to finish the exam, when CA is recorded. Answer with what is in the records and mention how much of the exam is in yet.
 - overallPassRate counts graded subject entries, not learners. Quote it as "40 of 64 graded entries passed" and use a subject's passRate when the question is about that subject.
 - A learner with no exam mark has no total that can pass, so they count as not passing until the exam lands. When a passRateNote is returned, say it in the same breath as the rate and name the learners it gives. Never quote an exam-only rate and call it the pass rate.
-- Missing exam marks across the school: call class_analysis once with NO classKey and includeMissing true. Lead with learnersWithNoExamMarkAtAll — "Only three learners in classes where the exam has started have no exam mark at all: ..." with their names and classes. Then, per class, every examGapsBySubject entry with the subject and every blank learner named ("JSS 1 CCA: Adesola Mubashir, Nurudeen Rodiat"). Then classesWithNoExamAtAll with its count and class names. Then subjectsWithNoExamAtAll per class as a count ("Ten of the 12 subjects have no exam mark at all"), not a name dump, and never move a name to another subject. Coverage goes last.
+- Missing exam marks across the school: call class_analysis once with NO classKey. It always returns the gaps. Open with missingHeadline word for word. Then, per class, every examGapsBySubject entry with the subject and every blank learner named ("JSS 1 CCA: Adesola Mubashir, Nurudeen Rodiat"). Then classesWithNoExamAtAll with its count and class names. Then subjectsWithNoExamAtAll per class as a count ("Ten of the 12 subjects have no exam mark at all"), not a name dump, and never move a name to another subject. Coverage goes last.
 - "Which class is most competitive", "which classes are best or worst", or any comparison between classes: call class_analysis once with NO classKey. It compares every class on its own average and pass rate. Name the strongest class first with its figure, then the weakest, and keep the rest to the few that matter.
 - Break a subject down when asked, even for "just show me" or "simply", and call class_analysis only ONCE. Leave subject out and pass breakdown true and you get every subject broken down in the same call; add subject only when the proprietor named one subject, which also returns the full table.
 - In a breakdown give the bands as a short list, the strongest and weakest few, and where the marks were lost (component averages against their maximums). Print the whole table only when the hint says to; otherwise top five and bottom five.
@@ -796,7 +796,7 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
       const item = queue.shift();
       if (!item) return;
       current.progress?.(`Reading ${item.label}`);
-      const made = await classAnalysisOne(current, { ...args, classKey: item.key, breakdown: false, list: false, includeMissing: args.includeMissing === true }, sharedGrades) as Record<string, unknown>;
+      const made = await classAnalysisOne(current, { ...args, classKey: item.key, breakdown: false, list: false, includeMissing: args.includeMissing !== false }, sharedGrades) as Record<string, unknown>;
       if (made.ok !== true) { skipped.push({ class: item.label, code: String(made.code || "UNREAD") }); continue; }
       const noExam = Array.isArray(made.learnersWithNoExamMarkAtAll) ? made.learnersWithNoExamMarkAtAll as string[] : [];
       const subjectsHere = Array.isArray(made.subjects) ? made.subjects as Record<string, unknown>[] : [];
@@ -825,8 +825,8 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
         passRate: made.overallPassRate,
         examCoverage: made.examCoverageRate,
         learnersWithNoExamMarkAtAll: noExam.length,
-        ...(args.includeMissing === true && examGaps.length ? { examGapsBySubject: examGaps } : {}),
-        ...(args.includeMissing === true && noExamSubjects.length ? { subjectsWithNoExamAtAll: noExamSubjects } : {}),
+        ...(examGaps.length ? { examGapsBySubject: examGaps } : {}),
+        ...(noExamSubjects.length ? { subjectsWithNoExamAtAll: noExamSubjects } : {}),
       });
     }
   };
@@ -835,6 +835,10 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
   ranked.forEach((row, index) => { row.rank = index + 1; });
   if (!ranked.length) return { ok: false, code: "RESULT_NO_MARKS_ANYWHERE", detail: "No class has a mark recorded yet on this basis.", hint: "Say that no marks are recorded yet and ask the proprietor to enter them in the Results Portal." };
   const live = await withAcademicContext(current, {});
+  const missingNames = schoolNoExam.flatMap((row) => row.names.map((name) => `${name} (${row.class})`)).sort((a, b) => a.localeCompare(b));
+  const missingHeadline = missingNames.length
+    ? `Only ${missingNames.length} learner${missingNames.length === 1 ? " has" : "s have"} no exam mark at all in classes where the exam has started: ${missingNames.join(", ")}.`
+    : "Every learner in a class where the exam has started has at least one exam mark.";
   return {
     ok: true,
     mode: "school_compare",
@@ -848,11 +852,12 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
     leastCompetitive: ranked[ranked.length - 1],
     ranked,
     learnersWithNoExamMarkAtAll: schoolNoExam.reduce((sum, row) => sum + row.names.length, 0),
-    learnersWithNoExamMarkAtAllNames: schoolNoExam.flatMap((row) => row.names.map((name) => `${name} (${row.class})`)).sort((a, b) => a.localeCompare(b)),
+    learnersWithNoExamMarkAtAllNames: missingNames,
+    missingHeadline,
     classesWithNoExamMarkAtAll: schoolNoExam.map((row) => ({ class: row.class, count: row.names.length })),
     classesWithNoExamAtAll: emptyClasses,
     method: "Classes are ordered by their average learner percentage on the chosen basis, with the pass rate breaking ties. Classes with no marks on that basis are left out.",
-    hint: "Name the mostCompetitive class first with its average and pass rate, then the leastCompetitive, then only the few in between that matter. Say the exam is barely in where coverage is low. When includeMissing was asked for, lead with learnersWithNoExamMarkAtAll and its names before the per-class gaps, then classesWithNoExamAtAll.",
+    hint: "Name the mostCompetitive class first with its average and pass rate, then the leastCompetitive, then only the few in between that matter. Say the exam is barely in where coverage is low. For a missing-scores question, quote missingHeadline first, then the per-class gaps, then classesWithNoExamAtAll.",
   };
 }
 
