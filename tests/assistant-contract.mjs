@@ -150,7 +150,8 @@ assert.match(route, /learnersWithNoExamMarkAtAllCount/);
 assert.match(route, /examGapsBySubject/);
 assert.match(route, /subjectsWithNoExamAtAll/);
 assert.match(route, /classesWithNoExamAtAll/);
-assert.match(route, /Lead with learnersWithNoExamMarkAtAll/);
+assert.match(route, /Open with missingHeadline word for word/);
+assert.match(route, /missingHeadline/);
 // The source table carries its own percent column in a fixed order.
 assert.match(route, /sourceTableColumns/);
 assert.match(route, /"Percent", "Total \/100", "Pass"/);

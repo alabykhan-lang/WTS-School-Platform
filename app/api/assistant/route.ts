@@ -796,7 +796,7 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
       const item = queue.shift();
       if (!item) return;
       current.progress?.(`Reading ${item.label}`);
-      const made = await classAnalysisOne(current, { ...args, classKey: item.key, breakdown: false, list: false, includeMissing: args.includeMissing !== false }, sharedGrades) as Record<string, unknown>;
+      const made = await classAnalysisOne(current, { ...args, classKey: item.key, breakdown: false, list: false, includeMissing: true }, sharedGrades) as Record<string, unknown>;
       if (made.ok !== true) { skipped.push({ class: item.label, code: String(made.code || "UNREAD") }); continue; }
       const noExam = Array.isArray(made.learnersWithNoExamMarkAtAll) ? made.learnersWithNoExamMarkAtAll as string[] : [];
       const subjectsHere = Array.isArray(made.subjects) ? made.subjects as Record<string, unknown>[] : [];
@@ -833,6 +833,8 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
   await Promise.all([worker(), worker(), worker(), worker(), worker(), worker()]);
   ranked.sort((a, b) => Number(b.averagePercent ?? -1) - Number(a.averagePercent ?? -1) || Number(b.passRate ?? -1) - Number(a.passRate ?? -1));
   ranked.forEach((row, index) => { row.rank = index + 1; });
+  emptyClasses.sort((a, b) => a.localeCompare(b));
+  schoolNoExam.sort((a, b) => a.class.localeCompare(b.class));
   if (!ranked.length) return { ok: false, code: "RESULT_NO_MARKS_ANYWHERE", detail: "No class has a mark recorded yet on this basis.", hint: "Say that no marks are recorded yet and ask the proprietor to enter them in the Results Portal." };
   const live = await withAcademicContext(current, {});
   const missingNames = schoolNoExam.flatMap((row) => row.names.map((name) => `${name} (${row.class})`)).sort((a, b) => a.localeCompare(b));
