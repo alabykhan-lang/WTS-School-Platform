@@ -122,3 +122,48 @@ assert.match(route, /settle that point first/);
 assert.match(route, /barely started/);
 
 console.log("Assistant contract passed");
+
+// One pass rule everywhere: the portal's total out of 100 against its own pass
+// mark, stated in the answer, never an unstated exam-only cut.
+assert.match(route, /const didPass = \(total: number\) => total >= passMark;/);
+assert.match(route, /passMark,$/m);
+assert.match(route, /passRule:/);
+assert.match(route, /State it in every answer/);
+// Ties share a position and every tied learner is listed.
+assert.match(route, /const withTies = /);
+assert.match(route, /withTies\(ranked, show\)/);
+assert.match(route, /weakestByPercent/);
+assert.match(route, /rankedMark/);
+// The examiner's ground truth: the weakest exam marks are exam marks, not totals.
+assert.match(route, /When the question is about the exam, quote the exam score itself/);
+
+// A write card names the subject and shows old → new, and needs a typed reason.
+assert.match(route, /const shown = \(value: unknown\)/);
+assert.match(route, /→ \$\{shown\(payload\[field\]\)\}/);
+assert.match(route, /async function approve\(token: string, current: CurrentSession, reason = ""\)/);
+assert.match(route, /body\.reason/);
+assert.match(route, /payload: \{ \.\.\.payload, reason: reason\.trim\(\)\.slice\(0, 140\) \}/);
+assert.match(ui, /placeholder="Why is this changing\? \(required\)"/);
+assert.match(ui, /approval\.reason\.trim\(\)\.length < 3/);
+assert.match(ui, /Change cancelled — nothing was saved/);
+assert.match(ui, /Reason: \$\{approval\.reason/);
+
+// Long answers lead with a summary line, and the timeout sentence is plain.
+assert.match(route, /On a long answer, put the headline first/);
+assert.doesNotMatch(route, /There was more to do than the time allowed/);
+assert.match(route, /ask for the missing part and I will carry on/);
+
+// Live progress and the published method page answer the speed and trust points.
+assert.match(route, /current\.progress\?\.\(progressText/);
+assert.match(route, /function progressText/);
+assert.match(route, /school_assistant_job_progress/);
+assert.match(ui, /setWaitNote\(value\.progress\)/);
+const method = await readFile(new URL("../app/assistant/method/page.tsx", import.meta.url), "utf8");
+assert.match(method, /pass mark/);
+assert.match(method, /share the position/);
+// Any answer can be printed or copied on its own.
+assert.match(ui, /Print this answer/);
+assert.match(ui, /navigator\.clipboard\.writeText/);
+assert.match(ui, /href="\/assistant\/method"/);
+
+console.log("Assistant correctness contract passed");

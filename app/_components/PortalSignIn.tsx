@@ -106,6 +106,16 @@ export function PortalSignIn() {
     };
   }, []);
 
+  /**
+   * The sign-in is a fetch, so the browser never sees a form post and keeps an
+   * old saved password. Handing the credential over updates the saved entry.
+   */
+  async function rememberLogin(loginValue: string, passwordValue: string) {
+    const maker = (window as unknown as { PasswordCredential?: new (data: { id: string; password: string; name: string }) => Credential }).PasswordCredential;
+    if (!maker || !navigator.credentials?.store) return;
+    try { await navigator.credentials.store(new maker({ id: loginValue, password: passwordValue, name: loginValue })); } catch { /* browser without it */ }
+  }
+
   async function submitLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
@@ -119,6 +129,7 @@ export function PortalSignIn() {
         setMessageTone("info");
         return;
       }
+      await rememberLogin(login.trim(), password);
       window.location.assign(returnTo);
     } catch (error) {
       setMessage(friendlyError(error instanceof Error ? error.message : undefined));
@@ -145,7 +156,8 @@ export function PortalSignIn() {
       setShowNewPassword(false);
       setShowConfirmPassword(false);
       setPendingChange(false);
-      setMessage("Password changed. Sign in again with your new password.");
+      await rememberLogin(login.trim(), newPassword);
+      setMessage("Password changed, and the new one is saved. Sign in again with it.");
       setMessageTone("success");
     } catch (error) {
       setMessage(friendlyError(error instanceof Error ? error.message : undefined));

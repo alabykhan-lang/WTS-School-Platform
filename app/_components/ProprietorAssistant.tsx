@@ -213,7 +213,8 @@ export function ProprietorAssistant() {
   const [busyThread, setBusyThread] = useState("");
   const [notify, setNotify] = useState<"off" | "on" | "denied">("off");
   const [notice, setNotice] = useState("");
-  const [approval, setApproval] = useState<{ token: string; summary: string } | null>(null);
+  const [approval, setApproval] = useState<{ token: string; summary: string; reason: string } | null>(null);
+  const [waitNote, setWaitNote] = useState("");
   const [form, setForm] = useState({ id: "", label: "", url: DEFAULT_URL, key: "", provider: "yeta", effort: "low" as Effort });
   const [showKey, setShowKey] = useState(false);
   const [test, setTest] = useState<TestState>({ state: "idle", message: "" });
@@ -434,6 +435,29 @@ export function ProprietorAssistant() {
     window.setTimeout(clear, 4000);
   }
 
+  /** Prints one answer on its own, without the rest of the chat. */
+  function printAnswer(index: number) {
+    const article = document.getElementById(`answer-${index}`);
+    if (!article) return;
+    article.classList.add("printTarget");
+    document.body.classList.add("printAnswer");
+    const clear = () => {
+      article.classList.remove("printTarget");
+      document.body.classList.remove("printAnswer");
+      window.removeEventListener("afterprint", clear);
+    };
+    window.addEventListener("afterprint", clear);
+    window.print();
+    window.setTimeout(clear, 4000);
+  }
+
+  async function copyAnswer(text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setNotice("Copied. You can paste it anywhere.");
+    } catch { setNotice("Could not copy. Select the text and copy it by hand."); }
+  }
+
   /** The assistant serves the card itself, in the portal's design, and prints it. */
   function openCard(doc?: CardDoc, portal = false) {
     if (!doc?.student) { printDocument(); return; }
@@ -636,7 +660,7 @@ export function ProprietorAssistant() {
       const doc = value.document && typeof value.document === "object" ? value.document as CardDoc : undefined;
       updateThread(threadId, [...messages, { role: "assistant", content: answer, doc }]);
       const approvalObj = value.approval as { approval_token?: string; summary?: string } | undefined;
-      if (approvalObj?.approval_token) setApproval({ token: approvalObj.approval_token, summary: approvalObj.summary || "Confirm this change." });
+      if (approvalObj?.approval_token) setApproval({ token: approvalObj.approval_token, summary: approvalObj.summary || "Confirm this change.", reason: "" });
       // The server charges the proprietor's own answers and returns the new
       // balance, so a developer test never moves it.
       const charged = value.usage as { percent?: unknown } | undefined;
@@ -644,6 +668,7 @@ export function ProprietorAssistant() {
         setSettings((current) => ({ ...current, usagePercent: Math.max(0, Math.min(100, charged.percent as number)) }));
       }
       settled = true;
+      setWaitNote("");
       setNotice("");
       announce(threadId, doc ? `Report card ready${doc.name ? `: ${doc.name}` : ""}` : "Answer ready", answer);
     };
@@ -719,7 +744,10 @@ export function ProprietorAssistant() {
           if (code === "ASSISTANT_JOB_NOT_FOUND") throw new Error("That request expired. Send it again.");
           throw new Error(ERRORS[code] || "The request failed.");
         }
-        if (value.status === "running") continue;
+        if (value.status === "running") {
+          if (typeof value.progress === "string" && value.progress) setWaitNote(value.progress);
+          continue;
+        }
         if (value.status === "done" || value.status === "error") {
           const payload = (value.result && typeof value.result === "object" ? value.result : {}) as Record<string, unknown>;
           if (!payload.ok) {
@@ -740,7 +768,7 @@ export function ProprietorAssistant() {
       updateThread(threadId, [...messages, { role: "assistant", content: failed, failed: true }]);
     } finally {
       if (key && settled) localStorage.removeItem(key);
-      setBusy(false); setBusyThread("");
+      setBusy(false); setBusyThread(""); setWaitNote("");
     }
   }
 
@@ -801,17 +829,24 @@ export function ProprietorAssistant() {
     }
   }
 
+  /** Cancel leaves a plain line in the chat, so nobody wonders what happened. */
+  function cancel() {
+    if (!approval) return;
+    if (activeThread) updateThread(activeThread.id, [...activeThread.messages, { role: "assistant", content: "Change cancelled — nothing was saved. No mark was changed." }]);
+    setApproval(null);
+  }
+
   async function confirm() {
-    if (!approval || busy) return;
+    if (!approval || busy || approval.reason.trim().length < 3) return;
     setBusy(true);
     try {
-      const response = await fetch("/api/assistant", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ approval_token: approval.token }) });
+      const response = await fetch("/api/assistant", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ approval_token: approval.token, reason: approval.reason.trim() }) });
       const value = await response.json();
       if (!response.ok || !value?.ok) throw new Error(String(value?.code || "CHANGE_FAILED"));
       if (activeThread) {
         const result = (value.completed?.result || {}) as { ok?: boolean; code?: string; error_detail?: string };
         const line = result.ok
-          ? `Done. ${value.completed?.summary || approval.summary}`
+          ? `Done. ${value.completed?.summary || approval.summary}${approval.reason.trim() ? ` Reason: ${approval.reason.trim()}.` : ""}`
           : `Not saved. ${result.code || "unknown error"}${result.error_detail ? ` — ${result.error_detail}` : ""}.`;
         updateThread(activeThread.id, [...activeThread.messages, { role: "assistant", content: line }]);
       }
@@ -862,11 +897,15 @@ export function ProprietorAssistant() {
           const doc = message.doc;
           const last = index === activeThread.messages.length - 1;
           return <div key={`${message.role}-${index}`}>
-            <article className={`assistantMessage ${message.role}${message.doc || message.document ? " printable" : ""}`}>
+            <article id={`answer-${index}`} className={`assistantMessage ${message.role}${message.doc || message.document ? " printable" : ""}`}>
               {message.role === "assistant" && <div className="assistantAvatar">WTS</div>}
               <div className={`assistantBubble${message.failed ? " failed" : ""}`}>{renderBlocks(message.content)}</div>
               {message.role === "user" && <div className="assistantWho">You</div>}
             </article>
+            {message.role === "assistant" && !message.failed && !busy && <div className="assistantAnswerActions">
+              <button type="button" onClick={() => printAnswer(index)}>Print this answer</button>
+              <button type="button" onClick={() => void copyAnswer(message.content)}>Copy</button>
+            </div>}
             {(message.doc || message.document) && <div className="assistantDocActions">
               {doc?.student
                 ? <button type="button" className="assistantDocPrint" onClick={() => saveCard(doc)}>Save report card</button>
@@ -875,12 +914,20 @@ export function ProprietorAssistant() {
               {doc?.student && <button type="button" className="assistantDocLink" onClick={() => openCard(doc, true)}>Open in portal</button>}
             </div>}
             {approval && last && message.role === "assistant" && !message.failed && <div className="assistantConfirm">
-              <button type="button" onClick={confirm} disabled={busy}>Confirm</button>
-              <button type="button" onClick={() => setApproval(null)} disabled={busy}>Cancel</button>
+              <input
+                value={approval.reason}
+                onChange={(event) => setApproval((current) => current ? { ...current, reason: event.target.value } : current)}
+                onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void confirm(); } }}
+                placeholder="Why is this changing? (required)"
+                aria-label="Reason for the change"
+                maxLength={140}
+              />
+              <button type="button" onClick={() => void confirm()} disabled={busy || approval.reason.trim().length < 3}>Confirm</button>
+              <button type="button" onClick={cancel} disabled={busy}>Cancel</button>
             </div>}
           </div>;
         })}
-        {busy && busyThread === activeThread?.id && <article className="assistantMessage assistant"><div className="assistantAvatar">WTS</div><div className="assistantBubble assistantThinking"><i/><i/><i/><span className="assistantWait">{elapsed < 5 ? "Working" : `Working · ${elapsed}s`}</span></div></article>}
+        {busy && busyThread === activeThread?.id && <article className="assistantMessage assistant"><div className="assistantAvatar">WTS</div><div className="assistantBubble assistantThinking"><i/><i/><i/><span className="assistantWait">{waitNote || (elapsed < 5 ? "Working" : `Working · ${elapsed}s`)}</span></div></article>}
         {busy && busyThread && busyThread !== activeThread?.id && <p className="assistantMuted assistantElsewhere">Still working in another chat. You can keep reading here.</p>}
         <div ref={endRef}/>
       </div>
@@ -893,6 +940,7 @@ export function ProprietorAssistant() {
         <button className="assistantSend" type="submit" disabled={busy || !draft.trim()} aria-label="Send">↑</button>
         <div className="assistantComposerFoot">
           {!config.is_admin && <small>{`${settings.usagePercent.toFixed(0)}% left`}</small>}
+          <a className="assistantMethodLink" href="/assistant/method" target="_blank" rel="noreferrer">How figures work</a>
           <button type="button" className={`assistantPill test${testMode ? " on" : ""}`} onClick={() => setTestMode((on) => { const next = !on; try { localStorage.setItem(`wts-assistant-test:${config.person?.id || "signed-in-user"}`, next ? "on" : "off"); } catch { /* private mode */ } return next; })} aria-pressed={testMode} title="Test turns are free and do not use the balance">Test</button>
           <button type="button" className={`assistantPill${notify === "on" ? " on" : ""}`} onClick={toggleNotify} aria-pressed={notify === "on"} title="Tell me here when the answer is ready">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M18 15V10a6 6 0 1 0-12 0v5l-2 3h16l-2-3Z"/><path d="M10 21a2.4 2.4 0 0 0 4 0"/></svg>

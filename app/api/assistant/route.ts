@@ -20,7 +20,7 @@ const DEFAULT_MODEL = process.env.WTS_ASSISTANT_DEFAULT_MODEL?.trim() || (GATEWA
 
 type ModelOption = { id: string; label: string; description: string };
 type AppSession = { session_id: string; session_secret: string; attendance_client_code?: string; attendance_client_secret?: string };
-type CurrentSession = { id: string; secret: string; context: Record<string, unknown>; deadline?: number };
+type CurrentSession = { id: string; secret: string; context: Record<string, unknown>; deadline?: number; progress?: (text: string) => void };
 
 /** How long a bridge call may wait, never past the turn's own deadline. */
 function bridgeTimeout(current: CurrentSession, cap = 60000) {
@@ -316,18 +316,39 @@ async function liveAcademic(current: CurrentSession) {
   return { session, term };
 }
 
+const CLASS_CACHE_MS = 120000;
+const classCache = new Map<string, { at: number; rows: { key: string; label: string }[] }>();
+
 /** The real class names, so the model never has to guess a class key. */
 async function classCatalog(current: CurrentSession) {
+  const key = current.id;
+  const held = classCache.get(key);
+  if (held && Date.now() - held.at < CLASS_CACHE_MS) return held.rows;
   try {
     const call = await openResults(current);
     const read = await call("read.classes", {});
-    const rows = Array.isArray(read?.rows) ? read.rows as Record<string, unknown>[] : [];
-    return rows
+    const rows = (Array.isArray(read?.rows) ? read.rows as Record<string, unknown>[] : [])
       .filter((row) => row && row.class_key)
       .map((row) => ({ key: String(row.class_key), label: String(row.display_name || classLabel(String(row.class_key))) }));
+    if (rows.length) classCache.set(key, { at: Date.now(), rows });
+    return rows;
   } catch {
-    return [];
+    return held?.rows || [];
   }
+}
+
+const SUBJECT_CACHE_MS = 120000;
+const subjectCache = new Map<string, { at: number; rows: Record<string, unknown>[] }>();
+
+/** A class subject list barely changes, so a second turn reuses it. */
+async function classSubjects(current: CurrentSession, call: (name: string, body: Record<string, unknown>) => Promise<Record<string, unknown>>, classKey: string) {
+  const key = `${current.id}:${classKey}`;
+  const held = subjectCache.get(key);
+  if (held && Date.now() - held.at < SUBJECT_CACHE_MS) return { ok: true, rows: held.rows };
+  const read = await call("read.subjects", { class_key: classKey });
+  const rows = Array.isArray(read?.rows) ? read.rows as Record<string, unknown>[] : [];
+  if (read?.ok && rows.length) subjectCache.set(key, { at: Date.now(), rows });
+  return read;
 }
 
 /** Class keys are lowercase slugs, but people type "SS2 Science", so settle it here. */
@@ -574,7 +595,7 @@ const tools = [
   { type: "function", function: { name: "student_record", description: "Read one student's complete record by id, including guardian contacts.", parameters: { type: "object", required: ["studentId"], properties: { studentId: { type: "string" } } } } },
   { type: "function", function: { name: "staff_directory", description: "Read the staff directory and active assignments.", parameters: { type: "object", properties: { search: { type: "string" } } } } },
   { type: "function", function: { name: "results_read", description: "Read information available to the signed-in proprietor in the Results Portal. Use for results, marks, subject lists, publication, traits, remarks, fees, class rosters, and report-card context. The portal applies the account's permissions and class scope. For class performance, pass/fail, coverage, averages, or rankings, use class_analysis so the complete class is read and summarized in one call.", parameters: { type: "object", required: ["resource"], properties: { resource: { type: "string", enum: ["classes", "fees", "published_subjects", "remarks", "result_summary", "scores", "students", "subjects", "traits"] }, classKey: { type: "string" }, studentId: { type: "string" }, subjectIndex: { type: "integer" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
-  { type: "function", function: { name: "class_analysis", description: "One call gives a complete class analysis from the Results Portal: coverage, per-subject pass/fail rates, per-subject top performers, and the overall top and bottom order. It reads the whole class once and does the arithmetic on the server. Use it for every class performance question and call it only once per class. Omit classKey to compare every class on its average and pass rate in this one call. basis defaults to current, which uses every mark recorded so far and compares percentages so a learner whose exam is not entered yet still ranks; name a basis only when the proprietor asks to grade on that part alone. Pass subject only for exactly one subject; topN changes how many leaders are returned; includeMissing names learners with nothing on the chosen basis; breakdown true adds a simple per-subject breakdown (bands, component averages, strongest and weakest) for every subject in this one call, so use it alone for 'break it down'; add subject only for one named subject, which also returns the full table. list true returns the whole score sheet in the same call, for requests to list every score.", parameters: { type: "object", properties: { classKey: { type: "string", description: "The class to analyse. Leave it out for a whole-school comparison" }, basis: { type: "string", enum: ["current", "ca", "ca1", "ca2", "ca3", "exam"], description: "current = every recorded mark (default); ca = all continuous assessment; ca1, ca2, ca3 = that single CA; exam = exam only" }, subject: { type: "string", description: "Subject name or stored index, for one subject only" }, topN: { type: "integer" }, includeMissing: { type: "boolean" }, breakdown: { type: "boolean", description: "Add the simple breakdown for every subject at once. With a single subject named, also return that subject's full table" }, list: { type: "boolean", description: "Return every learner's marks for every subject analysed, as the whole score sheet" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
+  { type: "function", function: { name: "class_analysis", description: "One call gives a complete class analysis from the Results Portal: coverage, per-subject pass/fail rates, per-subject top performers, and the overall top and bottom order. It reads the whole class once and does the arithmetic on the server. Use it for every class performance question and call it only once per class. Omit classKey to compare every class on its average and pass rate in this one call. basis defaults to current, which uses every mark recorded so far and compares percentages so a learner whose exam is not entered yet still ranks; name a basis only when the proprietor asks to grade on that part alone. Pass subject only for exactly one subject; topN changes how many leaders are returned; includeMissing names learners with nothing on the chosen basis; breakdown true adds a simple per-subject breakdown (bands, component averages, strongest and weakest) for every subject in this one call, so use it alone for 'break it down'; add subject only for one named subject, which also returns the full table. list true returns the whole score sheet in the same call, for requests to list every score. source true adds sourceTable, the exact marks behind every ranked learner, for 'show me the source table' or a spot check.", parameters: { type: "object", properties: { classKey: { type: "string", description: "The class to analyse. Leave it out for a whole-school comparison" }, basis: { type: "string", enum: ["current", "ca", "ca1", "ca2", "ca3", "exam"], description: "current = every recorded mark (default); ca = all continuous assessment; ca1, ca2, ca3 = that single CA; exam = exam only" }, subject: { type: "string", description: "Subject name or stored index, for one subject only" }, topN: { type: "integer" }, includeMissing: { type: "boolean" }, breakdown: { type: "boolean", description: "Add the simple breakdown for every subject at once. With a single subject named, also return that subject's full table" }, list: { type: "boolean", description: "Return every learner's marks for every subject analysed, as the whole score sheet" }, source: { type: "boolean", description: "Add sourceTable: the exact recorded marks, percent and total behind each ranked learner, so a figure can be checked" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
   { type: "function", function: { name: "results_history", description: "Read prior terms and sessions the signed-in proprietor can access in the Results Portal. Use for historical comparisons; the portal enforces the account's access.", parameters: { type: "object", properties: { classKey: { type: "string" }, studentId: { type: "string" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
   {
     type: "function",
@@ -614,6 +635,8 @@ CLASS AND RESULT ANALYSIS
 - Use the numbers the tool returns exactly. Never count rows, average marks or work out a rate in your head.
 - A term fills up bit by bit: CA, then tests, then exam one subject after another. That is normal, never a fault to report.
 - "Current" means every mark recorded so far, CA and any exam already entered. Leave basis at current and score all of it. Only when the proprietor says exam alone, test alone, first CA alone, second CA or third CA alone do you pass that basis and grade on that part only.
+- Pass and fail always use the portal's own grading and nothing else: a learner's total out of 100 (CA1 + CA2 + CA3 + exam) at or above the pass mark. class_analysis returns that mark as passMark. State it in every answer that carries a pass or fail figure, as "pass mark 40" or similar. Never mix an exam-only rate with a total rate, and never use a rate the tool did not return.
+- When the question is about the exam, quote the exam score itself from rankedMark, not the total. The same holds for any named part: quote the score for that part, and let the total sit beside it if it helps.
 - Give the class, session, term, roster size and the denominator behind every rate. A subject with only a few marks on the chosen basis is reported against those marks, not against the whole class, and you say so.
 - Marks are out of 10 for each CA and out of 70 for the exam; quote the maximum with any average and never invent one.
 - Never say a class has no data, or tell the proprietor to finish the exam, when CA is recorded. Answer with what is in the records and mention how much of the exam is in yet.
@@ -632,6 +655,7 @@ OTHER SYSTEM WORK
 - Notifications: read settings, recipients, templates and queues through notification_request. A send needs the exact recipients, template or message text and scope confirmed first.
 - Results Portal: use results_request for any portal action that the specialist tools do not cover, read or write. Every system applies the signed-in proprietor's own permissions; a refusal is that system's rule, not yours.
 - When a system is not reachable, say which one and what part was unavailable. Never fill the gap with a guess or send the proprietor off to do the work by hand.
+- When a field the proprietor asked for is simply empty in the record, say that in one flat line: "No home address is stored for him." Do not offer two readings side by side and do not hedge with "it may exist but not be reachable". If a lookup did not finish, name the part that was not checked instead of talking about time.
 
 TOOLS BY JOB
 - Class marks, pass/fail, coverage, averages, ranks, top performers: class_analysis (once).
@@ -671,6 +695,7 @@ STYLE
 - Then give only the figures that answer it, the few that matter, and stop. Short sentences; two to five lines on a phone. A full list is right when the question asks for a list.
 - If the question pushes back on the last answer, or says it is wrong, settle that point first in one plain sentence. Own a mistake outright: "You're right — that class has nothing recorded." Never defend the old answer.
 - Write in the chat as prose and bullets, never a table. A table is only right when the person asks for one.
+- On a long answer, put the headline first as one plain line — the number, the class, the name that matters — then the detail. Example: "JSS 3 Yoruba passes 49 of 55 (89.1%), pass mark 40, and Qozeem Yusroh is the weakest on the exam at 14."
 - Say figures the way they were counted. Never round differently, never invent a second figure for the same thing.
 - When the answer is thin, lead with that fact, not with the count: "Primary 4 is barely started — one mark in the whole class."
 - Say what it means: "JSS 3 is ahead", "the exam is barely in yet, so this can still move".
@@ -748,6 +773,7 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
     for (;;) {
       const item = queue.shift();
       if (!item) return;
+      current.progress?.(`Reading ${item.label}`);
       const made = await classAnalysisOne(current, { ...args, classKey: item.key, breakdown: false, list: false, includeMissing: false }, sharedGrades) as Record<string, unknown>;
       if (made.ok !== true) { skipped.push({ class: item.label, code: String(made.code || "UNREAD") }); continue; }
       if (!Number(made.gradedSubjectEntries || 0)) continue;
@@ -761,7 +787,7 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
       });
     }
   };
-  await Promise.all([worker(), worker(), worker()]);
+  await Promise.all([worker(), worker(), worker(), worker()]);
   ranked.sort((a, b) => Number(b.averagePercent ?? -1) - Number(a.averagePercent ?? -1) || Number(b.passRate ?? -1) - Number(a.passRate ?? -1));
   ranked.forEach((row, index) => { row.rank = index + 1; });
   if (!ranked.length) return { ok: false, code: "RESULT_NO_MARKS_ANYWHERE", detail: "No class has a mark recorded yet on this basis.", hint: "Say that no marks are recorded yet and ask the proprietor to enter them in the Results Portal." };
@@ -797,15 +823,16 @@ async function classAnalysisOne(current: CurrentSession, args: Record<string, un
   const call = await openResults(current);
   const set = await call("context.set", { class_key: payload.class_key, academic_session: payload.academic_session, term: payload.term });
   if (!set?.ok) return set;
+  // The subject list and settings do not depend on the sheet read, so they go
+  // out beside it instead of after it. That is one round trip saved per class.
+  const extras = Promise.all([
+    classSubjects(current, call, String(payload.class_key)).catch(() => ({ ok: false, code: "RESULT_SUBJECTS_FAILED", rows: [] as Record<string, unknown>[] })),
+    sharedGrades ? Promise.resolve(null) : call("settings.read", {}).catch(() => null),
+  ]);
   let summary = await call("read.result_summary", payload);
   if (summary?.code === "RESULT_CONTEXT_MISMATCH") summary = await call("read.result_summary", payload);
+  const [subjectResponse, configResponse] = await extras;
   if (!summary?.ok) return { ...summary, hint: "The class read failed. Check the class name, session and term in TURN STATE, then call class_analysis once more with corrected values." };
-  const [subjectResponse, configResponse] = sharedGrades
-    ? [await call("read.subjects", { class_key: payload.class_key }), null]
-    : await Promise.all([
-      call("read.subjects", { class_key: payload.class_key }),
-      call("settings.read", {}),
-    ]);
   if (!subjectResponse?.ok) return subjectResponse;
 
   const bag = (summary.summary || {}) as { students?: Record<string, unknown>[]; scores?: Record<string, unknown>[] };
@@ -824,13 +851,24 @@ async function classAnalysisOne(current: CurrentSession, args: Record<string, un
     : Array.isArray(config?.gradeScale) && config.gradeScale.length
       ? config.gradeScale as Record<string, unknown>[]
       : DEFAULT_GRADE_SCALE;
-  const didPass = (total: number) => {
-    const value = Math.floor(total);
-    const grade = gradeScale.find((row) => value >= Number(row.min) && value <= Number(row.max));
-    if (!grade) return gradeOf(total).r !== "Fail";
-    const remark = String(grade.r || grade.remark || "").toLowerCase();
-    const gradeName = String(grade.g || grade.grade || "").toUpperCase();
-    return !remark.includes("fail") && gradeName !== "F9";
+  // Pass/fail is the portal's own rule and nowhere else: the learner's total
+  // out of 100 at or above the pass mark. The mark is taken from the live grade
+  // scale, so a school that moves it moves this too, and it is reported back so
+  // every answer can state it.
+  const passMarks = gradeScale
+    .filter((row) => {
+      const remark = String(row.r || row.remark || "").toLowerCase();
+      return !remark.includes("fail") && String(row.g || row.grade || "").toUpperCase() !== "F9";
+    })
+    .map((row) => Number(row.min))
+    .filter((value) => Number.isFinite(value));
+  const passMark = passMarks.length ? Math.min(...passMarks) : 40;
+  const didPass = (total: number) => total >= passMark;
+  /** The same list, extended past the cut while the score is tied. */
+  const withTies = <T extends { percent: number | null }>(list: T[], size: number) => {
+    const kept = list.slice(0, size);
+    while (kept.length < list.length && Number(list[kept.length].percent) === Number(kept[kept.length - 1]?.percent)) kept.push(list[kept.length]);
+    return kept;
   };
   const subjectIndexes = [...subjectNames.keys()].sort((a, b) => a - b);
   for (const row of rawScores) {
@@ -942,15 +980,26 @@ async function classAnalysisOne(current: CurrentSession, args: Record<string, un
     // A learner counts once any mark on the chosen basis is there.
     const marked = rows.filter((entry) => entry.percent !== null);
     const exams = rows.filter((entry) => entry.exam !== null);
-    const passed = marked.filter((entry) => didPass(Number(entry.percent)));
+    // A learner passes on the total out of 100, never on the basis percentage.
+    const passed = marked.filter((entry) => didPass(Number(entry.total) || 0));
     const ranked = marked.slice().sort((a, b) => Number(b.percent) - Number(a.percent) || a.name.localeCompare(b.name));
-    const cutoff = ranked.length >= 3 ? Number(ranked[2].percent) : Number.NEGATIVE_INFINITY;
-    const leaders = ranked.filter((entry) => Number(entry.percent) >= cutoff).slice(0, chosenIndexes.length === 1 ? topN : Math.min(topN, 3)).map((entry) => ({
-      name: entry.name,
-      percent: Number(entry.percent),
-      total: entry.total === "" ? null : Number(entry.total),
-      exam: entry.exam,
-    }));
+    const rankedRow = (entry: typeof ranked[number]) => {
+      const marks: Record<string, number | null> = {};
+      for (const field of basis.fields) marks[field] = markOf(entry.row, field);
+      return {
+        name: entry.name,
+        percent: Number(entry.percent),
+        marks,
+        rankedMark: basis.fields.length === 1 ? marks[basis.fields[0]] : null,
+        total: entry.total === "" ? null : Number(entry.total),
+        totalOutOf100: entry.total === "" ? null : Number(entry.total),
+        exam: entry.exam,
+        pass: didPass(Number(entry.total) || 0),
+      };
+    };
+    const show = chosenIndexes.length === 1 ? topN : Math.min(topN, 3);
+    const leaders = withTies(ranked, show).map(rankedRow);
+    const weakest = ranked.slice().reverse().length ? withTies(ranked.slice().reverse(), show).map(rankedRow) : [];
     const missingNames = missingWanted
       ? students.filter((student) => !marked.some((entry) => entry.studentId === String(student.id))).map((student) => String(student.name || "Student")).sort()
       : undefined;
@@ -975,6 +1024,7 @@ async function classAnalysisOne(current: CurrentSession, args: Record<string, un
       failedOnPortalGradeScale: marked.length - passed.length,
       passRate: marked.length ? Math.round(passed.length * 1000 / marked.length) / 10 : null,
       topByPercent: leaders,
+      weakestByPercent: weakest,
       ...(missingNames ? { studentsWithoutMarkOnBasis: missingNames } : {}),
     };
   });
@@ -1108,6 +1158,31 @@ async function classAnalysisOne(current: CurrentSession, args: Record<string, un
   const actualExamEntries = subjects.reduce((sum, subject) => sum + subject.studentsWithExam, 0);
   const gradedCount = subjects.reduce((sum, subject) => sum + subject.gradedOnBasis, 0);
   const passCount = subjects.reduce((sum, subject) => sum + subject.passedOnPortalGradeScale, 0);
+  const orderedTied = withTies(ordered.map((entry) => ({ ...entry, percent: entry.averagePercent })), topN);
+  const orderedLowest = withTies(ordered.slice().reverse().map((entry) => ({ ...entry, percent: entry.averagePercent })), topN)
+    .map(({ percent: _percent, ...rest }) => rest);
+  // The rows behind the ranking, so any figure in the answer can be checked.
+  let sourceTable: Record<string, unknown>[] | undefined;
+  if (args.source === true) {
+    const named = new Set(ordered.map((entry) => entry.name));
+    const out: Record<string, unknown>[] = [];
+    for (const index of chosenIndexes) {
+      for (const entry of rowsForSubject(index)) {
+        if (!named.has(entry.name)) continue;
+        const marks: Record<string, number | null> = {};
+        for (const field of basis.fields) marks[field] = markOf(entry.row, field);
+        out.push({
+          learner: entry.name,
+          subject: subjectNames.get(index) || `Subject ${index}`,
+          marks,
+          percent: entry.percent,
+          totalOutOf100: entry.total === "" ? null : Number(entry.total),
+          pass: didPass(Number(entry.total) || 0),
+        });
+      }
+    }
+    sourceTable = out.slice(0, 400);
+  }
   return {
     ok: true,
     source: "results_portal_complete_class_read",
@@ -1130,15 +1205,18 @@ async function classAnalysisOne(current: CurrentSession, args: Record<string, un
     totalPassCount: passCount,
     totalFailCount: gradedCount - passCount,
     overallPassRate: gradedCount ? Math.round(passCount * 1000 / gradedCount) / 10 : null,
-    passMethod: "Each learner is scored on the marks recorded on the chosen basis, as a percentage of the maximum for those parts, then the portal's grade scale is applied. The denominator is the learners with a mark on that basis, never the whole roster.",
-    rankingMethod: "Average of each learner's percentage across the subjects analysed, highest first, on the chosen basis. A learner appears once they have a mark on that basis in any subject.",
+    passMark,
+    passRule: `A learner passes when the total out of 100 (CA1 + CA2 + CA3 + exam) is ${passMark} or more, the portal's own pass mark. CA counts up to 30 and the exam up to 70.`,
+    passMethod: `Pass/fail is counted on the learner's total out of 100 against the pass mark of ${passMark}, exactly as the portal grades. Each ranked percentage is a share of the maximum for the parts recorded on the chosen basis; the denominator is the learners with a mark on that basis, never the whole roster.`,
+    rankingMethod: "Each learner is averaged on their percentage in the subjects analysed, highest first, on the chosen basis. A learner appears once they have a mark on that basis in any subject. Learners level on the same percentage share the position and are all listed.",
     studentsRanked: ordered.length,
-    topStudentsOverall: ordered.slice(0, topN),
-    bottomStudentsOverall: ordered.length > topN ? ordered.slice(-topN).reverse() : [],
+    topStudentsOverall: orderedTied.map(({ percent: _percent, ...rest }) => rest),
+    bottomStudentsOverall: orderedLowest,
     subjects,
     ...(breakdown ? { breakdown } : {}),
     ...(breakdowns ? { breakdowns, breakdownsHint: "Every subject is here. Name one of them for its full table." } : {}),
     ...(scoreSheet ? { scoreSheet } : {}),
+    ...(sourceTable ? { sourceTable, sourceTableHint: "One row per learner and subject: the marks on the basis, the percent, the total out of 100 and pass/fail." } : {}),
   };
 }
 
@@ -1172,16 +1250,19 @@ function pendingWrites(name: string, args: Record<string, unknown>) {
 }
 
 /** One short, exact sentence of what the tap will change. */
-function pendingSummary(name: string, args: Record<string, unknown>, label: { who?: string; where?: string } = {}) {
+function pendingSummary(name: string, args: Record<string, unknown>, label: { who?: string; where?: string; subject?: string; before?: Record<string, unknown> } = {}) {
   const payload = (args.payload && typeof args.payload === "object" ? args.payload : {}) as Record<string, unknown>;
   if (name === "results_request") {
     const action = String(args.action || "");
     const who = label.who || String(payload.student_id || payload.name || payload.admno || "the record");
     const where = label.where || [payload.class_key, payload.term, payload.subject_index === undefined ? "" : `subject ${payload.subject_index}`].filter(Boolean).join(", ");
     if (action === "scores.enter") {
+      const shown = (value: unknown) => (value === null || value === undefined || value === "" ? "blank" : String(value));
+      // Each change is written as old → new, so a wrong subject or a wrong
+      // learner is obvious before the tap.
       const parts = MARK_FIELDS
         .filter((field) => payload[field] !== undefined)
-        .map((field) => `${field === "exam" ? "exam" : field.toUpperCase()} ${payload[field] === null || payload[field] === "" ? "blank" : payload[field]}`);
+        .map((field) => `${field === "exam" ? "exam" : field.toUpperCase()} ${shown(label.before?.[field])} → ${shown(payload[field])}`);
       const rest = parts.length < MARK_FIELDS.length ? " The other marks stay as they are." : "";
       return `Save marks for ${who}${where ? ` — ${where}` : ""}${parts.length ? `: ${parts.join(", ")}` : ""}.${rest}`;
     }
@@ -1299,13 +1380,32 @@ async function verifyWrite(name: string, args: Record<string, unknown>, current:
 /** Read a person's name and class so the confirmation reads like a person, not an id. */
 async function cardLabel(name: string, args: Record<string, unknown>, current: CurrentSession) {
   const payload = (args.payload && typeof args.payload === "object" ? args.payload : {}) as Record<string, unknown>;
-  const label: { who?: string; where?: string } = {};
+  const label: { who?: string; where?: string; subject?: string; before?: Record<string, unknown> } = {};
   if (name === "results_request" && payload.student_id) {
     const read = await registry(current, "read", "student", { studentId: String(payload.student_id) }).catch(() => null);
     const found = (Array.isArray(read?.students) ? read.students[0] : read?.student) as Record<string, unknown> | undefined;
     if (found?.name) label.who = String(found.name);
     const classKey = classKeyOf(found?.class_key || payload.class_key);
-    if (classKey) label.where = [classLabel(classKey), payload.term].filter(Boolean).join(", ");
+    // A marks change is ambiguous by subject alone, so the card names the
+    // subject and shows the mark it is replacing.
+    if (String(args.action) === "scores.enter" && classKey && payload.subject_index !== undefined) {
+      const index = Number(payload.subject_index);
+      const [subjects, scores] = await Promise.all([
+        results(current, "read.subjects", { class_key: classKey }).catch(() => null),
+        (async () => {
+          const call = await openResults(current);
+          await call("context.set", { class_key: classKey, academic_session: payload.academic_session || null, term: payload.term || null });
+          return call("read.scores", { class_key: classKey, student_id: payload.student_id, subject_index: index, term: payload.term, academic_session: payload.academic_session }).catch(() => null);
+        })(),
+      ]);
+      const subject = (Array.isArray(subjects?.rows) ? subjects.rows as Record<string, unknown>[] : [])
+        .find((row) => Number(row.subject_index) === index);
+      if (subject?.subject_name) label.subject = String(subject.subject_name);
+      const rows = Array.isArray(scores?.rows) ? scores.rows as Record<string, unknown>[] : [];
+      const row = rows.find((item) => String(item.student_id) === String(payload.student_id) && Number(item.subject_index) === index);
+      if (row) label.before = row;
+    }
+    if (classKey) label.where = [classLabel(classKey), label.subject, payload.term].filter(Boolean).join(", ");
   }
   return label;
 }
@@ -1774,6 +1874,7 @@ async function gateway(messages: unknown[], settings: ModelSettings, current: Cu
       const key = `${call.name}:${JSON.stringify(args)}`;
       const cached = seen.get(key);
       if (cached) { history.push({ role: "tool", callId: call.id, content: cached }); continue; }
+      current.progress?.(progressText(call.name, args));
       let result: unknown;
       try {
         result = await executeTool(call.name, args, current);
@@ -1823,8 +1924,8 @@ async function gateway(messages: unknown[], settings: ModelSettings, current: Cu
     if (Date.now() - started > totalBudget) { ranOut = true; break; }
   }
   const note = ranOut
-    ? "\n\nThere was more to do than the time allowed, so any part still missing above was not reached."
-    : "\n\nA connected service stopped this request, so any part still missing above was not reached.";
+    ? "\n\nSome of that is still to do — ask for the missing part and I will carry on from here."
+    : "\n\nA connected system did not answer, so a part of this may be missing.";
   if (ranOut || !partial.trim()) {
     const closingLeft = totalBudget - (Date.now() - started);
     if (closingLeft >= 4000) {
@@ -1851,6 +1952,28 @@ async function gateway(messages: unknown[], settings: ModelSettings, current: Cu
       ? `${labels.join(", ")}.${partial.trim() ? `\n\n${partial.trim()}` : ""}${note}`
       : `The connected school systems did not finish this request.${note}`;
   return { ok: true, text: fallback, usage: null, steps: used, truncated: true, document: doc || undefined };
+}
+
+/** A short, plain note about the work in hand, for the live wait line. */
+function progressText(name: string, args: Record<string, unknown>) {
+  const classKey = classKeyOf(args.classKey);
+  const subject = typeof args.subject === "string" ? args.subject.trim() : "";
+  if (name === "class_analysis") {
+    if (!classKey) return "Reading every class";
+    return `Reading ${classLabel(classKey)}${subject ? ` ${subject}` : ""}`;
+  }
+  if (name === "find_students") return "Finding the learners";
+  if (name === "class_guardians") return "Checking the guardian phones";
+  if (name === "staff_directory") return "Reading the staff list";
+  if (name === "student_record" || name === "results_read" || name === "results_history") return "Reading the record";
+  if (name === "report_card") return "Building the report card";
+  if (name === "school_overview") return "Reading the school overview";
+  const action = String(args.action || "");
+  if (name === "results_request" && action) return action.endsWith(".enter") || action.endsWith(".update") ? "Saving the change" : "Reading the results portal";
+  if (name === "registry_request") return args.kind === "write" ? "Saving the record" : "Reading the registry";
+  if (name === "attendance_request") return "Reading the attendance register";
+  if (name === "notification_request") return "Reading the notifications";
+  return "Checking the school records";
 }
 
 /** Print a whole-school comparison as a short ranked answer. */
@@ -1907,13 +2030,18 @@ async function testConnection(settings: ModelSettings): Promise<Response> {
   return Response.json({ ok: true, ms, reply: String((answer.turn as Turn).text || "").trim().slice(0, 80), style }, { headers: noStoreHeaders() });
 }
 
-async function approve(token: string, current: CurrentSession) {
+async function approve(token: string, current: CurrentSession, reason = "") {
   const proposal = readApproval(current, token);
   const tool = String(proposal.tool || "");
   const args = (proposal.args && typeof proposal.args === "object" ? proposal.args : {}) as Record<string, unknown>;
   if (!tool) throw new IdentityApiError("ASSISTANT_TOOL_NOT_FOUND", 403);
   const summary = pendingSummary(tool, args, await cardLabel(tool, args, current));
-  const result = await executeTool(tool, args, current, true) as Record<string, unknown>;
+  // The reason travels with the write, so the portal's audit row keeps it.
+  const payload = (args.payload && typeof args.payload === "object" ? args.payload : {}) as Record<string, unknown>;
+  const saved = reason.trim()
+    ? { ...args, payload: { ...payload, reason: reason.trim().slice(0, 140) } }
+    : args;
+  const result = await executeTool(tool, saved, current, true) as Record<string, unknown>;
   if (result.requires_confirmation === true) throw new IdentityApiError("APPROVAL_INVALID", 400);
   // Say whether the record itself now shows the change.
   const verify = (result.verify || {}) as Record<string, unknown>;
@@ -1928,7 +2056,8 @@ async function approve(token: string, current: CurrentSession) {
     else if (verify.read_back === true) note = ` The record still shows an older value.${seen} Reload the sheet before relying on it.`;
     else if (verify.read_back === false) note = " The save was sent but the read-back does not show it yet; check the record before relying on it.";
   }
-  return { summary: `${summary}${note}`, tool, result };
+  const said = reason.trim() ? ` Reason: ${reason.trim()}.` : "";
+  return { summary: `${summary}${note}${said}`, tool, result, reason: reason.trim() };
 }
 
 class CardProblem extends Error {
@@ -2233,7 +2362,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => null) as Record<string, unknown> | null;
     if (!body || typeof body !== "object") return error("ASSISTANT_REQUEST_INVALID");
     if (typeof body.approval_token === "string" && body.approval_token) {
-      const completed = await approve(body.approval_token, current);
+      const reason = typeof body.reason === "string" ? body.reason.trim().slice(0, 140) : "";
+      const completed = await approve(body.approval_token, current, reason);
       return Response.json({ ok: true, completed }, { headers: noStoreHeaders() });
     }
 
@@ -2356,6 +2486,20 @@ export async function POST(request: NextRequest) {
       if (!created?.ok) {
         return Response.json({ ok: false, code: String(created?.code || "ASSISTANT_JOB_CREATE_FAILED") }, { status: 200, headers: noStoreHeaders() });
       }
+      // The wait line names what is being read, at most one write a second.
+      let lastProgress = "";
+      let lastProgressAt = 0;
+      current.progress = (text) => {
+        if (!text || text === lastProgress || Date.now() - lastProgressAt < 1000) return;
+        lastProgress = text;
+        lastProgressAt = Date.now();
+        void callPrivilegedRpc("school_assistant_job_progress", {
+          p_session_id: current.id,
+          p_session_secret: current.secret,
+          p_job_id: jobId,
+          p_progress: text,
+        }).catch(() => null);
+      };
       after(async () => {
         try {
           const payload = await runTurn();
