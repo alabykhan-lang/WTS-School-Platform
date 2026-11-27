@@ -167,3 +167,6 @@ assert.match(ui, /navigator\.clipboard\.writeText/);
 assert.match(ui, /href="\/assistant\/method"/);
 
 console.log("Assistant correctness contract passed");
+
+// A class row that stores its bare key still reads as a real class name.
+assert.match(route, /given && \/\[A-Z\]\| \/\.test\(given\) \? given : classLabel\(key\)/);

@@ -329,7 +329,13 @@ async function classCatalog(current: CurrentSession) {
     const read = await call("read.classes", {});
     const rows = (Array.isArray(read?.rows) ? read.rows as Record<string, unknown>[] : [])
       .filter((row) => row && row.class_key)
-      .map((row) => ({ key: String(row.class_key), label: String(row.display_name || classLabel(String(row.class_key))) }));
+      .map((row) => {
+        const key = String(row.class_key);
+        const given = String(row.display_name || "").trim();
+        // Some rows store the bare key ("primary4") as their name; the key is
+        // prettier than that, so a bare key is not trusted as a label.
+        return { key, label: given && /[A-Z]| /.test(given) ? given : classLabel(key) };
+      });
     if (rows.length) classCache.set(key, { at: Date.now(), rows });
     return rows;
   } catch {
