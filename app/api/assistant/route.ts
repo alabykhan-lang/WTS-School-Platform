@@ -649,14 +649,14 @@ CLASS AND RESULT ANALYSIS
 - A term fills up bit by bit: CA, then tests, then exam one subject after another. That is normal, never a fault to report.
 - "Current" means every mark recorded so far, CA and any exam already entered. Leave basis at current and score all of it. Only when the proprietor says exam alone, test alone, first CA alone, second CA or third CA alone do you pass that basis and grade on that part only.
 - Pass and fail always use the portal's own grading and nothing else: a learner's total out of 100 (CA1 + CA2 + CA3 + exam) at or above the pass mark. class_analysis returns that mark as passMark and the rule as passRuleLine. Put passRuleLine in every answer that carries a pass or fail figure, word for word, before the rate. State it in every answer with a pass or fail figure, so the formula is on the page. Never mix an exam-only rate with a total rate, and never use a rate the tool did not return.
-- When the question is about the exam, quote the exam score itself from rankedMark, not the total. The same holds for any named part: quote the score for that part, and let the total sit beside it if it helps.
+- When the question is about the exam, quote the exam score itself from rankedMark, not the total. The same holds for any named part: quote the score for that part, and let the total sit beside it if it helps. A top or weakest list always quotes the ranked score and names every learner on it; if five share second place, all five are listed.
 - Every rate names the class, session, term, roster size and its denominator. The denominator is the whole class (passDenominator): say "40 of 64 passed", not "40 of 62". A learner with no mark on the basis counts as not passing and is named in passRateNote; give that note in the same breath as the rate. Never headline passRateOfMarked when passRate differs.
 - State the range with any average, from percentLowest to percentHighest, and the maximum mark.
 - Marks are out of 10 for each CA and out of 70 for the exam; quote the maximum with any average and never invent one.
 - Never say a class has no data, or tell the proprietor to finish the exam, when CA is recorded. Answer with what is in the records and mention how much of the exam is in yet.
 - overallPassRate counts graded subject entries, not learners. Quote it as "40 of 64 graded entries passed" and use a subject's passRate when the question is about that subject.
 - A learner with no exam mark has no total that can pass, so they count as not passing until the exam lands. When a passRateNote is returned, say it in the same breath as the rate and name the learners it gives. Never quote an exam-only rate and call it the pass rate.
-- Missing exam marks across the school: call class_analysis once with NO classKey and includeMissing true. Lead with learnersWithNoExamMarkAtAll — "Only three learners have no exam mark at all: ..." with their names and classes — then the per-class examGapsBySubject, then which classes have no exam at all. Coverage goes last.
+- Missing exam marks across the school: call class_analysis once with NO classKey and includeMissing true. Lead with learnersWithNoExamMarkAtAll — "Only three learners in classes where the exam has started have no exam mark at all: ..." with their names and classes — then each class's examGapsBySubject, naming every learner against its own subject, then classesWithNoExamAtAll as a count and the class names. Then give subjectsWithNoExamAtAll per class as a count ("nine subjects have no exam mark at all"), not a name dump. Never move a name from one subject to another. Coverage goes last.
 - "Which class is most competitive", "which classes are best or worst", or any comparison between classes: call class_analysis once with NO classKey. It compares every class on its own average and pass rate. Name the strongest class first with its figure, then the weakest, and keep the rest to the few that matter.
 - Break a subject down when asked, even for "just show me" or "simply", and call class_analysis only ONCE. Leave subject out and pass breakdown true and you get every subject broken down in the same call; add subject only when the proprietor named one subject, which also returns the full table.
 - In a breakdown give the bands as a short list, the strongest and weakest few, and where the marks were lost (component averages against their maximums). Print the whole table only when the hint says to; otherwise top five and bottom five.
@@ -789,6 +789,7 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
   const ranked: Record<string, unknown>[] = [];
   const skipped: { class: string; code: string }[] = [];
   const schoolNoExam: { class: string; names: string[] }[] = [];
+  const emptyClasses: string[] = [];
   const queue = [...catalog];
   const worker = async () => {
     for (;;) {
@@ -797,12 +798,19 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
       current.progress?.(`Reading ${item.label}`);
       const made = await classAnalysisOne(current, { ...args, classKey: item.key, breakdown: false, list: false, includeMissing: args.includeMissing === true }, sharedGrades) as Record<string, unknown>;
       if (made.ok !== true) { skipped.push({ class: item.label, code: String(made.code || "UNREAD") }); continue; }
-      if (!Number(made.gradedSubjectEntries || 0)) continue;
       const noExam = Array.isArray(made.learnersWithNoExamMarkAtAll) ? made.learnersWithNoExamMarkAtAll as string[] : [];
-      if (noExam.length) schoolNoExam.push({ class: item.label, names: noExam });
-      const examGaps = (Array.isArray(made.subjects) ? made.subjects as Record<string, unknown>[] : [])
-        .filter((subject) => Array.isArray(subject.studentsWithoutMarkOnBasis) && (subject.studentsWithoutMarkOnBasis as unknown[]).length)
+      const subjectsHere = Array.isArray(made.subjects) ? made.subjects as Record<string, unknown>[] : [];
+      // A class with no exam in any subject is listed on its own, not name by name.
+      const everySubjectEmpty = subjectsHere.length > 0 && subjectsHere.every((subject) => !Number(subject.studentsWithExam || 0));
+      if (noExam.length && everySubjectEmpty) emptyClasses.push(item.label);
+      else if (noExam.length) schoolNoExam.push({ class: item.label, names: noExam });
+      if (!Number(made.gradedSubjectEntries || 0)) continue;
+      const examGaps = subjectsHere
+        .filter((subject) => Number(subject.studentsWithExam || 0) > 0 && Array.isArray(subject.studentsWithoutMarkOnBasis) && (subject.studentsWithoutMarkOnBasis as unknown[]).length)
         .map((subject) => ({ subject: subject.subject, names: subject.studentsWithoutMarkOnBasis }));
+      const noExamSubjects = subjectsHere
+        .filter((subject) => !Number(subject.studentsWithExam || 0))
+        .map((subject) => subject.subject);
       ranked.push({
         class: item.label,
         roster: made.rosterCount,
@@ -812,6 +820,7 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
         examCoverage: made.examCoverageRate,
         learnersWithNoExamMarkAtAll: noExam.length,
         ...(args.includeMissing === true && examGaps.length ? { examGapsBySubject: examGaps } : {}),
+        ...(args.includeMissing === true && noExamSubjects.length ? { subjectsWithNoExamAtAll: noExamSubjects } : {}),
       });
     }
   };
@@ -835,8 +844,9 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
     learnersWithNoExamMarkAtAll: schoolNoExam.reduce((sum, row) => sum + row.names.length, 0),
     learnersWithNoExamMarkAtAllNames: schoolNoExam.flatMap((row) => row.names.map((name) => `${name} (${row.class})`)).sort((a, b) => a.localeCompare(b)),
     classesWithNoExamMarkAtAll: schoolNoExam.map((row) => ({ class: row.class, count: row.names.length })),
+    classesWithNoExamAtAll: emptyClasses,
     method: "Classes are ordered by their average learner percentage on the chosen basis, with the pass rate breaking ties. Classes with no marks on that basis are left out.",
-    hint: "Name the mostCompetitive class first with its average and pass rate, then the leastCompetitive, then only the few in between that matter. Say the exam is barely in where coverage is low. When includeMissing was asked for, lead with learnersWithNoExamMarkAtAll and its names before the per-class gaps.",
+    hint: "Name the mostCompetitive class first with its average and pass rate, then the leastCompetitive, then only the few in between that matter. Say the exam is barely in where coverage is low. When includeMissing was asked for, lead with learnersWithNoExamMarkAtAll and its names before the per-class gaps, then classesWithNoExamAtAll.",
   };
 }
 
