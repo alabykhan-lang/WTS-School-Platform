@@ -640,6 +640,8 @@ CLASS AND RESULT ANALYSIS
 - Give the class, session, term, roster size and the denominator behind every rate. A subject with only a few marks on the chosen basis is reported against those marks, not against the whole class, and you say so.
 - Marks are out of 10 for each CA and out of 70 for the exam; quote the maximum with any average and never invent one.
 - Never say a class has no data, or tell the proprietor to finish the exam, when CA is recorded. Answer with what is in the records and mention how much of the exam is in yet.
+- overallPassRate counts graded subject entries, not learners. Quote it as "40 of 64 graded entries passed" and use a subject's passRate when the question is about that subject.
+- A learner with no exam mark has no total that can pass, so they count as not passing until the exam lands. When a passRateNote is returned, say it in the same breath as the rate. Never quote an exam-only rate and call it the pass rate.
 - "Which class is most competitive", "which classes are best or worst", or any comparison between classes: call class_analysis once with NO classKey. It compares every class on its own average and pass rate. Name the strongest class first with its figure, then the weakest, and keep the rest to the few that matter.
 - Break a subject down when asked, even for "just show me" or "simply", and call class_analysis only ONCE. Leave subject out and pass breakdown true and you get every subject broken down in the same call; add subject only when the proprietor named one subject, which also returns the full table.
 - In a breakdown give the bands as a short list, the strongest and weakest few, and where the marks were lost (component averages against their maximums). Print the whole table only when the hint says to; otherwise top five and bottom five.
@@ -1023,6 +1025,12 @@ async function classAnalysisOne(current: CurrentSession, args: Record<string, un
       passedOnPortalGradeScale: passed.length,
       failedOnPortalGradeScale: marked.length - passed.length,
       passRate: marked.length ? Math.round(passed.length * 1000 / marked.length) / 10 : null,
+      // Without an exam mark there is no total that can pass, so those learners
+      // sit in the denominator until the exam lands. Say so rather than let the
+      // figure look wrong.
+      ...(basis.fields.includes("exam") && students.length > exams.length
+        ? { passRateNote: `Learners with no exam mark yet count as not passing until it lands — ${students.length - exams.length} of ${students.length} have none.` }
+        : {}),
       topByPercent: leaders,
       weakestByPercent: weakest,
       ...(missingNames ? { studentsWithoutMarkOnBasis: missingNames } : {}),
@@ -1205,6 +1213,7 @@ async function classAnalysisOne(current: CurrentSession, args: Record<string, un
     totalPassCount: passCount,
     totalFailCount: gradedCount - passCount,
     overallPassRate: gradedCount ? Math.round(passCount * 1000 / gradedCount) / 10 : null,
+    overallPassRateNote: `${passCount} of ${gradedCount} graded subject entries passed. That is a share of entries, not of learners; for one subject use its passRate, which is learners.`,
     passMark,
     passRule: `A learner passes when the total out of 100 (CA1 + CA2 + CA3 + exam) is ${passMark} or more, the portal's own pass mark. CA counts up to 30 and the exam up to 70.`,
     passMethod: `Pass/fail is counted on the learner's total out of 100 against the pass mark of ${passMark}, exactly as the portal grades. Each ranked percentage is a share of the maximum for the parts recorded on the chosen basis; the denominator is the learners with a mark on that basis, never the whole roster.`,
