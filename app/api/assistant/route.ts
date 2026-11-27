@@ -2150,9 +2150,11 @@ async function gateway(messages: unknown[], settings: ModelSettings, current: Cu
     }
   }
   const labels = [...new Set(used)].map((name) => DONE_LABELS[name]).filter(Boolean);
-  const printed = sheet ? scoreSheetText(sheet) : compare ? compareText(compare) : "";
+  const lastSaid = ([...history].reverse().find((item) => item.role === "user") as { content?: string } | undefined)?.content || "";
+  const gapsFirst = /\b(missing|blank|not entered|no exam|behind)\b/i.test(lastSaid);
+  const printed = sheet ? scoreSheetText(sheet) : compare ? compareText(compare, gapsFirst) : "";
   const fallback = printed
-    ? `${printed}\n\nThat is every row in the records. Name one subject if you want it on its own.`
+    ? `${printed}\n\n${compare && gapsFirst ? "That is every gap on record." : "That is every row in the records. Name one subject if you want it on its own."}`
     : facts.length
     ? `Here is where it stands: ${facts.join("; ")}.${note}`
     : labels.length
@@ -2184,11 +2186,31 @@ function progressText(name: string, args: Record<string, unknown>) {
 }
 
 /** Print a whole-school comparison as a short ranked answer. */
-function compareText(compare: Record<string, unknown>) {
+function compareText(compare: Record<string, unknown>, gapsFirst = false) {
   const ranked = Array.isArray(compare.ranked) ? compare.ranked as Record<string, unknown>[] : [];
   const top = (compare.mostCompetitive || {}) as Record<string, unknown>;
   const low = (compare.leastCompetitive || {}) as Record<string, unknown>;
   const line = (row: Record<string, unknown>) => `${row.class}: ${row.averagePercent}% average; ${row.passCount ?? "?"} of ${row.passDenominator ?? "?"} learners pass (${row.passRate}%)`;
+  const gapParts: string[] = [];
+  if (compare.missingHeadline) {
+    gapParts.push(String(compare.missingHeadline));
+    if (compare.missingGapsText) gapParts.push(String(compare.missingGapsText));
+    if (compare.classesNoExamLine) gapParts.push(String(compare.classesNoExamLine));
+    if (compare.noExamSubjectsText) gapParts.push(String(compare.noExamSubjectsText));
+    if (compare.skippedText) gapParts.push(String(compare.skippedText));
+  }
+  if (gapsFirst && gapParts.length) {
+    return [
+      ...gapParts,
+      "",
+      "For the rank that sits over those gaps:",
+      `${String(top.class)} is the strongest class right now — ${line(top).replace(`${String(top.class)}: `, "")}.`,
+      `The weakest is ${line(low)}.`,
+      "",
+      "In order:",
+      ...ranked.map((row) => `- ${line(row)}`),
+    ].join("\n");
+  }
   const parts = [
     `${String(top.class)} is the strongest class right now — ${line(top).replace(`${String(top.class)}: `, "")}.`,
     `The weakest is ${line(low)}.`,
