@@ -142,21 +142,7 @@ async function currentSession(request: Request): Promise<CurrentSession> {
   return { ...current, context };
 }
 
-/** One app session per request per app, so a school-wide read pays for one SSO exchange, not one per class. */
-const appSessionCache = new WeakMap<CurrentSession, Map<string, Promise<AppSession>>>();
-
 async function mintAppSession(current: CurrentSession, app: "registry" | "results" | "attendance" | "notifications"): Promise<AppSession> {
-  let perCurrent = appSessionCache.get(current);
-  if (!perCurrent) { perCurrent = new Map(); appSessionCache.set(current, perCurrent); }
-  const hit = perCurrent.get(app);
-  if (hit) return hit;
-  const made = mintAppSessionOnce(current, app);
-  perCurrent.set(app, made);
-  made.catch(() => { if (perCurrent?.get(app) === made) perCurrent.delete(app); });
-  return made;
-}
-
-async function mintAppSessionOnce(current: CurrentSession, app: "registry" | "results" | "attendance" | "notifications"): Promise<AppSession> {
   const client = app === "registry"
     ? { id: "central_registry", target: "central_registry", redirect: `${portalOrigins.centralRegistry}/` }
     : app === "attendance"
@@ -806,14 +792,18 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
   const emptyClasses: string[] = [];
   const queue = [...catalog];
   const worker = async () => {
+    // One portal session per worker, so ten classes read at once without ten
+    // identity sign-ins per class or a shared context fighting itself.
+    let call: ResultsCall | null = null;
+    try { call = await openResults(current); } catch { call = null; }
     for (;;) {
       const item = queue.shift();
       if (!item) return;
       current.progress?.(`Reading ${item.label}`);
-      let made = await classAnalysisOne(current, { ...args, classKey: item.key, breakdown: false, list: false, includeMissing: true }, sharedGrades) as Record<string, unknown>;
+      let made = await classAnalysisOne(current, { ...args, classKey: item.key, breakdown: false, list: false, includeMissing: true }, sharedGrades, call ?? undefined) as Record<string, unknown>;
       // One class can be shed while ten are read at once; try it once more
       // before writing it off.
-      if (made.ok !== true) made = await classAnalysisOne(current, { ...args, classKey: item.key, breakdown: false, list: false, includeMissing: true }, sharedGrades) as Record<string, unknown>;
+      if (made.ok !== true) made = await classAnalysisOne(current, { ...args, classKey: item.key, breakdown: false, list: false, includeMissing: true }, sharedGrades, call ?? undefined) as Record<string, unknown>;
       if (made.ok !== true) { skipped.push({ class: item.label, code: String(made.code || "UNREAD") }); continue; }
       const noExam = Array.isArray(made.learnersWithNoExamMarkAtAll) ? made.learnersWithNoExamMarkAtAll as string[] : [];
       const subjectsHere = Array.isArray(made.subjects) ? made.subjects as Record<string, unknown>[] : [];
@@ -904,7 +894,9 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
 }
 
 /** One class, measured across every subject, from a single read of that class. */
-async function classAnalysisOne(current: CurrentSession, args: Record<string, unknown>, sharedGrades?: Record<string, unknown>[]) {
+type ResultsCall = Awaited<ReturnType<typeof openResults>>;
+
+async function classAnalysisOne(current: CurrentSession, args: Record<string, unknown>, sharedGrades?: Record<string, unknown>[], prepared?: ResultsCall) {
   const requestedClass = classKeyOf(args.classKey);
   if (!requestedClass) return { ok: false, code: "RESULT_CLASS_REQUIRED", detail: "Name the class to analyse.", hint: "Call class_analysis again with one of the class names in TURN STATE." };
   const payload = await withAcademicContext(current, {
@@ -914,7 +906,7 @@ async function classAnalysisOne(current: CurrentSession, args: Record<string, un
   });
   if (!payload.term || !payload.academic_session) return { ok: false, code: "RESULT_ACADEMIC_CONTEXT_REQUIRED", detail: "The Results Portal has no current session and term.", hint: "Say that no live term is set and ask the proprietor to set it in the Results Portal." };
 
-  const call = await openResults(current);
+  const call = prepared || await openResults(current);
   const set = await call("context.set", { class_key: payload.class_key, academic_session: payload.academic_session, term: payload.term });
   if (!set?.ok) return set;
   // The subject list and settings do not depend on the sheet read, so they go
