@@ -158,6 +158,7 @@ assert.match(route, /noExamSubjectsText/);
 assert.match(route, /skippedText/);
 assert.match(route, /basisLowestMark/);
 assert.match(route, /marksRecordedOutOf/);
+assert.match(route, /failedNames/);
 // The source table carries its own percent column in a fixed order.
 assert.match(route, /sourceTableColumns/);
 assert.match(route, /"Percent", "Total \/100", "Pass"/);
