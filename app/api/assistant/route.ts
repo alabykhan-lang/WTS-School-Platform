@@ -1399,19 +1399,29 @@ async function cardLabel(name: string, args: Record<string, unknown>, current: C
     // subject and shows the mark it is replacing.
     if (String(args.action) === "scores.enter" && classKey && payload.subject_index !== undefined) {
       const index = Number(payload.subject_index);
-      const [subjects, scores] = await Promise.all([
-        results(current, "read.subjects", { class_key: classKey }).catch(() => null),
-        (async () => {
-          const call = await openResults(current);
-          await call("context.set", { class_key: classKey, academic_session: payload.academic_session || null, term: payload.term || null });
-          return call("read.scores", { class_key: classKey, student_id: payload.student_id, subject_index: index, term: payload.term, academic_session: payload.academic_session }).catch(() => null);
-        })(),
-      ]);
+      // One session, one context: the class read and the sheet read share it, so
+      // they run in order rather than racing each other. The sheet read gets a
+      // retry because the portal can answer before its context lands.
+      const call = await openResults(current);
+      await call("context.set", { class_key: classKey, academic_session: payload.academic_session || null, term: payload.term || null });
+      const subjects = await call("read.subjects", { class_key: classKey }).catch(() => null);
       const subject = (Array.isArray(subjects?.rows) ? subjects.rows as Record<string, unknown>[] : [])
         .find((row) => Number(row.subject_index) === index);
       if (subject?.subject_name) label.subject = String(subject.subject_name);
-      const rows = Array.isArray(scores?.rows) ? scores.rows as Record<string, unknown>[] : [];
-      const row = rows.find((item) => String(item.student_id) === String(payload.student_id) && Number(item.subject_index) === index);
+      const sheet = async () => {
+        const read = await call("read.scores", { class_key: classKey, student_id: payload.student_id, subject_index: index, term: payload.term, academic_session: payload.academic_session });
+        const rows = Array.isArray(read?.rows) ? read.rows as Record<string, unknown>[] : [];
+        return rows.find((item) => String(item.student_id) === String(payload.student_id) && Number(item.subject_index) === index) || null;
+      };
+      let row = await sheet().catch(() => null);
+      if (!row) row = await sheet().catch(() => null);
+      // Still nothing means the sheet read is unhappy, not that the mark is
+      // blank. The class summary carries every score, so it settles the value.
+      if (!row) {
+        const summary = await call("read.result_summary", { class_key: classKey, term: payload.term, academic_session: payload.academic_session }).catch(() => null);
+        const scores = ((summary?.summary || {}) as { scores?: Record<string, unknown>[] }).scores || [];
+        row = scores.find((item) => String(item.student_id) === String(payload.student_id) && Number(item.subject_index) === index) || null;
+      }
       if (row) label.before = row;
     }
     if (classKey) label.where = [classLabel(classKey), label.subject, payload.term].filter(Boolean).join(", ");
