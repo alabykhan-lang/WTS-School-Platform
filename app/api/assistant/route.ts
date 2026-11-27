@@ -370,7 +370,12 @@ function classKeyOf(value: unknown) {
 
 /** "ss2-science" reads as "SS2 Science" when no display name is saved. */
 function classLabel(key: string) {
-  return key.split("-").filter(Boolean).map((part, index) => (index === 0 ? part.toUpperCase() : part.charAt(0).toUpperCase() + part.slice(1))).join(" ");
+  const [head, ...rest] = key.split("-").filter(Boolean);
+  if (!head) return "";
+  // "JSS 2", not "JSS2", and "Primary 3", not "PRIMARY3".
+  const base = head.replace(/^([a-z]+)(\d)/, "$1 $2");
+  const word = base.replace(/^([a-z]+)/, (word_) => (/^(jss|ss|kg)$/i.test(word_) ? word_.toUpperCase() : word_.charAt(0).toUpperCase() + word_.slice(1)));
+  return [word, ...rest.map((part) => part.charAt(0).toUpperCase() + part.slice(1))].join(" ");
 }
 
 async function withAcademicContext(current: CurrentSession, payload: Record<string, unknown>): Promise<Record<string, unknown>> {

@@ -170,3 +170,6 @@ console.log("Assistant correctness contract passed");
 
 // A class row that stores its bare key still reads as a real class name.
 assert.match(route, /given && \/\[A-Z\]\| \/\.test\(given\) \? given : classLabel\(key\)/);
+
+// A stored key reads as "JSS 2", never "JSS2".
+assert.match(route, /replace\(\/\^\(\[a-z\]\+\)\(\\d\)\/, "\$1 \$2"\)/);
