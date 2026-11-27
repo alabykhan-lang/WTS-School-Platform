@@ -13,7 +13,8 @@ const rules: { heading: string; body: string[] }[] = [
     body: [
       "A learner passes when their total out of 100 is at or above the school's pass mark. The mark comes from the school's own grade bands and is 40 by default.",
       "The total is CA1 + CA2 + CA3 (each out of 10, 30 together) plus the exam (out of 70). This is exactly how the Results Portal grades a report card.",
-      "The pass mark is stated in every answer that gives a pass or fail figure. An exam-only rate is never mixed with a total-based rate.",
+      "The pass mark is stated in every answer that gives a pass or fail figure, with the formula. An exam-only rate is never mixed with a total-based rate.",
+      "The rate is counted against the whole class. A learner with no mark on the chosen part counts as not passing until it lands, and is named beside the rate, so \"40 of 64 passed\" never hides the two blanks.",
     ],
   },
   {
@@ -30,13 +31,13 @@ const rules: { heading: string; body: string[] }[] = [
     body: [
       "Recorded marks are never treated as a fault or as missing work. The answer uses what is on file and says how much of the exam is in.",
       "\"Current\" means every mark recorded so far. Naming a part (CA1, the test, the exam) narrows the basis to that part alone.",
-      "A subject rate is counted against the learners with a mark on that basis, never the whole class, and the denominator is stated.",
+      "A learner with no mark on the basis has no total that can pass, so the class is the rate's denominator and those learners are named. A percentage is always a share of the marks actually recorded.",
     ],
   },
   {
     heading: "Checking a figure",
     body: [
-      "Ask \"show me the source table\" and the assistant returns one row per learner and subject: the marks, the percentage, the total out of 100 and whether that learner passed.",
+      "Ask \"show me the source table\" and the assistant returns one row per learner and subject: the marks, a Percent column, the total out of 100 and whether that learner passed.",
       "Every answer can also be printed or copied on its own from the buttons under it.",
     ],
   },

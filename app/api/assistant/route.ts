@@ -606,7 +606,7 @@ const tools = [
   { type: "function", function: { name: "student_record", description: "Read one student's complete record by id, including guardian contacts.", parameters: { type: "object", required: ["studentId"], properties: { studentId: { type: "string" } } } } },
   { type: "function", function: { name: "staff_directory", description: "Read the staff directory and active assignments.", parameters: { type: "object", properties: { search: { type: "string" } } } } },
   { type: "function", function: { name: "results_read", description: "Read information available to the signed-in proprietor in the Results Portal. Use for results, marks, subject lists, publication, traits, remarks, fees, class rosters, and report-card context. The portal applies the account's permissions and class scope. For class performance, pass/fail, coverage, averages, or rankings, use class_analysis so the complete class is read and summarized in one call.", parameters: { type: "object", required: ["resource"], properties: { resource: { type: "string", enum: ["classes", "fees", "published_subjects", "remarks", "result_summary", "scores", "students", "subjects", "traits"] }, classKey: { type: "string" }, studentId: { type: "string" }, subjectIndex: { type: "integer" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
-  { type: "function", function: { name: "class_analysis", description: "One call gives a complete class analysis from the Results Portal: coverage, per-subject pass/fail rates, per-subject top performers, and the overall top and bottom order. It reads the whole class once and does the arithmetic on the server. Use it for every class performance question and call it only once per class. Omit classKey to compare every class on its average and pass rate in this one call. basis defaults to current, which uses every mark recorded so far and compares percentages so a learner whose exam is not entered yet still ranks; name a basis only when the proprietor asks to grade on that part alone. Pass subject only for exactly one subject; topN changes how many leaders are returned; includeMissing names learners with nothing on the chosen basis; breakdown true adds a simple per-subject breakdown (bands, component averages, strongest and weakest) for every subject in this one call, so use it alone for 'break it down'; add subject only for one named subject, which also returns the full table. list true returns the whole score sheet in the same call, for requests to list every score. source true adds sourceTable, the exact marks behind every ranked learner, for 'show me the source table' or a spot check.", parameters: { type: "object", properties: { classKey: { type: "string", description: "The class to analyse. Leave it out for a whole-school comparison" }, basis: { type: "string", enum: ["current", "ca", "ca1", "ca2", "ca3", "exam"], description: "current = every recorded mark (default); ca = all continuous assessment; ca1, ca2, ca3 = that single CA; exam = exam only" }, subject: { type: "string", description: "Subject name or stored index, for one subject only" }, topN: { type: "integer" }, includeMissing: { type: "boolean" }, breakdown: { type: "boolean", description: "Add the simple breakdown for every subject at once. With a single subject named, also return that subject's full table" }, list: { type: "boolean", description: "Return every learner's marks for every subject analysed, as the whole score sheet" }, source: { type: "boolean", description: "Add sourceTable: the exact recorded marks, percent and total behind each ranked learner, so a figure can be checked" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
+  { type: "function", function: { name: "class_analysis", description: "One call gives a complete class analysis from the Results Portal: coverage, per-subject pass/fail rates, per-subject top performers, and the overall top and bottom order. It reads the whole class once and does the arithmetic on the server. Use it for every class performance question and call it only once per class. Omit classKey to compare every class on its average and pass rate in this one call. basis defaults to current, which uses every mark recorded so far and compares percentages so a learner whose exam is not entered yet still ranks; name a basis only when the proprietor asks to grade on that part alone. Pass subject only for exactly one subject; topN changes how many leaders are returned; includeMissing names learners with nothing on the chosen basis, and for a whole-school call it also gives learnersWithNoExamMarkAtAll and per-class examGapsBySubject; breakdown true adds a simple per-subject breakdown (bands, component averages, strongest and weakest) for every subject in this one call, so use it alone for 'break it down'; add subject only for one named subject, which also returns the full table. list true returns the whole score sheet in the same call, for requests to list every score. source true adds sourceTable, the exact marks behind every ranked learner, for 'show me the source table' or a spot check.", parameters: { type: "object", properties: { classKey: { type: "string", description: "The class to analyse. Leave it out for a whole-school comparison" }, basis: { type: "string", enum: ["current", "ca", "ca1", "ca2", "ca3", "exam"], description: "current = every recorded mark (default); ca = all continuous assessment; ca1, ca2, ca3 = that single CA; exam = exam only" }, subject: { type: "string", description: "Subject name or stored index, for one subject only" }, topN: { type: "integer" }, includeMissing: { type: "boolean" }, breakdown: { type: "boolean", description: "Add the simple breakdown for every subject at once. With a single subject named, also return that subject's full table" }, list: { type: "boolean", description: "Return every learner's marks for every subject analysed, as the whole score sheet" }, source: { type: "boolean", description: "Add sourceTable: the exact recorded marks, percent and total behind each ranked learner, so a figure can be checked" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
   { type: "function", function: { name: "results_history", description: "Read prior terms and sessions the signed-in proprietor can access in the Results Portal. Use for historical comparisons; the portal enforces the account's access.", parameters: { type: "object", properties: { classKey: { type: "string" }, studentId: { type: "string" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
   {
     type: "function",
@@ -648,19 +648,21 @@ CLASS AND RESULT ANALYSIS
 - Use the numbers the tool returns exactly. Never count rows, average marks or work out a rate in your head.
 - A term fills up bit by bit: CA, then tests, then exam one subject after another. That is normal, never a fault to report.
 - "Current" means every mark recorded so far, CA and any exam already entered. Leave basis at current and score all of it. Only when the proprietor says exam alone, test alone, first CA alone, second CA or third CA alone do you pass that basis and grade on that part only.
-- Pass and fail always use the portal's own grading and nothing else: a learner's total out of 100 (CA1 + CA2 + CA3 + exam) at or above the pass mark. class_analysis returns that mark as passMark. State it in every answer that carries a pass or fail figure, as "pass mark 40" or similar. Never mix an exam-only rate with a total rate, and never use a rate the tool did not return.
+- Pass and fail always use the portal's own grading and nothing else: a learner's total out of 100 (CA1 + CA2 + CA3 + exam) at or above the pass mark. class_analysis returns that mark as passMark and the rule as passRuleLine. Put passRuleLine in every answer that carries a pass or fail figure, word for word, before the rate. State it in every answer with a pass or fail figure, so the formula is on the page. Never mix an exam-only rate with a total rate, and never use a rate the tool did not return.
 - When the question is about the exam, quote the exam score itself from rankedMark, not the total. The same holds for any named part: quote the score for that part, and let the total sit beside it if it helps.
-- Give the class, session, term, roster size and the denominator behind every rate. A subject with only a few marks on the chosen basis is reported against those marks, not against the whole class, and you say so.
+- Every rate names the class, session, term, roster size and its denominator. The denominator is the whole class (passDenominator): say "40 of 64 passed", not "40 of 62". A learner with no mark on the basis counts as not passing and is named in passRateNote; give that note in the same breath as the rate. Never headline passRateOfMarked when passRate differs.
+- State the range with any average, from percentLowest to percentHighest, and the maximum mark.
 - Marks are out of 10 for each CA and out of 70 for the exam; quote the maximum with any average and never invent one.
 - Never say a class has no data, or tell the proprietor to finish the exam, when CA is recorded. Answer with what is in the records and mention how much of the exam is in yet.
 - overallPassRate counts graded subject entries, not learners. Quote it as "40 of 64 graded entries passed" and use a subject's passRate when the question is about that subject.
-- A learner with no exam mark has no total that can pass, so they count as not passing until the exam lands. When a passRateNote is returned, say it in the same breath as the rate. Never quote an exam-only rate and call it the pass rate.
+- A learner with no exam mark has no total that can pass, so they count as not passing until the exam lands. When a passRateNote is returned, say it in the same breath as the rate and name the learners it gives. Never quote an exam-only rate and call it the pass rate.
+- Missing exam marks across the school: call class_analysis once with NO classKey and includeMissing true. Lead with learnersWithNoExamMarkAtAll — "Only three learners have no exam mark at all: ..." with their names and classes — then the per-class examGapsBySubject, then which classes have no exam at all. Coverage goes last.
 - "Which class is most competitive", "which classes are best or worst", or any comparison between classes: call class_analysis once with NO classKey. It compares every class on its own average and pass rate. Name the strongest class first with its figure, then the weakest, and keep the rest to the few that matter.
 - Break a subject down when asked, even for "just show me" or "simply", and call class_analysis only ONCE. Leave subject out and pass breakdown true and you get every subject broken down in the same call; add subject only when the proprietor named one subject, which also returns the full table.
 - In a breakdown give the bands as a short list, the strongest and weakest few, and where the marks were lost (component averages against their maximums). Print the whole table only when the hint says to; otherwise top five and bottom five.
 - When the proprietor asks for the list of scores, every score, or the whole sheet, call class_analysis ONCE with list true, and add subject only for one named subject. scoreSheet.roster holds the names; each row's i is its position in that list. Print a table per subject with every row, blank marks as a dash, and do not call again per subject.
 - one whole-class call already returns every subject with its own marks, rates and leaders, plus the overall order. Do not call it again once per subject. Pass subject only when the proprietor asks about exactly one subject, and topN only to change how many leaders are shown.
-- "Show me the source table", "where does that come from" or any spot check: call class_analysis once with source true and print only the rows behind the figure in question.
+- "Show me the source table", "where does that come from" or any spot check: call class_analysis once with source true and print only the rows behind the figure in question, as a table in sourceTableColumns order with the Percent column and its % sign.
 - If asked how a figure or a ranking is worked out, answer in one plain sentence — the pass mark, or the percentage of recorded marks — and point at "How figures work" under the message box.
 - Use results_read for a single record, one pupil's marks, traits, remarks or fees, and never for whole-class statistics.
 - Use results_history only for prior terms and sessions the proprietor can already see.
@@ -786,15 +788,21 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
     : DEFAULT_GRADE_SCALE;
   const ranked: Record<string, unknown>[] = [];
   const skipped: { class: string; code: string }[] = [];
+  const schoolNoExam: { class: string; names: string[] }[] = [];
   const queue = [...catalog];
   const worker = async () => {
     for (;;) {
       const item = queue.shift();
       if (!item) return;
       current.progress?.(`Reading ${item.label}`);
-      const made = await classAnalysisOne(current, { ...args, classKey: item.key, breakdown: false, list: false, includeMissing: false }, sharedGrades) as Record<string, unknown>;
+      const made = await classAnalysisOne(current, { ...args, classKey: item.key, breakdown: false, list: false, includeMissing: args.includeMissing === true }, sharedGrades) as Record<string, unknown>;
       if (made.ok !== true) { skipped.push({ class: item.label, code: String(made.code || "UNREAD") }); continue; }
       if (!Number(made.gradedSubjectEntries || 0)) continue;
+      const noExam = Array.isArray(made.learnersWithNoExamMarkAtAll) ? made.learnersWithNoExamMarkAtAll as string[] : [];
+      if (noExam.length) schoolNoExam.push({ class: item.label, names: noExam });
+      const examGaps = (Array.isArray(made.subjects) ? made.subjects as Record<string, unknown>[] : [])
+        .filter((subject) => Array.isArray(subject.studentsWithoutMarkOnBasis) && (subject.studentsWithoutMarkOnBasis as unknown[]).length)
+        .map((subject) => ({ subject: subject.subject, names: subject.studentsWithoutMarkOnBasis }));
       ranked.push({
         class: item.label,
         roster: made.rosterCount,
@@ -802,10 +810,12 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
         averagePercent: made.classAveragePercent,
         passRate: made.overallPassRate,
         examCoverage: made.examCoverageRate,
+        learnersWithNoExamMarkAtAll: noExam.length,
+        ...(args.includeMissing === true && examGaps.length ? { examGapsBySubject: examGaps } : {}),
       });
     }
   };
-  await Promise.all([worker(), worker(), worker(), worker()]);
+  await Promise.all([worker(), worker(), worker(), worker(), worker(), worker()]);
   ranked.sort((a, b) => Number(b.averagePercent ?? -1) - Number(a.averagePercent ?? -1) || Number(b.passRate ?? -1) - Number(a.passRate ?? -1));
   ranked.forEach((row, index) => { row.rank = index + 1; });
   if (!ranked.length) return { ok: false, code: "RESULT_NO_MARKS_ANYWHERE", detail: "No class has a mark recorded yet on this basis.", hint: "Say that no marks are recorded yet and ask the proprietor to enter them in the Results Portal." };
@@ -822,8 +832,11 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
     mostCompetitive: ranked[0],
     leastCompetitive: ranked[ranked.length - 1],
     ranked,
+    learnersWithNoExamMarkAtAll: schoolNoExam.reduce((sum, row) => sum + row.names.length, 0),
+    learnersWithNoExamMarkAtAllNames: schoolNoExam.flatMap((row) => row.names.map((name) => `${name} (${row.class})`)).sort((a, b) => a.localeCompare(b)),
+    classesWithNoExamMarkAtAll: schoolNoExam.map((row) => ({ class: row.class, count: row.names.length })),
     method: "Classes are ordered by their average learner percentage on the chosen basis, with the pass rate breaking ties. Classes with no marks on that basis are left out.",
-    hint: "Name the mostCompetitive class first with its average and pass rate, then the leastCompetitive, then only the few in between that matter. Say the exam is barely in where coverage is low.",
+    hint: "Name the mostCompetitive class first with its average and pass rate, then the leastCompetitive, then only the few in between that matter. Say the exam is barely in where coverage is low. When includeMissing was asked for, lead with learnersWithNoExamMarkAtAll and its names before the per-class gaps.",
   };
 }
 
@@ -976,6 +989,18 @@ async function classAnalysisOne(current: CurrentSession, args: Record<string, un
       .sort((a, b) => a.name.localeCompare(b.name));
   };
 
+  // Learners with no exam mark in any subject, so a school-wide missing-scores
+  // answer can lead with the ones who have nothing at all.
+  const withAnExam = new Set<string>();
+  for (const row of rawScores) {
+    if (markOf(row, "exam") === null) continue;
+    withAnExam.add(String(row.student_id || ""));
+  }
+  const noExamAtAll = students
+    .filter((student) => !withAnExam.has(String(student.id)))
+    .map((student) => String(student.name || "Student"))
+    .sort((a, b) => a.localeCompare(b));
+
   const subjects = chosenIndexes.map((index) => {
     const rowsByStudent = new Map<string, Record<string, unknown>>();
     for (const row of rawScores) {
@@ -1000,6 +1025,12 @@ async function classAnalysisOne(current: CurrentSession, args: Record<string, un
     const exams = rows.filter((entry) => entry.exam !== null);
     // A learner passes on the total out of 100, never on the basis percentage.
     const passed = marked.filter((entry) => didPass(Number(entry.total) || 0));
+    // A learner with nothing on the basis has no total that can pass, so the
+    // class is the denominator and those learners are named beside the rate.
+    const notOnBasis = students
+      .filter((student) => !marked.some((entry) => entry.studentId === String(student.id)))
+      .map((student) => String(student.name || "Student"))
+      .sort();
     const ranked = marked.slice().sort((a, b) => Number(b.percent) - Number(a.percent) || a.name.localeCompare(b.name));
     const rankedRow = (entry: typeof ranked[number]) => {
       const marks: Record<string, number | null> = {};
@@ -1039,13 +1070,18 @@ async function classAnalysisOne(current: CurrentSession, args: Record<string, un
       percentHighest: percentages.length ? Math.max(...percentages) : null,
       gradedOnBasis: marked.length,
       passedOnPortalGradeScale: passed.length,
-      failedOnPortalGradeScale: marked.length - passed.length,
-      passRate: marked.length ? Math.round(passed.length * 1000 / marked.length) / 10 : null,
-      // Without an exam mark there is no total that can pass, so those learners
-      // sit in the denominator until the exam lands. Say so rather than let the
-      // figure look wrong.
-      ...(basis.fields.includes("exam") && students.length > exams.length
-        ? { passRateNote: `Learners with no exam mark yet count as not passing until it lands — ${students.length - exams.length} of ${students.length} have none.` }
+      failedOnPortalGradeScale: students.length - passed.length,
+      failedWithMark: marked.length - passed.length,
+      passCount: passed.length,
+      passDenominator: students.length,
+      passRate: students.length ? Math.round(passed.length * 1000 / students.length) / 10 : null,
+      // Kept so a rate against the marked learners can be quoted as a check.
+      passRateOfMarked: marked.length ? Math.round(passed.length * 1000 / marked.length) / 10 : null,
+      // Without a mark on the basis there is no total that can pass, so those
+      // learners sit in the denominator until the mark lands. Say so, and name
+      // them, rather than let the figure look wrong.
+      ...(notOnBasis.length
+        ? { passRateNote: `${notOnBasis.length} of ${students.length} have nothing recorded on the ${basis.label} basis yet and count as not passing until it lands${notOnBasis.length <= 8 ? `: ${notOnBasis.join(", ")}` : `, e.g. ${notOnBasis.slice(0, 5).join(", ")} and ${notOnBasis.length - 5} others`}.` }
         : {}),
       topByPercent: leaders,
       weakestByPercent: weakest,
@@ -1207,6 +1243,7 @@ async function classAnalysisOne(current: CurrentSession, args: Record<string, un
     }
     sourceTable = out.slice(0, 400);
   }
+  const sourceColumns = ["Learner", "Subject", ...basis.fields.map((field) => field.toUpperCase()), "Percent", "Total /100", "Pass"];
   return {
     ok: true,
     source: "results_portal_complete_class_read",
@@ -1232,16 +1269,19 @@ async function classAnalysisOne(current: CurrentSession, args: Record<string, un
     overallPassRateNote: `${passCount} of ${gradedCount} graded subject entries passed. That is a share of entries, not of learners; for one subject use its passRate, which is learners.`,
     passMark,
     passRule: `A learner passes when the total out of 100 (CA1 + CA2 + CA3 + exam) is ${passMark} or more, the portal's own pass mark. CA counts up to 30 and the exam up to 70.`,
-    passMethod: `Pass/fail is counted on the learner's total out of 100 against the pass mark of ${passMark}, exactly as the portal grades. Each ranked percentage is a share of the maximum for the parts recorded on the chosen basis; the denominator is the learners with a mark on that basis, never the whole roster.`,
+    passRuleLine: `Pass is the total out of 100 (CA1 + CA2 + CA3, up to 30, plus the exam, up to 70) at ${passMark} or more.`,
+    passMethod: `Pass/fail is counted on the learner's total out of 100 against the pass mark of ${passMark}, exactly as the portal grades. The denominator is the whole class, so a learner with no mark on the chosen basis counts as not passing and is named. Each ranked percentage is a share of the maximum for the recorded marks on the chosen basis.`,
     rankingMethod: "Each learner is averaged on their percentage in the subjects analysed, highest first, on the chosen basis. A learner appears once they have a mark on that basis in any subject. Learners level on the same percentage share the position and are all listed.",
     studentsRanked: ordered.length,
+    learnersWithNoExamMarkAtAll: noExamAtAll,
+    learnersWithNoExamMarkAtAllCount: noExamAtAll.length,
     topStudentsOverall: orderedTied.map(({ percent: _percent, ...rest }) => rest),
     bottomStudentsOverall: orderedLowest,
     subjects,
     ...(breakdown ? { breakdown } : {}),
     ...(breakdowns ? { breakdowns, breakdownsHint: "Every subject is here. Name one of them for its full table." } : {}),
     ...(scoreSheet ? { scoreSheet } : {}),
-    ...(sourceTable ? { sourceTable, sourceTableHint: "One row per learner and subject: the marks on the basis, the percent, the total out of 100 and pass/fail." } : {}),
+    ...(sourceTable ? { sourceTable, sourceTableColumns: sourceColumns, sourceTableHint: `One row per learner and subject, in the column order sourceTableColumns: the marks on the basis, the percent that ranks, the total out of 100 and pass/fail. Print the Percent column with its % sign. A total below 100 with a blank mark is out of what was recorded.` } : {}),
   };
 }
 

@@ -136,6 +136,21 @@ assert.match(route, /weakestByPercent/);
 assert.match(route, /rankedMark/);
 // The examiner's ground truth: the weakest exam marks are exam marks, not totals.
 assert.match(route, /When the question is about the exam, quote the exam score itself/);
+// The denominator is the whole class, and the learners without a mark are named.
+assert.match(route, /passDenominator: students\.length/);
+assert.match(route, /const notOnBasis = students/);
+assert.match(route, /passRateOfMarked/);
+assert.match(route, /say "40 of 64 passed", not "40 of 62"/);
+// The grading formula is on the page, not just the pass mark.
+assert.match(route, /passRuleLine/);
+assert.match(route, /Pass is the total out of 100 \(CA1 \+ CA2 \+ CA3, up to 30, plus the exam, up to 70\)/);
+// A school-wide missing-scores answer leads with the learners who have nothing.
+assert.match(route, /learnersWithNoExamMarkAtAllCount/);
+assert.match(route, /examGapsBySubject/);
+assert.match(route, /Lead with learnersWithNoExamMarkAtAll/);
+// The source table carries its own percent column in a fixed order.
+assert.match(route, /sourceTableColumns/);
+assert.match(route, /"Percent", "Total \/100", "Pass"/);
 
 // A write card names the subject and shows old → new, and needs a typed reason.
 assert.match(route, /const shown = \(value: unknown\)/);
