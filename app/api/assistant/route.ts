@@ -656,7 +656,7 @@ CLASS AND RESULT ANALYSIS
 - Never say a class has no data, or tell the proprietor to finish the exam, when CA is recorded. Answer with what is in the records and mention how much of the exam is in yet.
 - overallPassRate counts graded subject entries, not learners. Quote it as "40 of 64 graded entries passed" and use a subject's passRate when the question is about that subject.
 - A learner with no exam mark has no total that can pass, so they count as not passing until the exam lands. When a passRateNote is returned, say it in the same breath as the rate and name the learners it gives. Never quote an exam-only rate and call it the pass rate.
-- Missing exam marks across the school: call class_analysis once with NO classKey. It returns the gap lines ready to use. Reply with missingHeadline word for word, then missingGapsText as its lines, then classesNoExamLine word for word, then subjectsWithNoExamAtAll per class as a count ("Ten of the 12 subjects have no exam mark at all"), never a name dump, and never move a name to another subject. If missingGapsText is empty say so plainly. Coverage goes last.
+- Missing exam marks across the school: call class_analysis once with NO classKey. It returns the gap lines ready to use. Reply with missingHeadline word for word, then missingGapsText as its lines, then classesNoExamLine word for word, then subjectsWithNoExamAtAll per class as a count ("Ten of the 12 subjects have no exam mark at all"), never a name dump, and never move a name to another subject. If missingGapsText is empty say so plainly. Say if classesSkipped is not empty and name those classes as not read. Coverage goes last.
 - "Which class is most competitive", "which classes are best or worst", or any comparison between classes: call class_analysis once with NO classKey. It compares every class on its own average and pass rate. Name the strongest class first with its figure, then the weakest, and keep the rest to the few that matter.
 - Break a subject down when asked, even for "just show me" or "simply", and call class_analysis only ONCE. Leave subject out and pass breakdown true and you get every subject broken down in the same call; add subject only when the proprietor named one subject, which also returns the full table.
 - In a breakdown give the bands as a short list, the strongest and weakest few, and where the marks were lost (component averages against their maximums). Print the whole table only when the hint says to; otherwise top five and bottom five.
@@ -812,8 +812,8 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
       if (noExam.length) schoolNoExam.push({ class: item.label, names: noExam });
       if (!Number(made.gradedSubjectEntries || 0)) continue;
       const examGaps = subjectsHere
-        .filter((subject) => Number(subject.studentsWithExam || 0) > 0 && Array.isArray(subject.studentsWithoutMarkOnBasis) && (subject.studentsWithoutMarkOnBasis as unknown[]).length)
-        .map((subject) => ({ subject: subject.subject, names: subject.studentsWithoutMarkOnBasis }));
+        .filter((subject) => Number(subject.studentsWithExam || 0) > 0 && Array.isArray(subject.studentsWithoutExamMark) && (subject.studentsWithoutExamMark as unknown[]).length)
+        .map((subject) => ({ subject: subject.subject, names: subject.studentsWithoutExamMark }));
       const noExamSubjects = subjectsHere
         .filter((subject) => !Number(subject.studentsWithExam || 0))
         .map((subject) => subject.subject);
@@ -830,7 +830,7 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
       });
     }
   };
-  await Promise.all([worker(), worker(), worker(), worker(), worker(), worker()]);
+  await Promise.all([worker(), worker(), worker(), worker(), worker(), worker(), worker(), worker(), worker(), worker()]);
   ranked.sort((a, b) => Number(b.averagePercent ?? -1) - Number(a.averagePercent ?? -1) || Number(b.passRate ?? -1) - Number(a.passRate ?? -1));
   ranked.forEach((row, index) => { row.rank = index + 1; });
   emptyClasses.sort((a, b) => a.localeCompare(b));
@@ -1084,6 +1084,10 @@ async function classAnalysisOne(current: CurrentSession, args: Record<string, un
     const missingNames = missingWanted
       ? students.filter((student) => !marked.some((entry) => entry.studentId === String(student.id))).map((student) => String(student.name || "Student")).sort()
       : undefined;
+    // A missing-exam question needs the exam blank even when the CA is in.
+    const missingExamNames = missingWanted
+      ? students.filter((student) => !exams.some((entry) => entry.studentId === String(student.id))).map((student) => String(student.name || "Student")).sort()
+      : undefined;
     const average = (values: number[]) => values.length ? Math.round(values.reduce((sum, n) => sum + n, 0) * 10 / values.length) / 10 : null;
     const examValues = exams.map((entry) => Number(entry.exam));
     const percentages = marked.map((entry) => Number(entry.percent));
@@ -1118,6 +1122,7 @@ async function classAnalysisOne(current: CurrentSession, args: Record<string, un
       topByPercent: leaders,
       weakestByPercent: weakest,
       ...(missingNames ? { studentsWithoutMarkOnBasis: missingNames } : {}),
+      ...(missingExamNames ? { studentsWithoutExamMark: missingExamNames } : {}),
     };
   });
 
