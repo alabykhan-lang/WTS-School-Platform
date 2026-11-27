@@ -7,7 +7,7 @@ const vercel = JSON.parse(await readFile(new URL("../vercel.json", import.meta.u
 // The turn must fit the hosting limit, not a budget the platform never grants.
 assert.match(route, /export const maxDuration = 60;/);
 assert.equal(vercel.functions["app/api/assistant/route.ts"].maxDuration, 60);
-assert.match(route, /const MAX_TOOL_CALLS = 12;/);
+assert.match(route, /const MAX_TOOL_CALLS = 14;/);
 assert.match(route, /const TOOL_RESULT_CAP = 6000;/);
 
 // The brain is layered, and class work is one call.

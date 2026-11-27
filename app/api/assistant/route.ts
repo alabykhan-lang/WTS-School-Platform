@@ -652,7 +652,7 @@ CLASS AND RESULT ANALYSIS
 - A report card is report_card, for the named pupil. Do not build cards to answer a class statistic.
 
 OTHER SYSTEM WORK
-- Registry: list and search students and staff, read a student's record and guardian contacts, check a whole class's guardian phones, and perform an explicitly requested Registry action with registry_request.
+- Registry: list and search students and staff, read a student's record and guardian contacts, check a whole class's guardian phones, and perform an explicitly requested Registry action with registry_request. Registry actions are named, not routed: the payload lists them, so use one name and do not try others one by one. find_students then student_record settles a person; only reach for registry_request when those two do not cover it.
 - Attendance: read registers and status through attendance_request, and perform an explicitly requested attendance action with the same tool.
 - Notifications: read settings, recipients, templates and queues through notification_request. A send needs the exact recipients, template or message text and scope confirmed first.
 - Results Portal: use results_request for any portal action that the specialist tools do not cover, read or write. Every system applies the signed-in proprietor's own permissions; a refusal is that system's rule, not yours.
@@ -1520,7 +1520,13 @@ async function runTool(name: string, args: Record<string, unknown>, current: Cur
       const action = String(args.action || "");
       if (!action || action.length > 120) return { ok: false, code: "REGISTRY_ACTION_REQUIRED" };
       const payload = args.payload && typeof args.payload === "object" ? args.payload as Record<string, unknown> : {};
-      return slim(await registry(current, kind, action, payload));
+      const made = await registry(current, kind, action, payload);
+      // The Registry names actions, not routes. A guess costs a round trip, so a
+      // bad name comes back with the real list.
+      if (made?.ok !== true && /ACTION_UNKNOWN|ACTION_REQUIRED/.test(String(made?.code || ""))) {
+        made.hint = `"${action}" is not a Registry action. Use one of these and call again once: ${kind === "write" ? REGISTRY_WRITE_ACTIONS : REGISTRY_READ_ACTIONS}. Do not walk the list.`;
+      }
+      return slim(made);
     }
     case "attendance_request": {
       const action = String(args.action || "");
@@ -1808,7 +1814,10 @@ async function askProvider(url: string, settings: ModelSettings, style: Style, h
   return { turn };
 }
 
-const MAX_TOOL_CALLS = 12;
+const MAX_TOOL_CALLS = 14;
+
+const REGISTRY_READ_ACTIONS = "students, student, guardians, staff, staff_self, registrations, catalog, allocations, calendar, prefect, portfolio, portal_access, dashboard";
+const REGISTRY_WRITE_ACTIONS = "students.update, student.update, guardian.upsert, students.restore, allocations.class.set, allocations.subject.set, allocations.class.end, portal.access.set, registration.approve, calendar.transition, prefect.select, profile.signature.update";
 const TOOL_RESULT_CAP = 6000;
 
 /** Same default bands the Results Portal ships with, kept in step with it. */
