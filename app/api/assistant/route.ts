@@ -788,6 +788,8 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
     : DEFAULT_GRADE_SCALE;
   const ranked: Record<string, unknown>[] = [];
   const skipped: { class: string; code: string }[] = [];
+  /** Classes shed under load, retried one at a time after the burst. */
+  const again: { key: string; label: string }[] = [];
   const schoolNoExam: { class: string; names: string[] }[] = [];
   const emptyClasses: string[] = [];
   const queue = [...catalog];
@@ -802,46 +804,54 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
       const item = queue.shift();
       if (!item) return;
       current.progress?.(`Reading ${item.label}`);
-      let made = await classAnalysisOne(current, { ...args, classKey: item.key, breakdown: false, list: false, includeMissing: true }, sharedGrades, call ?? undefined) as Record<string, unknown>;
-      // One class can be shed while ten are read at once; try it once more
-      // before writing it off.
-      if (made.ok !== true) made = await classAnalysisOne(current, { ...args, classKey: item.key, breakdown: false, list: false, includeMissing: true }, sharedGrades, call ?? undefined) as Record<string, unknown>;
-      if (made.ok !== true) { skipped.push({ class: item.label, code: String(made.code || "UNREAD") }); continue; }
-      const noExam = Array.isArray(made.learnersWithNoExamMarkAtAll) ? made.learnersWithNoExamMarkAtAll as string[] : [];
-      const subjectsHere = Array.isArray(made.subjects) ? made.subjects as Record<string, unknown>[] : [];
-      // A class with no exam in any subject is listed on its own, and its
-      // per-subject counts are dropped so they do not repeat the same fact.
-      const roster = Number(made.rosterCount || 0);
-      const everySubjectEmpty = (roster > 0 && noExam.length >= roster) || (subjectsHere.length > 0 && subjectsHere.every((subject) => !Number(subject.studentsWithExam || 0)));
-      if (everySubjectEmpty) {
-        emptyClasses.push(roster ? `${item.label} (${roster})` : item.label);
-        if (!roster && noExam.length) schoolNoExam.push({ class: item.label, names: noExam });
-        continue;
-      }
-      if (noExam.length) schoolNoExam.push({ class: item.label, names: noExam });
-      if (!Number(made.gradedSubjectEntries || 0)) continue;
-      const examGaps = subjectsHere
-        .filter((subject) => Number(subject.studentsWithExam || 0) > 0 && Array.isArray(subject.studentsWithoutExamMark) && (subject.studentsWithoutExamMark as unknown[]).length)
-        .map((subject) => ({ subject: subject.subject, names: subject.studentsWithoutExamMark }));
-      const noExamSubjects = subjectsHere
-        .filter((subject) => !Number(subject.studentsWithExam || 0))
-        .map((subject) => subject.subject);
-      ranked.push({
-        class: item.label,
-        roster: made.rosterCount,
-        subjects: made.subjectCount,
-        averagePercent: made.classAveragePercent,
-        passRate: made.learnerPassRate,
-        passCount: made.learnerPassCount,
-        passDenominator: made.rosterCount,
-        examCoverage: made.examCoverageRate,
-        learnersWithNoExamMarkAtAll: noExam.length,
-        ...(examGaps.length ? { examGapsBySubject: examGaps } : {}),
-        ...(noExamSubjects.length ? { subjectsWithNoExamAtAll: noExamSubjects } : {}),
-      });
+      const made = await classAnalysisOne(current, { ...args, classKey: item.key, breakdown: false, list: false, includeMissing: true }, sharedGrades, call ?? undefined) as Record<string, unknown>;
+      // A class shed under load is tried again at the end, one at a time.
+      if (made.ok !== true) { again.push(item); continue; }
+      absorb(item, made);
     }
   };
+  const absorb = (item: { key: string; label: string }, made: Record<string, unknown>) => {
+    const noExam = Array.isArray(made.learnersWithNoExamMarkAtAll) ? made.learnersWithNoExamMarkAtAll as string[] : [];
+    const subjectsHere = Array.isArray(made.subjects) ? made.subjects as Record<string, unknown>[] : [];
+    // A class with no exam in any subject is listed on its own, and its
+    // per-subject counts are dropped so they do not repeat the same fact.
+    const roster = Number(made.rosterCount || 0);
+    const everySubjectEmpty = (roster > 0 && noExam.length >= roster) || (subjectsHere.length > 0 && subjectsHere.every((subject) => !Number(subject.studentsWithExam || 0)));
+    if (everySubjectEmpty) {
+      emptyClasses.push(roster ? `${item.label} (${roster})` : item.label);
+      if (!roster && noExam.length) schoolNoExam.push({ class: item.label, names: noExam });
+      return;
+    }
+    if (noExam.length) schoolNoExam.push({ class: item.label, names: noExam });
+    if (!Number(made.gradedSubjectEntries || 0)) return;
+    const examGaps = subjectsHere
+      .filter((subject) => Number(subject.studentsWithExam || 0) > 0 && Array.isArray(subject.studentsWithoutExamMark) && (subject.studentsWithoutExamMark as unknown[]).length)
+      .map((subject) => ({ subject: subject.subject, names: subject.studentsWithoutExamMark }));
+    const noExamSubjects = subjectsHere
+      .filter((subject) => !Number(subject.studentsWithExam || 0))
+      .map((subject) => subject.subject);
+    ranked.push({
+      class: item.label,
+      roster: made.rosterCount,
+      subjects: made.subjectCount,
+      averagePercent: made.classAveragePercent,
+      passRate: made.learnerPassRate,
+      passCount: made.learnerPassCount,
+      passDenominator: made.rosterCount,
+      examCoverage: made.examCoverageRate,
+      learnersWithNoExamMarkAtAll: noExam.length,
+      ...(examGaps.length ? { examGapsBySubject: examGaps } : {}),
+      ...(noExamSubjects.length ? { subjectsWithNoExamAtAll: noExamSubjects } : {}),
+    });
+  };
   await Promise.all(Array.from({ length: 4 }, (_, index) => worker(index)));
+  for (const item of again) {
+    current.progress?.(`Reading ${item.label}`);
+    const retryCall = await openResults(current).catch(() => null);
+    const made = await classAnalysisOne(current, { ...args, classKey: item.key, breakdown: false, list: false, includeMissing: true }, sharedGrades, retryCall ?? undefined) as Record<string, unknown>;
+    if (made.ok !== true) { skipped.push({ class: item.label, code: String(made.code || "UNREAD") }); continue; }
+    absorb(item, made);
+  }
   ranked.sort((a, b) => Number(b.averagePercent ?? -1) - Number(a.averagePercent ?? -1) || Number(b.passRate ?? -1) - Number(a.passRate ?? -1));
   ranked.forEach((row, index) => { row.rank = index + 1; });
   emptyClasses.sort((a, b) => a.localeCompare(b));
