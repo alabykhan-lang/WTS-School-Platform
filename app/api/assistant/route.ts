@@ -793,13 +793,10 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
   const schoolNoExam: { class: string; names: string[] }[] = [];
   const emptyClasses: string[] = [];
   const queue = [...catalog];
-  const worker = async (index: number) => {
-    // One portal session per worker, so four classes read at once without four
-    // identity sign-ins per class or a shared context fighting itself. Each
-    // worker starts a beat after the last so the sign-ins do not stampede.
-    if (index) await new Promise((resolve) => setTimeout(resolve, index * 300));
-    let call: ResultsCall | null = null;
-    try { call = await openResults(current); } catch { call = null; }
+  const worker = async (index: number, prepared: ResultsCall | null) => {
+    // One portal session per worker, made before the burst starts so the
+    // sign-ins never overlap.
+    const call = prepared;
     for (;;) {
       const item = queue.shift();
       if (!item) return;
@@ -844,7 +841,12 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
       ...(noExamSubjects.length ? { subjectsWithNoExamAtAll: noExamSubjects } : {}),
     });
   };
-  await Promise.all(Array.from({ length: 6 }, (_, index) => worker(index)));
+  await Promise.all(Array.from({ length: 6 }, (_, index) => worker(index, null)));
+  // Sessions are made one after another before the reads so six sign-ins never
+  // land on the identity service at once.
+  const preparedCalls: (ResultsCall | null)[] = [];
+  for (let index = 0; index < 6; index += 1) preparedCalls.push(await openResults(current).catch(() => null));
+  await Promise.all(preparedCalls.map((call, index) => worker(index, call)));
   for (const item of again) {
     current.progress?.(`Reading ${item.label}`);
     const retryCall = await openResults(current).catch(() => null);
