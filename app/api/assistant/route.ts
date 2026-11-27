@@ -791,9 +791,11 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
   const schoolNoExam: { class: string; names: string[] }[] = [];
   const emptyClasses: string[] = [];
   const queue = [...catalog];
-  const worker = async () => {
-    // One portal session per worker, so ten classes read at once without ten
-    // identity sign-ins per class or a shared context fighting itself.
+  const worker = async (index: number) => {
+    // One portal session per worker, so four classes read at once without four
+    // identity sign-ins per class or a shared context fighting itself. Each
+    // worker starts a beat after the last so the sign-ins do not stampede.
+    if (index) await new Promise((resolve) => setTimeout(resolve, index * 400));
     let call: ResultsCall | null = null;
     try { call = await openResults(current); } catch { call = null; }
     for (;;) {
@@ -839,7 +841,7 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
       });
     }
   };
-  await Promise.all([worker(), worker(), worker(), worker(), worker(), worker(), worker(), worker(), worker(), worker()]);
+  await Promise.all(Array.from({ length: 4 }, (_, index) => worker(index)));
   ranked.sort((a, b) => Number(b.averagePercent ?? -1) - Number(a.averagePercent ?? -1) || Number(b.passRate ?? -1) - Number(a.passRate ?? -1));
   ranked.forEach((row, index) => { row.rank = index + 1; });
   emptyClasses.sort((a, b) => a.localeCompare(b));
