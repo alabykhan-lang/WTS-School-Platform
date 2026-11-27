@@ -2513,6 +2513,13 @@ function cardAsk(text: string): { classKey: string; label: string; search: strin
  * can print itself in one read. Only the no-subject form is taken here; a named
  * subject keeps the model, because the subject has to be matched first.
  */
+/** A whole-school comparison, so it can skip the model's slow discovery steps. */
+function compareAsk(text: string): boolean {
+  if (/\b(compare|comparison|rank|ranking)\b/i.test(text) && /\b(classes?|school|whole)\b/i.test(text)) return true;
+  return /\b(which|what)\b[^?.]*\bclass(es)?\b[^?.]*\b(best|worst|strongest|weakest|most competitive|least competitive)\b/i.test(text)
+    || /\b(most|least) competitive\b/i.test(text);
+}
+
 function sheetAsk(text: string): { classKey: string } | null {
   if (!/\b(list|all|every|whole|full|entire)\b/i.test(text)) return null;
   if (!/\b(scores?|marks?|results?|sheet|records?|recorded)\b/i.test(text)) return null;
@@ -2592,6 +2599,7 @@ export async function POST(request: NextRequest) {
       : "";
     const ask = said ? cardAsk(said) : null;
     const sheetAskHere = said ? sheetAsk(said) : null;
+    const compareAskHere = said ? compareAsk(said) : null;
 
     const runTurn = async (): Promise<Record<string, unknown>> => {
       const requestStarted = Date.now();
@@ -2599,6 +2607,21 @@ export async function POST(request: NextRequest) {
       const budgetMs = Math.min(50000, Math.max(9000, 50000 - elapsed));
       current.deadline = requestStarted + budgetMs;
       let fastError = "";
+      if (compareAskHere && !ask && !sheetAskHere) {
+        try {
+          const made = await classAnalysis(current, {}) as Record<string, unknown>;
+          if (made.ok === true && made.mode === "school_compare") {
+            return {
+              ok: true,
+              model: settings.model,
+              text: compareText(made),
+              usage: null,
+              steps: ["class_analysis"],
+            };
+          }
+          fastError = `${String(made.code || "")}: ${String(made.detail || "")}`;
+        } catch (caught) { fastError = (caught as Error)?.message || String(caught); }
+      }
       if (sheetAskHere && !ask) {
         try {
           const made = await classAnalysis(current, { classKey: sheetAskHere.classKey, list: true }) as Record<string, unknown>;
