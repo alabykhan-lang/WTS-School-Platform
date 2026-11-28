@@ -1189,11 +1189,9 @@ async function classAnalysisOne(current: CurrentSession, args: Record<string, un
       // Each failed name carries the figure it failed on, in brackets, so no
       // name in the list is left without a number.
       failedNames: marked.filter((entry) => !didPass(Number(entry.total) || 0))
-        .sort((a, b) => (Number(a.total) || 0) - (Number(b.total) || 0) || a.name.localeCompare(b.name))
-        .map((entry) => {
-          const mark = basis.fields.length === 1 ? markOf(entry.row, basis.fields[0]) : Math.round(Number(entry.percent || 0) * 10) / 10;
-          return mark === null || mark === undefined ? prettyName(entry.name) : `${prettyName(entry.name)} (${mark}${basis.fields.length === 1 ? "" : "%"})`;
-        }),
+        .map((entry) => ({ name: prettyName(entry.name), mark: basis.fields.length === 1 ? markOf(entry.row, basis.fields[0]) : Math.round(Number(entry.percent || 0) * 10) / 10 }))
+        .sort((a, b) => (a.mark ?? 0) - (b.mark ?? 0) || a.name.localeCompare(b.name))
+        .map((entry) => entry.mark === null || entry.mark === undefined ? entry.name : `${entry.name} (${entry.mark}${basis.fields.length === 1 ? "" : "%"})`),
       passRate: students.length ? Math.round(passed.length * 1000 / students.length) / 10 : null,
       // Kept so a rate against the marked learners can be quoted as a check.
       passRateOfMarked: marked.length ? Math.round(passed.length * 1000 / marked.length) / 10 : null,
