@@ -9,6 +9,7 @@ export const maxDuration = 60;
 
 /** A recording sheet or a photo of one is small; anything bigger is not. */
 const MAX_BYTES = 8 * 1024 * 1024;
+const MAX_FILES = 10;
 const MAX_ROWS = 500;
 const MAX_COLUMNS = 25;
 const MAX_TEXT = 60000;
@@ -111,44 +112,61 @@ export async function POST(request: NextRequest) {
   const session = workspaceSessionFromRequest(request);
   if (!session) return fail("STAFF_SESSION_NOT_ACTIVE", 401);
   const form = await request.formData().catch(() => null);
-  const file = form?.get("file");
-  if (!(file instanceof File)) return fail("ASSISTANT_FILE_REQUIRED");
-  if (file.size > MAX_BYTES) return fail("ASSISTANT_FILE_TOO_LARGE", 413, "Keep it under 8 MB.");
-  const name = file.name.replace(/[^\w.\- ()]/g, "").slice(0, 90) || "file";
-  const buffer = Buffer.from(await file.arrayBuffer());
+  if (!form) return fail("ASSISTANT_FILE_REQUIRED");
+  const files = [...form.getAll("files"), ...form.getAll("file")].filter((entry): entry is File => entry instanceof File).slice(0, MAX_FILES);
+  if (!files.length) return fail("ASSISTANT_FILE_REQUIRED");
 
-  try {
-    if (isImage(name, file.type)) {
-      let text = "";
-      try {
-        text = await readPhoto(buffer);
-      } catch {
-        // A blurred photo is still worth sending; the chip and the name survive.
-        text = "";
+  // One bad picture must not sink the rest, so each answer stands alone.
+  const items = await pool(files, 3, async (file) => {
+    const name = file.name.replace(/[^\w.\- ()]/g, "").slice(0, 90) || "file";
+    if (file.size > MAX_BYTES) return { ok: false, code: "ASSISTANT_FILE_TOO_LARGE", detail: "Keep each file under 8 MB.", name };
+    const buffer = Buffer.from(await file.arrayBuffer());
+    try {
+      if (isImage(name, file.type)) {
+        let text = "";
+        try {
+          text = await readPhoto(buffer);
+        } catch {
+          // A blurred photo is still worth sending; the chip and the name survive.
+          text = "";
+        }
+        return { ok: true, kind: "photo", name, text, rows: text ? text.split("\n").length : 0, columns: 0 };
       }
-      const rows = text ? text.split("\n").length : 0;
-      return Response.json({ ok: true, kind: "photo", name, text, rows, columns: 0 }, { headers: noStore });
-    }
-
-    if (isSheet(name, file.type)) {
-      let rows: unknown[][] = [];
-      if (/\.xlsx?$/i.test(name) || /spreadsheet|officedocument/i.test(file.type)) {
-        const book = XLSX.read(buffer, { type: "buffer", sheetRows: MAX_ROWS + 20 });
-        const first = book.SheetNames[0];
-        if (!first) return fail("ASSISTANT_FILE_EMPTY");
-        rows = XLSX.utils.sheet_to_json(book.Sheets[first], { header: 1, blankrows: false, defval: "" }) as unknown[][];
-      } else {
-        rows = fromCsv(buffer.toString("utf8"));
+      if (isSheet(name, file.type)) {
+        let rows: unknown[][] = [];
+        if (/\.xlsx?$/i.test(name) || /spreadsheet|officedocument/i.test(file.type)) {
+          const book = XLSX.read(buffer, { type: "buffer", sheetRows: MAX_ROWS + 20 });
+          const first = book.SheetNames[0];
+          if (!first) return { ok: false, code: "ASSISTANT_FILE_EMPTY", detail: "That sheet is blank.", name };
+          rows = XLSX.utils.sheet_to_json(book.Sheets[first], { header: 1, blankrows: false, defval: "" }) as unknown[][];
+        } else {
+          rows = fromCsv(buffer.toString("utf8"));
+        }
+        const grid = gridText(rows);
+        if (!grid.text || !grid.rows) return { ok: false, code: "ASSISTANT_FILE_EMPTY", detail: "No marks were found in that file.", name };
+        return { ok: true, kind: "sheet", name, ...grid, truncated: grid.rows >= MAX_ROWS };
       }
-      const grid = gridText(rows);
-      if (!grid.text || !grid.rows) return fail("ASSISTANT_FILE_EMPTY", 400, "No marks were found in that file.");
-      return Response.json({ ok: true, kind: "sheet", name, ...grid, truncated: grid.rows >= MAX_ROWS }, { headers: noStore });
+      // Anything else still travels with the message and is named, so the model
+      // can tell the proprietor what it holds even without reading it.
+      return { ok: true, kind: "file", name, text: "", rows: 0, columns: 0 };
+    } catch {
+      return { ok: false, code: "ASSISTANT_FILE_UNREADABLE", detail: "That file could not be read. Send it as an Excel or CSV sheet, or a photo.", name };
     }
+  });
 
-    // Anything else still travels with the message and is named, so the model
-    // can tell the proprietor what it holds even without reading it.
-    return Response.json({ ok: true, kind: "file", name, text: "", rows: 0, columns: 0 }, { headers: noStore });
-  } catch {
-    return fail("ASSISTANT_FILE_UNREADABLE", 400, "That file could not be read. Send it as an Excel or CSV sheet, or a photo.");
-  }
+  return Response.json({ ok: true, items }, { headers: noStore });
+}
+
+/** Read a few files at once, not all ten workers together. */
+async function pool<T, R>(items: T[], size: number, run: (item: T) => Promise<R>) {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const index = next++;
+      results[index] = await run(items[index]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(size, items.length) }, worker));
+  return results;
 }

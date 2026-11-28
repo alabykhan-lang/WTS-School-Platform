@@ -102,16 +102,16 @@ assert.match(ui, /config\.is_owner && <div className="assistantCard">\s*<h2>Set 
 assert.match(ui, /const charged = value\.usage as/);
 assert.doesNotMatch(ui, /current\.usagePercent - current\.perReplyCost/, "the client still counts the answer itself");
 
-// The screen is the cloned chat shell: header, avatars, quiet confirm row and a
-// three-tab bar, not a settings page with a chat in it.
+// The screen is the cloned chat shell: header, avatars, quiet confirm row, and
+// the bottom bar is gone — usage is reached from the balance line.
 assert.match(ui, /className="assistantAvatar">WTS</);
 assert.match(ui, /className="assistantWho">You</);
 assert.match(ui, /placeholder="Message the assistant…"/);
 assert.match(ui, /className="assistantConfirm"/);
-assert.match(ui, /className="assistantTabbar"/);
-assert.match(ui, />Chats<\/button>/);
+assert.doesNotMatch(ui, /assistantTabbar/);
+assert.match(ui, /className="assistantUsageLink"/);
+assert.match(ui, /← Back to chat/);
 assert.match(ui, />Models<\/button>/);
-assert.match(ui, />Usage<\/button>/);
 assert.doesNotMatch(ui, /assistantApproval/, "the old yellow approval bar is gone");
 // The reply layer is prose and bullets, and settles pushback first.
 assert.match(route, /async function verifyRow/);
@@ -193,6 +193,15 @@ assert.match(upload, /createWorker/);
 assert.match(ui, /Take photo/);
 assert.match(ui, /Upload from gallery/);
 assert.match(ui, /Upload files/);
+// The camera is the device camera, and the gallery takes ten at once.
+assert.match(ui, /getUserMedia/);
+assert.match(ui, /capture="environment"/);
+assert.match(ui, /accept="image\/\*" multiple/);
+assert.match(upload, /MAX_FILES = 10/);
+assert.match(upload, /form\.getAll\("files"\)/);
+// The picture shows before the upload finishes, and the tray holds a list.
+assert.match(ui, /URL\.createObjectURL/);
+assert.match(ui, /pending\.map\(/);
 assert.match(ui, /type="file"/);
 assert.match(ui, /api\/assistant\/upload/);
 

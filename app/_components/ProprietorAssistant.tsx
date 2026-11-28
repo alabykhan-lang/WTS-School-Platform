@@ -10,7 +10,8 @@ function attachIcon(kind: "sheet" | "photo" | "file") {
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M4 5h16v14H4Z"/><path d="M4 10h16M9 5v14M15 5v14"/></svg>;
 }
 
-type Message = { role: "user" | "assistant"; content: string; failed?: boolean; doc?: CardDoc; document?: boolean; sheet?: string; sheetName?: string; sheetKind?: "sheet" | "photo" | "file" };
+type Attachment = { id: string; name: string; kind: "sheet" | "photo" | "file"; text: string; rows: number; preview?: string; uploading?: boolean };
+type Message = { role: "user" | "assistant"; content: string; failed?: boolean; doc?: CardDoc; document?: boolean; files?: Attachment[]; sheet?: string; sheetName?: string; sheetKind?: "sheet" | "photo" | "file" };
 type Model = { id: string; label: string; description?: string; url?: string; providerId?: string };
 type Thread = { id: string; title: string; messages: Message[]; updatedAt: number };
 type Person = { id?: string; full_name?: string };
@@ -218,13 +219,16 @@ export function ProprietorAssistant() {
   testRef.current = testMode;
   const [drawer, setDrawer] = useState(false);
   const [draft, setDraft] = useState("");
-  const [sheet, setSheet] = useState<{ name: string; text: string; rows: number; kind: "sheet" | "photo" | "file" } | null>(null);
+  const [pending, setPending] = useState<Attachment[]>([]);
   const [attaching, setAttaching] = useState(false);
   const [attachMenu, setAttachMenu] = useState(false);
+  const [camera, setCamera] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
   const galleryRef = useRef<HTMLInputElement>(null);
   const docRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const [busy, setBusy] = useState(false);
   const [busyThread, setBusyThread] = useState("");
   const [notify, setNotify] = useState<"off" | "on" | "denied">("off");
@@ -337,6 +341,14 @@ export function ProprietorAssistant() {
     return () => window.clearInterval(tick);
   }, [busy]);
   useEffect(() => { baseTitle.current = baseTitle.current || document.title; }, []);
+  // The live picture only exists after the camera view mounts.
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!camera || !video) return;
+    video.srcObject = streamRef.current;
+    void video.play().catch(() => {});
+  }, [camera]);
+  useEffect(() => () => streamRef.current?.getTracks().forEach((track) => track.stop()), []);
   // The page worker shows the "answer ready" notice, also from the background.
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return;
@@ -648,48 +660,133 @@ export function ProprietorAssistant() {
   async function send(event?: FormEvent, prompt?: string) {
     event?.preventDefault();
     const typed = (prompt || draft).trim();
-    if (!typed && !sheet) return;
-    if (busy || !activeThread) return;
+    if (!typed && !pending.length) return;
+    if (busy || !activeThread || pending.some((item) => item.uploading)) return;
     if (!config?.is_owner && settings.usagePercent <= 0) { setNotice("The allowance is empty. Ask the developer to top it up."); setTab("usage"); return; }
     setApproval(null);
-    // The sheet itself rides on the message, so the model reads rows while the
-    // bubble stays a normal sentence.
-    const content = typed || "Here is the recording sheet.";
-    const message: Message = sheet
-      ? { role: "user", content, sheet: sheet.text, sheetName: sheet.name, sheetKind: sheet.kind }
+    // The files themselves ride on the message, so the model reads the rows
+    // while the bubble stays a normal sentence.
+    const content = typed || (pending.some((item) => item.kind === "photo") ? "Here are the photos." : "Here is the recording sheet.");
+    const message: Message = pending.length
+      ? { role: "user", content, files: pending }
       : { role: "user", content };
     const updated = [...activeThread.messages, message];
     updateThread(activeThread.id, updated);
     setDraft("");
-    setSheet(null);
+    setPending([]);
     if (draftRef.current) draftRef.current.style.height = "auto";
     await run(activeThread.id, updated);
   }
 
-  /** Send a recording sheet to the server for a clean grid of rows. */
-  async function pickFile(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
+  const MAX_FILES = 10;
+  const newId = () => (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `f${Date.now()}${Math.random().toString(36).slice(2)}`);
+
+  /** A picture the chosen kind of input can give us. */
+  function guessKind(file: File): Attachment["kind"] {
+    if (/^image\//.test(file.type) || /\.(jpe?g|png|webp|heic|heif|bmp)$/i.test(file.name)) return "photo";
+    if (/\.(csv|xlsx?)$/i.test(file.name)) return "sheet";
+    return "file";
+  }
+
+  /** Put the files in the tray at once, then let the server read each one. */
+  async function pickFiles(event: ChangeEvent<HTMLInputElement>) {
+    const chosen = Array.from(event.target.files || []);
     event.target.value = "";
     setAttachMenu(false);
-    if (!file) return;
+    if (!chosen.length) return;
+    const room = Math.max(0, MAX_FILES - pending.length);
+    if (!room) { setNotice(`Ten files at a time. Remove one first.`); return; }
+    const files = chosen.slice(0, room);
+    if (chosen.length > room) setNotice(`Only ${MAX_FILES} files at a time; ${chosen.length - room} were left out.`);
+    const items: Attachment[] = files.map((file) => {
+      const kind = guessKind(file);
+      return { id: newId(), name: file.name, kind, text: "", rows: 0, preview: kind === "photo" ? URL.createObjectURL(file) : undefined, uploading: true };
+    });
+    setPending((current) => [...current, ...items]);
     setAttaching(true);
+    let failed: string[] = [];
     try {
       const body = new FormData();
-      body.append("file", file);
+      files.forEach((file) => body.append("files", file));
       const response = await fetch("/api/assistant/upload", { method: "POST", credentials: "same-origin", body });
-      const value = await response.json().catch(() => null) as { ok?: boolean; code?: string; detail?: string; name?: string; kind?: "sheet" | "photo" | "file"; text?: string; rows?: number } | null;
-      if (!response.ok || !value?.ok) throw new Error(value?.detail || "That file could not be read. Send it as an Excel or CSV sheet, or a photo.");
-      const kind = value.kind || "sheet";
-      const name = value.name || file.name;
-      setSheet({ name, text: String(value.text || ""), rows: Number(value.rows || 0), kind });
-      if (!draft.trim()) {
-        setDraft(kind === "photo" ? `Record these marks from the photo ${name}.` : kind === "sheet" ? `Record these marks from ${name}.` : `Read this file: ${name}.`);
-      }
+      const value = await response.json().catch(() => null) as { ok?: boolean; items?: { ok?: boolean; code?: string; detail?: string; name?: string; kind?: Attachment["kind"]; text?: string; rows?: number }[]; detail?: string } | null;
+      if (!response.ok || !value?.ok || !value.items) throw new Error(value?.detail || "Those files could not be read.");
+      const answers = value.items;
+      const byId = new Map(items.map((item, index) => [item.id, answers[index]]));
+      answers.forEach((answer, index) => {
+        if (answer.ok || !items[index]) return;
+        failed = [...failed, items[index].name];
+        if (items[index].preview) URL.revokeObjectURL(items[index].preview!);
+      });
+      setPending((current) => current.flatMap((entry) => {
+        const answer = byId.get(entry.id);
+        if (!answer) return [entry];
+        if (!answer.ok) return [];
+        return [{ ...entry, name: answer.name || entry.name, kind: answer.kind || entry.kind, text: String(answer.text || ""), rows: Number(answer.rows || 0), uploading: false }];
+      }));
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "That file could not be read.");
+      failed = items.map((item) => item.name);
+      setPending((current) => current.filter((entry) => !items.some((item) => item.id === entry.id)));
+      items.forEach((item) => item.preview && URL.revokeObjectURL(item.preview));
+      setNotice(error instanceof Error ? error.message : "Those files could not be read.");
     } finally {
       setAttaching(false);
     }
+    if (failed.length) setNotice(`${failed.join(", ")} could not be read. Try another photo or send the sheet as Excel.`);
+    if (!draft.trim()) {
+      const kind = items[0]?.kind;
+      setDraft(items.length > 1
+        ? `Record these marks from the ${items.length} photos.`
+        : kind === "photo" ? `Record these marks from the photo.` : kind === "sheet" ? `Record these marks from the sheet.` : `Read this file.`);
+    }
+  }
+
+  function removePending(id: string) {
+    setPending((current) => {
+      const gone = current.find((item) => item.id === id);
+      if (gone?.preview) URL.revokeObjectURL(gone.preview);
+      return current.filter((item) => item.id !== id);
+    });
+  }
+
+  function stopCamera() {
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+    setCamera(false);
+  }
+
+  /** Open the device camera itself; the photo input is the fallback. */
+  async function openCamera() {
+    setAttachMenu(false);
+    if (!navigator.mediaDevices?.getUserMedia) { cameraRef.current?.click(); return; }
+    try {
+      streamRef.current = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false });
+      setCamera(true);
+    } catch {
+      stopCamera();
+      setNotice("The camera did not open. Pick a photo from the gallery instead.");
+      cameraRef.current?.click();
+    }
+  }
+
+  /** The shutter: one frame of the live picture becomes a file in the tray. */
+  function takePhoto() {
+    const video = videoRef.current;
+    if (!video || !video.videoWidth) return;
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext("2d")?.drawImage(video, 0, 0);
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+      const file = new File([blob], `photo-${stamp}.jpg`, { type: "image/jpeg" });
+      const transfer = new DataTransfer();
+      transfer.items.add(file);
+      const event = { target: { files: transfer.files, value: "" } } as unknown as ChangeEvent<HTMLInputElement>;
+      void pickFiles(event);
+    }, "image/jpeg", 0.86);
+    stopCamera();
   }
 
   function jobKey() {
@@ -719,10 +816,15 @@ export function ProprietorAssistant() {
     // An attached sheet is folded into the message text on the wire, so the
     // model reads the rows and the history stays one string per turn.
     const wire = messages.map((message) => {
-      if (!message.sheetName) return { role: message.role, content: message.content };
-      const head = message.sheetKind === "photo" ? `[Photo attached: "${message.sheetName}"]` : message.sheetKind === "file" ? `[File attached: "${message.sheetName}"]` : `[Recording sheet "${message.sheetName}"]`;
-      const body = message.sheet ? message.sheetKind === "photo" ? `\n[Text read from the photo]\n${message.sheet}` : `\n${message.sheet}` : "";
-      return { role: message.role, content: `${message.content}\n\n${head}${body}` };
+      // Older threads stored one sheet; new ones carry a list of files.
+      const files = message.files || (message.sheetName ? [{ id: "one", name: message.sheetName, kind: message.sheetKind || "file" as Attachment["kind"], text: message.sheet || "", rows: 0 }] : []);
+      if (!files.length) return { role: message.role, content: message.content };
+      const blocks = files.map((file) => {
+        const head = file.kind === "photo" ? `[Photo attached: "${file.name}"]` : file.kind === "file" ? `[File attached: "${file.name}"]` : `[Recording sheet "${file.name}"]`;
+        const body = file.text ? file.kind === "photo" ? `\n[Text read from the photo]\n${file.text}` : `\n${file.text}` : "";
+        return `${head}${body}`;
+      });
+      return { role: message.role, content: `${message.content}\n\n${blocks.join("\n\n")}` };
     });
     let jobId = existingJobId || "";
     if (key) localStorage.setItem(key, JSON.stringify({ threadId, messages: wire, started, jobId: jobId || undefined } satisfies Job));
@@ -978,7 +1080,11 @@ export function ProprietorAssistant() {
             <article id={`answer-${index}`} className={`assistantMessage ${message.role}${message.doc || message.document ? " printable" : ""}`}>
               {message.role === "assistant" && <div className="assistantAvatar">WTS</div>}
               <div className={`assistantBubble${message.failed ? " failed" : ""}`}>
-                {message.sheetName && <span className="assistantSheetChip" title={message.sheetName}>{attachIcon(message.sheetKind || "file")}{message.sheetName}</span>}
+                {!!(message.files || message.sheetName) && <div className="assistantBubbleFiles">
+                  {(message.files || [{ id: "one", name: message.sheetName!, kind: message.sheetKind || "file" as Attachment["kind"], text: "", rows: 0 }]).map((file) => <span key={file.id} className="assistantSheetChip" title={file.name}>
+                    {file.preview ? <img src={file.preview} alt=""/> : attachIcon(file.kind)}<span className="assistantSheetName">{file.name}</span>
+                  </span>)}
+                </div>}
                 {renderBlocks(message.content)}
               </div>
               {message.role === "user" && <div className="assistantWho">You</div>}
@@ -1014,37 +1120,45 @@ export function ProprietorAssistant() {
       </div>
       {notice && <div className="assistantNotice" role="status">{notice}</div>}
       <form className="assistantComposer" onSubmit={send}>
-        {sheet && <div className="assistantSheetRow">
-          <span className="assistantSheetChip">{attachIcon(sheet.kind)}{sheet.name}{sheet.kind === "sheet" && sheet.rows ? ` · ${sheet.rows} rows` : ""}</span>
-          <button type="button" className="assistantSheetDrop" onClick={() => setSheet(null)} aria-label="Remove the attachment">×</button>
+        {!!pending.length && <div className="assistantSheetRow">
+          {pending.map((item) => <span key={item.id} className={`assistantSheetChip${item.uploading ? " reading" : ""}`} title={item.name}>
+            {item.preview ? <img src={item.preview} alt=""/> : attachIcon(item.kind)}
+            <span className="assistantSheetName">{item.name}</span>
+            {item.uploading ? " · reading…" : item.kind === "sheet" && item.rows ? ` · ${item.rows} rows` : ""}
+            <button type="button" className="assistantSheetDrop" onClick={() => removePending(item.id)} aria-label={`Remove ${item.name}`}>×</button>
+          </span>)}
         </div>}
-        <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls,text/csv" onChange={(event) => void pickFile(event)} hidden/>
-        <input ref={cameraRef} type="file" accept="image/*" capture="environment" onChange={(event) => void pickFile(event)} hidden/>
-        <input ref={galleryRef} type="file" accept="image/*" onChange={(event) => void pickFile(event)} hidden/>
-        <input ref={docRef} type="file" onChange={(event) => void pickFile(event)} hidden/>
+        <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls,text/csv" onChange={(event) => void pickFiles(event)} hidden/>
+        <input ref={cameraRef} type="file" accept="image/*" capture="environment" onChange={(event) => void pickFiles(event)} hidden/>
+        <input ref={galleryRef} type="file" accept="image/*" multiple onChange={(event) => void pickFiles(event)} hidden/>
+        <input ref={docRef} type="file" multiple onChange={(event) => void pickFiles(event)} hidden/>
         <textarea ref={draftRef} value={draft} rows={3} aria-label="Message" placeholder="Message the assistant…"
           onChange={(event) => setDraft(event.target.value)}
           onInput={(event) => { const el = event.currentTarget; el.style.height = "auto"; el.style.height = `${Math.min(el.scrollHeight, 220)}px`; }}
           onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }}/>
-        <button className="assistantSend" type="submit" disabled={busy || (!draft.trim() && !sheet)} aria-label="Send">↑</button>
+        <button className="assistantSend" type="submit" disabled={busy || pending.some((item) => item.uploading) || (!draft.trim() && !pending.length)} aria-label="Send">↑</button>
         <div className="assistantComposerFoot">
           <div className="assistantAttachWrap">
-            <button type="button" className={`assistantAttach${attaching ? " busy" : ""}`} onClick={() => setAttachMenu((open) => !open)} disabled={attaching || busy} aria-label="Attach" aria-haspopup="menu" aria-expanded={attachMenu}>
+            <button type="button" className={`assistantAttach${attaching ? " busy" : ""}`} onClick={() => setAttachMenu((open) => !open)} disabled={busy} aria-label="Attach" aria-haspopup="menu" aria-expanded={attachMenu}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="m21 12-8.5 8.5a5 5 0 0 1-7-7L14 5a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-3-3L15 7"/></svg>
             </button>
             {attachMenu && <div className="assistantAttachMenu" role="menu">
-              <button type="button" role="menuitem" onClick={() => { setAttachMenu(false); cameraRef.current?.click(); }}>Take photo</button>
-              <button type="button" role="menuitem" onClick={() => { setAttachMenu(false); galleryRef.current?.click(); }}>Upload from gallery</button>
+              <button type="button" role="menuitem" onClick={() => void openCamera()}>Take photo</button>
+              <button type="button" role="menuitem" onClick={() => { setAttachMenu(false); galleryRef.current?.click(); }}>Upload from gallery <small>up to 10</small></button>
               <button type="button" role="menuitem" onClick={() => { setAttachMenu(false); docRef.current?.click(); }}>Upload files</button>
               <button type="button" role="menuitem" onClick={() => { setAttachMenu(false); fileRef.current?.click(); }}>Recording sheet</button>
             </div>}
           </div>
-          {!config.is_owner && <small>{`${settings.usagePercent.toFixed(0)}% left`}</small>}
+          <button type="button" className="assistantUsageLink" onClick={() => { setAttachMenu(false); setTab("usage"); }} title="Usage">{`${settings.usagePercent.toFixed(0)}% left`}</button>
         </div>
       </form>
     </>}
 
     {tab === "models" && <div className="assistantPane">
+      <div className="assistantPaneBar">
+        <button type="button" className="assistantGhost" onClick={() => setTab("chats")}>← Back to chat</button>
+        <button type="button" className="assistantGhost" onClick={() => setTab("usage")}>Usage</button>
+      </div>
       <div className="assistantCard">
         <h2>Your models</h2>
         <p>Every answer comes through the model with the green dot. Tap a dot to switch, or test a model first.</p>
@@ -1101,6 +1215,10 @@ export function ProprietorAssistant() {
     </div>}
 
     {tab === "usage" && <div className="assistantPane">
+      <div className="assistantPaneBar">
+        <button type="button" className="assistantGhost" onClick={() => setTab("chats")}>← Back to chat</button>
+        {showModels && <button type="button" className="assistantGhost" onClick={() => setTab("models")}>Models</button>}
+      </div>
       <div className="assistantCard">
         <h2>Usage balance</h2>
         <p>{config.is_owner ? "The balance counts down as the account answers. Test turns and your own turns are free." : "This is what is left for your assistant. Only your own chats use it."}</p>
@@ -1124,11 +1242,13 @@ export function ProprietorAssistant() {
       </div>}
     </div>}
 
-    <nav className="assistantTabbar" aria-label="Workspace">
-      <button type="button" className={tab === "chats" ? "selected" : ""} onClick={() => setTab("chats")}>Chats</button>
-      {showModels && <button type="button" className={tab === "models" ? "selected" : ""} onClick={() => { setTab("models"); setForm((current) => ({ ...current, id: current.id || settings.defaultModel, provider: settings.providerId, effort: settings.effort })); }}>Models</button>}
-      <button type="button" className={tab === "usage" ? "selected" : ""} onClick={() => setTab("usage")}>Usage</button>
-    </nav>
+    {camera && <div className="assistantCamera" role="dialog" aria-label="Camera">
+      <video ref={videoRef} playsInline muted/>
+      <div className="assistantCameraBar">
+        <button type="button" className="assistantGhost" onClick={stopCamera}>Close</button>
+        <button type="button" className="assistantPrimary" onClick={takePhoto}>Take photo</button>
+      </div>
+    </div>}
 
     {drawer && <button className="assistantScrim" type="button" aria-label="Close menu" onClick={() => setDrawer(false)}/>}
     <aside className={`assistantSidebar ${drawer ? "open" : ""}`}>
