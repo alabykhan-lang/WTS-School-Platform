@@ -177,7 +177,8 @@ assert.match(route, /Reason: \$\{reasonShown\}/);
 // Archiving goes through students.archive, carries its own reason, and checks
 // the record itself instead of asking the proprietor to look.
 assert.match(route, /students\.archive, students\.restore/);
-assert.match(route, /const ARCHIVE_REASON = /);
+assert.match(route, /const archiveReason = /);
+assert.match(route, /"Restored" : "Archived"/);
 assert.match(route, /reason_optional: true/);
 assert.match(route, /function withStandardReason/);
 assert.match(route, /Read back from the record/);
