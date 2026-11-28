@@ -237,7 +237,8 @@ export function ProprietorAssistant() {
     const openWorkspace = async () => {
       for (let attempt = 0; ; attempt += 1) {
         try {
-          return await fetch("/api/assistant", { credentials: "same-origin", cache: "no-store", signal: AbortSignal.timeout(35000) });
+          const preview = new URLSearchParams(window.location.search).get("preview");
+          return await fetch(`/api/assistant${preview ? `?preview=${encodeURIComponent(preview)}` : ""}`, { credentials: "same-origin", cache: "no-store", signal: AbortSignal.timeout(35000) });
         } catch {
           if (attempt >= 1) throw new Error("ASSISTANT_UNAVAILABLE");
           await new Promise((ready) => { window.setTimeout(ready, 1200); });
@@ -279,18 +280,24 @@ export function ProprietorAssistant() {
         const backTo = list.find((item) => item.id === wantedChat);
         setActiveId(backTo ? backTo.id : list[0].id);
         if (wantedChat) window.history.replaceState(null, "", window.location.pathname);
+        // `?failtest=1` puts the failure banner on the page without waiting for
+        // a real failure, so the tester can see the exact wording.
+        if (new URLSearchParams(window.location.search).has("failtest")) {
+          setNotice(bannerText((value as AssistantConfig).is_admin === true));
+        }
       })
       .catch((error) => {
         const code = error instanceof Error ? error.message : "";
         // The signed-out local preview still needs a working screen.
         if (process.env.NODE_ENV !== "production") {
-          const mock: AssistantConfig = { configured: true, models: FALLBACK_MODELS, default_model: FALLBACK_MODELS[0].id, default_url: DEFAULT_URL, is_admin: true, person: { id: "preview", full_name: "Alabi Preview" } };
+          const mock: AssistantConfig = { configured: true, models: FALLBACK_MODELS, default_model: FALLBACK_MODELS[0].id, default_url: DEFAULT_URL, is_admin: new URLSearchParams(window.location.search).get("preview") !== "proprietor", person: { id: "preview", full_name: "Alabi Preview" } };
           setConfig(mock);
           const loaded = readStored("wts-assistant-settings:preview", mock);
           setSettings(loaded);
           setForm({ id: "", label: "", url: loaded.providerUrl, key: loaded.providerKey, provider: loaded.providerId, effort: loaded.effort });
           const fresh: Thread = { id: crypto.randomUUID(), title: "New chat", messages: [], updatedAt: Date.now() };
           setThreads([fresh]); setActiveId(fresh.id);
+          if (new URLSearchParams(window.location.search).has("failtest")) setNotice(bannerText(mock.is_admin));
           return;
         }
         setLoadError(code === "PROPRIETOR_ACCESS_REQUIRED"
@@ -612,6 +619,10 @@ export function ProprietorAssistant() {
     });
   }
 
+  /** The failure notice, without a Models pointer on an account that has no Models tab. */
+  const bannerText = (admin: boolean) =>
+    admin ? "The last answer failed. Send it again, or pick another model in Models." : "The last answer failed. Send it again.";
+
   /** Codes mention Models, which a proprietor account cannot open. */
   const messageFor = (code: string, fallback: string) => {
     const text = ERRORS[code] || fallback;
@@ -770,7 +781,7 @@ export function ProprietorAssistant() {
       const failed = error instanceof Error && error.message && !error.message.startsWith("ASSISTANT_")
         ? error.message
         : `${messageFor("ASSISTANT_REQUEST_FAILED", "The request failed.")} The server was ${host}.`;
-      setNotice(config?.is_admin ? "The last answer failed. Send it again, or pick another model in Models." : "The last answer failed. Send it again.");
+      setNotice(bannerText(config?.is_admin === true));
       updateThread(threadId, [...messages, { role: "assistant", content: failed, failed: true }]);
     } finally {
       if (key && settled) localStorage.removeItem(key);

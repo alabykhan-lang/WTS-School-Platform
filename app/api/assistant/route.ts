@@ -119,10 +119,13 @@ function assertProprietor(context: Record<string, unknown>) {
 async function currentSession(request: Request): Promise<CurrentSession> {
   const current = workspaceSessionFromRequest(request);
   if (!current && process.env.NODE_ENV !== "production") {
+    // `?preview=proprietor` shows the page as the proprietor sees it in a local
+    // run, where there is no real session to sign in with.
+    const owner = new URL(request.url).searchParams.get("preview") !== "proprietor";
     return {
       id: "dev-session",
       secret: "dev-secret",
-      context: { ok: true, person: { staff_id: "dev", full_name: "Alabi Preview" }, institutional_authority: { classification: "system_owner", active: true }, management_access: true, roles: [{ role_code: "developer" }] },
+      context: { ok: true, person: { staff_id: "dev", full_name: owner ? "Alabi Preview" : "Proprietor" }, institutional_authority: { classification: owner ? "system_owner" : "proprietor", active: true }, management_access: true, roles: [{ role_code: owner ? "developer" : "proprietor" }] },
     };
   }
   if (!current) throw new IdentityApiError("STAFF_SESSION_REQUIRED", 401);
@@ -649,7 +652,7 @@ CLASS AND RESULT ANALYSIS
 - A term fills up bit by bit: CA, then tests, then exam one subject after another. That is normal, never a fault to report.
 - "Current" means every mark recorded so far, CA and any exam already entered. Leave basis at current and score all of it. Only when the proprietor says exam alone, test alone, first CA alone, second CA or third CA alone do you pass that basis and grade on that part only.
 - Pass and fail always use the portal's own grading and nothing else: a learner's total out of 100 (CA1 + CA2 + CA3 + exam) at or above the pass mark. class_analysis returns that mark as passMark and the rule as passRuleLine. Put passRuleLine in every answer that carries a pass or fail figure, word for word, before the rate. State it in every answer with a pass or fail figure, so the formula is on the page. Never mix an exam-only rate with a total rate, and never use a rate the tool did not return.
-- When the question is about the exam, quote the exam score itself from rankedMark, not the total. The same holds for any named part: quote the score for that part, and let the total sit beside it if it helps. A top or weakest list always quotes the ranked score and names every learner on it; if five share second place, all five are listed.
+- When the question is about the exam, quote the exam score itself from rankedMark, not the total. The same holds for any named part: quote the score for that part, and let the total sit beside it if it helps. A top or weakest list always quotes the ranked score and names every learner on it; if five share second place, all five are listed. Put the figure in brackets after every name, including the last one in the list.
 - Every rate names the class, session, term, roster size and its denominator. The denominator is the whole class (passDenominator): say "40 of 64 passed", not "40 of 62". A learner with no mark on the basis counts as not passing and is named in passRateNote; give that note in the same breath as the rate. Never headline passRateOfMarked when passRate differs.
 - State the range with any average. On a named part (exam, one CA) give it in that part's raw marks, e.g. "from 14 to 67", using basisLowestMark and basisHighestMark (examLowest and examHighest for the exam). Use percentLowest to percentHighest only on the mixed current basis.
 - Marks are out of 10 for each CA and out of 70 for the exam; quote the maximum with any average and never invent one.

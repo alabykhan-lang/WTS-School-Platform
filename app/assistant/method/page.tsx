@@ -42,6 +42,12 @@ const rules: { heading: string; body: string[] }[] = [
     ],
   },
   {
+    heading: "Testing the failure message",
+    body: [
+      "Add `?failtest=1` to the assistant address to put the failed-answer banner on the page straight away, without waiting for a real failure. A developer account also sees the Models pointer in that banner.",
+    ],
+  },
+  {
     heading: "The classes",
     body: [
       "Crèche to Primary 5 are pupils. JSS1 to SS3 are students. Names are alphabetical in every list.",
