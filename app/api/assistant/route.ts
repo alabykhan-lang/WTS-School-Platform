@@ -222,6 +222,30 @@ async function mintAppSession(current: CurrentSession, app: "registry" | "result
   }
 }
 
+/** A job write is shed under load sometimes; one clean retry usually lands. */
+async function writeJob(current: CurrentSession, jobId: string, status: string, result: Record<string, unknown> | null, progress?: string) {
+  const once = () => progress
+    ? callPrivilegedRpc("school_assistant_job_progress", {
+      p_session_id: current.id,
+      p_session_secret: current.secret,
+      p_job_id: jobId,
+      p_progress: progress,
+    })
+    : callPrivilegedRpc("school_assistant_job_upsert", {
+      p_session_id: current.id,
+      p_session_secret: current.secret,
+      p_job_id: jobId,
+      p_status: status,
+      p_result: result,
+    });
+  try {
+    return await once();
+  } catch (error) {
+    if (!/57014|statement timeout|timed out/i.test(String((error as Error)?.message || ""))) throw error;
+    return await once();
+  }
+}
+
 /** One registry session for several reads, so contact lists do not pay for an SSO exchange each time. */
 async function openRegistry(current: CurrentSession) {
   const session = await mintAppSession(current, "registry");
@@ -3013,13 +3037,7 @@ export async function POST(request: NextRequest) {
         return Response.json({ ok: false, code: "ASSISTANT_MODEL_GATEWAY_NOT_CONFIGURED", detail: "No model API key is saved for this account.", model: settings.model }, { status: 200, headers: noStoreHeaders() });
       }
       const jobId = randomUUID();
-      const created = await callPrivilegedRpc<Record<string, unknown>>("school_assistant_job_upsert", {
-        p_session_id: current.id,
-        p_session_secret: current.secret,
-        p_job_id: jobId,
-        p_status: "running",
-        p_result: null,
-      });
+      const created = await writeJob(current, jobId, "running", null) as Record<string, unknown> | undefined;
       if (!created?.ok) {
         return Response.json({ ok: false, code: String(created?.code || "ASSISTANT_JOB_CREATE_FAILED") }, { status: 200, headers: noStoreHeaders() });
       }
@@ -3044,21 +3062,9 @@ export async function POST(request: NextRequest) {
             const charged = await chargeUsage(current);
             if (charged) payload.usage = charged;
           }
-          await callPrivilegedRpc("school_assistant_job_upsert", {
-            p_session_id: current.id,
-            p_session_secret: current.secret,
-            p_job_id: jobId,
-            p_status: payload.ok ? "done" : "error",
-            p_result: payload,
-          });
+          await writeJob(current, jobId, payload.ok ? "done" : "error", payload as unknown as Record<string, unknown>);
         } catch {
-          await callPrivilegedRpc("school_assistant_job_upsert", {
-            p_session_id: current.id,
-            p_session_secret: current.secret,
-            p_job_id: jobId,
-            p_status: "error",
-            p_result: { ok: false, code: "ASSISTANT_REQUEST_FAILED", detail: "The request stopped unexpectedly.", model: settings.model },
-          }).catch(() => {});
+          await writeJob(current, jobId, "error", { ok: false, code: "ASSISTANT_REQUEST_FAILED", detail: "The request stopped unexpectedly.", model: settings.model }).catch(() => {});
         }
       });
       return Response.json({ ok: true, job_id: jobId, status: "running" }, { headers: noStoreHeaders() });

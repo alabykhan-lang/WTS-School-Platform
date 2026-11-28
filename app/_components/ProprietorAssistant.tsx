@@ -764,7 +764,7 @@ export function ProprietorAssistant() {
       setCamera(true);
     } catch {
       stopCamera();
-      setNotice("The camera did not open. Pick a photo from the gallery instead.");
+      setNotice("The camera did not open here. Pick the photo instead.");
       cameraRef.current?.click();
     }
   }

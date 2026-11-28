@@ -96,6 +96,9 @@ assert.match(route, /classes: classes.map\(\(row\) => row.label\)/);
 // The proprietor's own answers charge the meter on the server; a developer
 // test never moves it, and the client shows the returned balance.
 assert.match(route, /async function chargeUsage/);
+// A shed job write gets one clean retry instead of failing the turn.
+assert.match(route, /async function writeJob/);
+assert.match(route, /57014\|statement timeout/);
 assert.match(route, /if \(!isAdmin && !isTestRun && answer\.ok === true\)/);
 const ui = await readFile(new URL("../app/_components/ProprietorAssistant.tsx", import.meta.url), "utf8");
 assert.match(ui, /config\.is_owner && <div className="assistantCard">\s*<h2>Set the balance<\/h2>[\s\S]{0,400}<label><span>Balance \(%\)<\/span><input/, "the balance fields still show for a proprietor");
