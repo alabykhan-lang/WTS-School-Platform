@@ -10,7 +10,7 @@ function attachIcon(kind: "sheet" | "photo" | "file") {
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M4 5h16v14H4Z"/><path d="M4 10h16M9 5v14M15 5v14"/></svg>;
 }
 
-type Attachment = { id: string; name: string; kind: "sheet" | "photo" | "file"; text: string; rows: number; preview?: string; uploading?: boolean };
+type Attachment = { id: string; name: string; kind: "sheet" | "photo" | "file"; text: string; rows: number; preview?: string; uploading?: boolean; failed?: boolean };
 type Message = { role: "user" | "assistant"; content: string; failed?: boolean; doc?: CardDoc; document?: boolean; files?: Attachment[]; sheet?: string; sheetName?: string; sheetKind?: "sheet" | "photo" | "file" };
 type Model = { id: string; label: string; description?: string; url?: string; providerId?: string };
 type Thread = { id: string; title: string; messages: Message[]; updatedAt: number };
@@ -222,13 +222,12 @@ export function ProprietorAssistant() {
   const [pending, setPending] = useState<Attachment[]>([]);
   const [attaching, setAttaching] = useState(false);
   const [attachMenu, setAttachMenu] = useState(false);
-  const [camera, setCamera] = useState(false);
+
   const fileRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
   const galleryRef = useRef<HTMLInputElement>(null);
   const docRef = useRef<HTMLInputElement>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
+
   const [busy, setBusy] = useState(false);
   const [busyThread, setBusyThread] = useState("");
   const [notify, setNotify] = useState<"off" | "on" | "denied">("off");
@@ -341,14 +340,6 @@ export function ProprietorAssistant() {
     return () => window.clearInterval(tick);
   }, [busy]);
   useEffect(() => { baseTitle.current = baseTitle.current || document.title; }, []);
-  // The live picture only exists after the camera view mounts.
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!camera || !video) return;
-    video.srcObject = streamRef.current;
-    void video.play().catch(() => {});
-  }, [camera]);
-  useEffect(() => () => streamRef.current?.getTracks().forEach((track) => track.stop()), []);
   // The page worker shows the "answer ready" notice, also from the background.
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return;
@@ -417,6 +408,8 @@ export function ProprietorAssistant() {
 
   function removeThread(id: string) {
     setThreads((current) => {
+      const gone = current.find((thread) => thread.id === id);
+      gone?.messages.forEach((message) => message.files?.forEach((file) => file.preview && URL.revokeObjectURL(file.preview)));
       const next = current.filter((thread) => thread.id !== id);
       if (!next.length) {
         const fresh: Thread = { id: crypto.randomUUID(), title: "New chat", messages: [], updatedAt: Date.now() };
@@ -706,8 +699,9 @@ export function ProprietorAssistant() {
     setAttaching(true);
     let failed: string[] = [];
     try {
+      const prepared = await Promise.all(files.map(shrink));
       const body = new FormData();
-      files.forEach((file) => body.append("files", file));
+      prepared.forEach((file, index) => body.append("files", file, files[index].name));
       const response = await fetch("/api/assistant/upload", { method: "POST", credentials: "same-origin", body });
       const value = await response.json().catch(() => null) as { ok?: boolean; items?: { ok?: boolean; code?: string; detail?: string; name?: string; kind?: Attachment["kind"]; text?: string; rows?: number }[]; detail?: string } | null;
       if (!response.ok || !value?.ok || !value.items) throw new Error(value?.detail || "Those files could not be read.");
@@ -716,13 +710,14 @@ export function ProprietorAssistant() {
       answers.forEach((answer, index) => {
         if (answer.ok || !items[index]) return;
         failed = [...failed, items[index].name];
-        if (items[index].preview) URL.revokeObjectURL(items[index].preview!);
       });
-      setPending((current) => current.flatMap((entry) => {
+      // A picture that could not be read still rides on the message, so the
+      // model can say so instead of the proprietor watching it vanish.
+      setPending((current) => current.map((entry) => {
         const answer = byId.get(entry.id);
-        if (!answer) return [entry];
-        if (!answer.ok) return [];
-        return [{ ...entry, name: answer.name || entry.name, kind: answer.kind || entry.kind, text: String(answer.text || ""), rows: Number(answer.rows || 0), uploading: false }];
+        if (!answer) return entry;
+        if (!answer.ok) return { ...entry, uploading: false, failed: true };
+        return { ...entry, name: answer.name || entry.name, kind: answer.kind || entry.kind, text: String(answer.text || ""), rows: Number(answer.rows || 0), uploading: false };
       }));
     } catch (error) {
       failed = items.map((item) => item.name);
@@ -749,44 +744,34 @@ export function ProprietorAssistant() {
     });
   }
 
-  function stopCamera() {
-    streamRef.current?.getTracks().forEach((track) => track.stop());
-    streamRef.current = null;
-    setCamera(false);
-  }
-
-  /** Open the device camera itself; the photo input is the fallback. */
-  async function openCamera() {
+  /** Take photo goes straight to the camera input, still inside the tap. */
+  function openCamera() {
     setAttachMenu(false);
-    if (!navigator.mediaDevices?.getUserMedia) { cameraRef.current?.click(); return; }
-    try {
-      streamRef.current = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false });
-      setCamera(true);
-    } catch {
-      stopCamera();
-      setNotice("The camera did not open here. Pick the photo instead.");
-      cameraRef.current?.click();
-    }
+    cameraRef.current?.click();
   }
 
-  /** The shutter: one frame of the live picture becomes a file in the tray. */
-  function takePhoto() {
-    const video = videoRef.current;
-    if (!video || !video.videoWidth) return;
-    const canvas = document.createElement("canvas");
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    canvas.getContext("2d")?.drawImage(video, 0, 0);
-    canvas.toBlob((blob) => {
-      if (!blob) return;
-      const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-      const file = new File([blob], `photo-${stamp}.jpg`, { type: "image/jpeg" });
-      const transfer = new DataTransfer();
-      transfer.items.add(file);
-      const event = { target: { files: transfer.files, value: "" } } as unknown as ChangeEvent<HTMLInputElement>;
-      void pickFiles(event);
-    }, "image/jpeg", 0.86);
-    stopCamera();
+  /**
+   * Phone photos arrive at 4000px and several megabytes; OCR wants about
+   * 1800px, and the upload cap is 8 MB. Shrink in the browser first.
+   */
+  async function shrink(file: File): Promise<File> {
+    if (!/^image\//.test(file.type)) return file;
+    try {
+      const bitmap = await createImageBitmap(file);
+      const scale = Math.min(1, 1800 / Math.max(bitmap.width, bitmap.height));
+      if (scale === 1 && file.size < 1_500_000) { bitmap.close(); return file; }
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+      canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+      canvas.getContext("2d")?.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      bitmap.close();
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.82));
+      if (!blob) return file;
+      const name = /\.[a-z0-9]+$/i.test(file.name) ? file.name : `${file.name}.jpg`;
+      return new File([blob], name, { type: "image/jpeg" });
+    } catch {
+      return file;
+    }
   }
 
   function jobKey() {
@@ -1121,10 +1106,10 @@ export function ProprietorAssistant() {
       {notice && <div className="assistantNotice" role="status">{notice}</div>}
       <form className="assistantComposer" onSubmit={send}>
         {!!pending.length && <div className="assistantSheetRow">
-          {pending.map((item) => <span key={item.id} className={`assistantSheetChip${item.uploading ? " reading" : ""}`} title={item.name}>
+          {pending.map((item) => <span key={item.id} className={`assistantSheetChip${item.uploading ? " reading" : ""}${item.failed ? " failed" : ""}`} title={item.failed ? `${item.name} — could not be read` : item.name}>
             {item.preview ? <img src={item.preview} alt=""/> : attachIcon(item.kind)}
             <span className="assistantSheetName">{item.name}</span>
-            {item.uploading ? " · reading…" : item.kind === "sheet" && item.rows ? ` · ${item.rows} rows` : ""}
+            {item.uploading ? " · reading…" : item.failed ? " · unread" : item.kind === "sheet" && item.rows ? ` · ${item.rows} rows` : ""}
             <button type="button" className="assistantSheetDrop" onClick={() => removePending(item.id)} aria-label={`Remove ${item.name}`}>×</button>
           </span>)}
         </div>}
@@ -1143,7 +1128,7 @@ export function ProprietorAssistant() {
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="m21 12-8.5 8.5a5 5 0 0 1-7-7L14 5a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-3-3L15 7"/></svg>
             </button>
             {attachMenu && <div className="assistantAttachMenu" role="menu">
-              <button type="button" role="menuitem" onClick={() => void openCamera()}>Take photo</button>
+              <button type="button" role="menuitem" onClick={openCamera}>Take photo</button>
               <button type="button" role="menuitem" onClick={() => { setAttachMenu(false); galleryRef.current?.click(); }}>Upload from gallery <small>up to 10</small></button>
               <button type="button" role="menuitem" onClick={() => { setAttachMenu(false); docRef.current?.click(); }}>Upload files</button>
               <button type="button" role="menuitem" onClick={() => { setAttachMenu(false); fileRef.current?.click(); }}>Recording sheet</button>
@@ -1242,13 +1227,6 @@ export function ProprietorAssistant() {
       </div>}
     </div>}
 
-    {camera && <div className="assistantCamera" role="dialog" aria-label="Camera">
-      <video ref={videoRef} playsInline muted/>
-      <div className="assistantCameraBar">
-        <button type="button" className="assistantGhost" onClick={stopCamera}>Close</button>
-        <button type="button" className="assistantPrimary" onClick={takePhoto}>Take photo</button>
-      </div>
-    </div>}
 
     {drawer && <button className="assistantScrim" type="button" aria-label="Close menu" onClick={() => setDrawer(false)}/>}
     <aside className={`assistantSidebar ${drawer ? "open" : ""}`}>

@@ -197,7 +197,10 @@ assert.match(ui, /Take photo/);
 assert.match(ui, /Upload from gallery/);
 assert.match(ui, /Upload files/);
 // The camera is the device camera, and the gallery takes ten at once.
-assert.match(ui, /getUserMedia/);
+// Take photo clicks the capture input itself, in the same tap; no media probe.
+assert.doesNotMatch(ui, /getUserMedia/);
+assert.match(ui, /onClick=\{openCamera\}/);
+assert.match(ui, /function openCamera\(\) \{\s*setAttachMenu\(false\);\s*cameraRef\.current\?\.click\(\);/);
 assert.match(ui, /capture="environment"/);
 assert.match(ui, /accept="image\/\*" multiple/);
 assert.match(upload, /MAX_FILES = 10/);
@@ -205,6 +208,11 @@ assert.match(upload, /form\.getAll\("files"\)/);
 // The picture shows before the upload finishes, and the tray holds a list.
 assert.match(ui, /URL\.createObjectURL/);
 assert.match(ui, /pending\.map\(/);
+// A big phone photo is shrunk here before upload, and a failed read keeps its
+// chip instead of vanishing from the composer.
+assert.match(ui, /createImageBitmap/);
+assert.match(ui, /files\.map\(shrink\)/);
+assert.match(ui, /failed: true/);
 assert.match(ui, /type="file"/);
 assert.match(ui, /api\/assistant\/upload/);
 
