@@ -612,6 +612,12 @@ export function ProprietorAssistant() {
     });
   }
 
+  /** Codes mention Models, which a proprietor account cannot open. */
+  const messageFor = (code: string, fallback: string) => {
+    const text = ERRORS[code] || fallback;
+    return config?.is_admin ? text : text.replace(/ in Models\.?$/, ".");
+  };
+
   async function send(event?: FormEvent, prompt?: string) {
     event?.preventDefault();
     const content = (prompt || draft).trim();
@@ -696,7 +702,7 @@ export function ProprietorAssistant() {
             startValue = await response.json();
             if (!response.ok || !startValue?.ok) {
               const code = String(startValue?.code || "ASSISTANT_REQUEST_FAILED");
-              throw new Error(`${ERRORS[code] || "The request failed."}${saidText(startValue?.detail)}`);
+              throw new Error(`${messageFor(code, "The request failed.")}${saidText(startValue?.detail)}`);
             }
             break;
           } catch (caught) {
@@ -713,7 +719,7 @@ export function ProprietorAssistant() {
           return;
         }
         jobId = String(startValue?.job_id || "");
-        if (!jobId) throw new Error(ERRORS["ASSISTANT_REQUEST_FAILED"]);
+        if (!jobId) throw new Error(messageFor("ASSISTANT_REQUEST_FAILED", "The request failed."));
         if (key) localStorage.setItem(key, JSON.stringify({ threadId, messages, started, jobId } satisfies Job));
       }
 
@@ -742,7 +748,7 @@ export function ProprietorAssistant() {
         if (value.ok === false) {
           const code = String(value.code || "ASSISTANT_REQUEST_FAILED");
           if (code === "ASSISTANT_JOB_NOT_FOUND") throw new Error("That request expired. Send it again.");
-          throw new Error(ERRORS[code] || "The request failed.");
+          throw new Error(messageFor(code, "The request failed."));
         }
         if (value.status === "running") {
           if (typeof value.progress === "string" && value.progress) setWaitNote(value.progress);
@@ -752,7 +758,7 @@ export function ProprietorAssistant() {
           const payload = (value.result && typeof value.result === "object" ? value.result : {}) as Record<string, unknown>;
           if (!payload.ok) {
             const code = String(payload.code || "ASSISTANT_REQUEST_FAILED");
-            throw new Error(`${ERRORS[code] || "The request failed."}${saidText(payload.detail)}`);
+            throw new Error(`${messageFor(code, "The request failed.")}${saidText(payload.detail)}`);
           }
           deliver(payload);
           return;
@@ -763,8 +769,8 @@ export function ProprietorAssistant() {
       settled = true;
       const failed = error instanceof Error && error.message && !error.message.startsWith("ASSISTANT_")
         ? error.message
-        : `${ERRORS["ASSISTANT_REQUEST_FAILED"]} The server was ${host}.`;
-      setNotice("The last answer failed. Send it again, or pick another model in Models.");
+        : `${messageFor("ASSISTANT_REQUEST_FAILED", "The request failed.")} The server was ${host}.`;
+      setNotice(config?.is_admin ? "The last answer failed. Send it again, or pick another model in Models." : "The last answer failed. Send it again.");
       updateThread(threadId, [...messages, { role: "assistant", content: failed, failed: true }]);
     } finally {
       if (key && settled) localStorage.removeItem(key);

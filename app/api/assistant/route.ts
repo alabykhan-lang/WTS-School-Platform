@@ -846,11 +846,10 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
       ...(noExamSubjects.length ? { subjectsWithNoExamAtAll: noExamSubjects } : {}),
     });
   };
-  await Promise.all(Array.from({ length: 6 }, (_, index) => worker(index, null)));
-  // Sessions are made one after another before the reads so six sign-ins never
+  // Sessions are made one after another before the reads so the sign-ins never
   // land on the identity service at once.
   const preparedCalls: (ResultsCall | null)[] = [];
-  for (let index = 0; index < 6; index += 1) {
+  for (let index = 0; index < 4; index += 1) {
     if (outOfTime()) break;
     preparedCalls.push(await openResults(current).catch(() => openResults(current).catch(() => null)));
   }
@@ -2697,19 +2696,33 @@ export async function POST(request: NextRequest) {
       current.deadline = requestStarted + budgetMs;
       let fastError = "";
       if ((missingAskHere || compareAskHere) && !ask && !sheetAskHere) {
-        try {
-          const made = await classAnalysis(current, {}) as Record<string, unknown>;
-          if (made.ok === true && made.mode === "school_compare") {
-            return {
-              ok: true,
-              model: settings.model,
-              text: compareText(made, missingAskHere === true, missingAskHere === true),
-              usage: null,
-              steps: ["class_analysis"],
-            };
-          }
-          fastError = `${String(made.code || "")}: ${String(made.detail || "")}`;
-        } catch (caught) { fastError = (caught as Error)?.message || String(caught); }
+        // Two bounded tries: a school read sheds a class or a sign-in now and
+        // then, and one clean pass is all this needs.
+        let best: Record<string, unknown> | null = null;
+        for (let attempt = 0; attempt < 2 && !best; attempt += 1) {
+          try {
+            const made = await classAnalysis(current, {}) as Record<string, unknown>;
+            if (made.ok === true && made.mode === "school_compare") best = made;
+            else fastError = `${String(made.code || "")}: ${String(made.detail || "")}`;
+          } catch (caught) { fastError = (caught as Error)?.message || String(caught); }
+        }
+        if (best) {
+          return {
+            ok: true,
+            model: settings.model,
+            text: compareText(best, missingAskHere === true, missingAskHere === true),
+            usage: null,
+            steps: ["class_analysis"],
+          };
+        }
+        // Say it in plain words rather than hand the same read to the model.
+        return {
+          ok: true,
+          model: settings.model,
+          text: "The Results Portal did not answer the school-wide read just now, so nothing here is confirmed. Ask me again in a moment and I will run it again.",
+          usage: null,
+          steps: [],
+        };
       }
       if (sheetAskHere && !ask) {
         try {
