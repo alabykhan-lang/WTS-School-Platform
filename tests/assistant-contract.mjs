@@ -69,7 +69,7 @@ assert.match(route, /Break a subject down when asked[^\n]*call class_analysis on
 
 // A write asks for a tap, and a tap is verified against the same call.
 assert.match(route, /requires_confirmation: true/);
-assert.match(route, /approvalToken\(current, \{ tool: name, args \}\)/);
+assert.match(route, /approvalToken\(current, \{ tool: name, args: prepared \}\)/);
 assert.match(route, /readApproval\(current, token\)/);
 assert.match(route, /async function verifyWrite/);
 assert.match(route, /read_back: true/);
@@ -98,7 +98,7 @@ assert.match(route, /classes: classes.map\(\(row\) => row.label\)/);
 assert.match(route, /async function chargeUsage/);
 assert.match(route, /if \(!isAdmin && !isTestRun && answer\.ok === true\)/);
 const ui = await readFile(new URL("../app/_components/ProprietorAssistant.tsx", import.meta.url), "utf8");
-assert.match(ui, /config\.is_admin && <div className="assistantCard">\s*<h2>Set the balance<\/h2>[\s\S]{0,400}<label><span>Balance \(%\)<\/span><input/, "the balance fields still show for a proprietor");
+assert.match(ui, /config\.is_owner && <div className="assistantCard">\s*<h2>Set the balance<\/h2>[\s\S]{0,400}<label><span>Balance \(%\)<\/span><input/, "the balance fields still show for a proprietor");
 assert.match(ui, /const charged = value\.usage as/);
 assert.doesNotMatch(ui, /current\.usagePercent - current\.perReplyCost/, "the client still counts the answer itself");
 
@@ -169,10 +169,34 @@ assert.match(route, /→ \$\{shown\(payload\[field\]\)\}/);
 assert.match(route, /async function approve\(token: string, current: CurrentSession, reason = ""\)/);
 assert.match(route, /body\.reason/);
 assert.match(route, /payload: \{ \.\.\.payload, reason: reason\.trim\(\)\.slice\(0, 140\) \}/);
-assert.match(ui, /placeholder="Why is this changing\? \(required\)"/);
+assert.match(ui, /placeholder=\{approval\.optional \? "Reason \(optional\)"/);
 assert.match(ui, /approval\.reason\.trim\(\)\.length < 3/);
 assert.match(ui, /Change cancelled — nothing was saved/);
-assert.match(ui, /Reason: \$\{approval\.reason/);
+assert.match(route, /Reason: \$\{reasonShown\}/);
+
+// Archiving goes through students.archive, carries its own reason, and checks
+// the record itself instead of asking the proprietor to look.
+assert.match(route, /students\.archive, students\.restore/);
+assert.match(route, /const ARCHIVE_REASON = /);
+assert.match(route, /reason_optional: true/);
+assert.match(route, /function withStandardReason/);
+assert.match(route, /Read back from the record/);
+assert.doesNotMatch(route, /check the record before relying on it/);
+assert.match(ui, /approval\.optional/);
+
+// A recording sheet can be attached, so the claim in the chat is real.
+const upload = await readFile(new URL("../app/api/assistant/upload/route.ts", import.meta.url), "utf8");
+assert.match(upload, /formData\(\)/);
+assert.match(upload, /XLSX\.read/);
+assert.match(ui, /type="file"/);
+assert.match(ui, /api\/assistant\/upload/);
+
+// The dev placeholders are gone from the live bar, but a test turn still works.
+assert.doesNotMatch(ui, />How figures work</);
+assert.doesNotMatch(ui, />Notify me</);
+assert.match(ui, /\.has\("test"\)/);
+assert.match(ui, /config\.is_owner/);
+assert.match(route, /is_owner: ownerAccount\(person\)/);
 
 // Long answers lead with a summary line, and the timeout sentence is plain.
 assert.match(route, /On a long answer, put the headline first/);
@@ -190,7 +214,7 @@ assert.match(method, /share the position/);
 // Any answer can be printed or copied on its own.
 assert.match(ui, /Print this answer/);
 assert.match(ui, /navigator\.clipboard\.writeText/);
-assert.match(ui, /href="\/assistant\/method"/);
+assert.match(route, /\/assistant\/method/);
 
 console.log("Assistant correctness contract passed");
 

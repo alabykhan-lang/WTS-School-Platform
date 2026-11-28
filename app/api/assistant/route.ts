@@ -86,8 +86,18 @@ function authorityIsAdmin(context: Record<string, unknown>) {
     || /system[_ -]?owner|developer/.test(roleText);
 }
 
-function sameOriginOrMissing(request: Request) {
-  return !request.headers.get("origin") || isSameOrigin(request);
+/**
+ * The owner's own account is the one that carries the developer screens (the
+ * Models tab). A proprietor can be management and still not be the owner, so
+ * classify the account by its staff number, not by its authority level.
+ */
+const OWNER_STAFF_ID = process.env.WTS_OWNER_STAFF_ID || "WTS/OWN/000001";
+
+function ownerAccount(person: Record<string, unknown>) {
+  return String(person.staff_id || "") === OWNER_STAFF_ID;
+}
+
+function sameOriginOrMissing(request: Request) {  return !request.headers.get("origin") || isSameOrigin(request);
 }
 
 function error(code: string, status = 400) {
@@ -629,7 +639,7 @@ const tools = [
       parameters: { type: "object", required: ["action"], properties: { action: { type: "string" }, payload: { type: "object", additionalProperties: true } } },
     },
   },
-  { type: "function", function: { name: "registry_request", description: "Use any central Registry read or action through the signed-in proprietor's Registry session. Pass kind read or write, one action name from the list and its payload. Read actions: students, student (with studentId, for one full record), guardians, staff, staff_self, registrations, catalog, allocations, calendar, prefect, portfolio, portal_access, dashboard. Write actions: students.update, student.update, guardian.upsert, students.restore, allocations.class.set, allocations.subject.set, allocations.class.end, portal.access.set, registration.approve, calendar.transition, prefect.select, profile.signature.update. The Registry enforces the proprietor's permissions and record scope.", parameters: { type: "object", required: ["kind", "action"], properties: { kind: { type: "string", enum: ["read", "write"] }, action: { type: "string" }, payload: { type: "object", additionalProperties: true } } } } },
+  { type: "function", function: { name: "registry_request", description: "Use any central Registry read or action through the signed-in proprietor's Registry session. Pass kind read or write, one action name from the list and its payload. Read actions: students, student (with studentId, for one full record), guardians, staff, staff_self, registrations, catalog, allocations, calendar, prefect, portfolio, portal_access, dashboard. Write actions: students.update, student.update, students.archive (a learner leaving), students.restore, guardian.upsert, allocations.class.set, allocations.subject.set, allocations.class.end, portal.access.set, registration.approve, calendar.transition, prefect.select, profile.signature.update. The Registry enforces the proprietor's permissions and record scope.", parameters: { type: "object", required: ["kind", "action"], properties: { kind: { type: "string", enum: ["read", "write"] }, action: { type: "string" }, payload: { type: "object", additionalProperties: true } } } } },
   { type: "function", function: { name: "attendance_request", description: "Use the connected Attendance System for attendance reads or actions through the proprietor's attendance session. The Attendance System checks account permissions. Only use the listed RPC names; pass its action and payload.", parameters: { type: "object", required: ["rpc", "action"], properties: { rpc: { type: "string", enum: ["attendance_strict_read_api", "attendance_strict_write_api", "attendance_qr_card_api", "attendance_roster_sync_status_api", "attendance_roster_sync_api", "attendance_roster_sync_retry_api"] }, action: { type: "string" }, payload: { type: "object", additionalProperties: true } } } } },
   { type: "function", function: { name: "notification_request", description: "Use the connected WTS Notifications System to inspect settings, recipients, queued messages, or perform a requested notification action. Pass one of the approved RPC names and its normal action/payload. The system enforces permissions. Never send a message until the proprietor explicitly asks; for a send, state the exact recipients, approved template/message, and scope, then get confirmation before calling.", parameters: { type: "object", required: ["rpc"], properties: { rpc: { type: "string", enum: ["school_notification_control_read_api", "school_notification_control_write_api", "school_notification_recipient_admin_read_api", "school_notification_recipient_admin_write_api", "school_guardian_import_admin_read_api", "school_guardian_import_admin_write_api", "school_notification_message_admin_write_api", "school_notification_bulk_message_api", "school_notification_template_send_api"] }, action: { type: "string" }, payload: { type: "object", additionalProperties: true } } } } },
   { type: "function", function: { name: "report_card", description: "Prepare report cards when the proprietor asks. Use the class and student details supplied; use class_analysis for class-wide statistics instead of rebuilding cards one student at a time.", parameters: { type: "object", required: [], properties: { classKey: { type: "string" }, studentId: { type: "string" }, search: { type: "string", description: "Student name or admission number" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
@@ -676,13 +686,14 @@ CLASS AND RESULT ANALYSIS
 - When the proprietor asks for the list of scores, every score, or the whole sheet, call class_analysis ONCE with list true, and add subject only for one named subject. scoreSheet.roster holds the names; each row's i is its position in that list. Print a table per subject with every row, blank marks as a dash, and do not call again per subject.
 - one whole-class call already returns every subject with its own marks, rates and leaders, plus the overall order. Do not call it again once per subject. Pass subject only when the proprietor asks about exactly one subject, and topN only to change how many leaders are shown.
 - "Show me the source table", "where does that come from" or any spot check: call class_analysis once with source true and print only the rows behind the figure in question, as a table in sourceTableColumns order with the Percent column and its % sign.
-- If asked how a figure or a ranking is worked out, answer in one plain sentence — the pass mark, or the percentage of recorded marks — and point at "How figures work" under the message box.
+- If asked how a figure or a ranking is worked out, answer in one plain sentence — the pass mark, or the percentage of recorded marks. The page /assistant/method holds the same rule if they want it written out.
 - Use results_read for a single record, one pupil's marks, traits, remarks or fees, and never for whole-class statistics.
 - Use results_history only for prior terms and sessions the proprietor can already see.
 - A report card is report_card, for the named pupil. Do not build cards to answer a class statistic.
 
 OTHER SYSTEM WORK
 - Registry: list and search students and staff, read a student's record and guardian contacts, check a whole class's guardian phones, and perform an explicitly requested Registry action with registry_request. Registry actions are named, not routed: the payload lists them, so use one name and do not try others one by one. find_students then student_record settles a person; only reach for registry_request when those two do not cover it.
+- Archiving a learner is students.archive with { studentId }; restoring is students.restore. Never students.update for an archive — that only edits the record and the learner stays active. Archiving and restoring need no reason from the proprietor: the card sends a standard reason itself, so the Confirm button is ready straight away.
 - Attendance: read registers and status through attendance_request, and perform an explicitly requested attendance action with the same tool.
 - Notifications: read settings, recipients, templates and queues through notification_request. A send needs the exact recipients, template or message text and scope confirmed first.
 - Results Portal: use results_request for any portal action that the specialist tools do not cover, read or write. Every system applies the signed-in proprietor's own permissions; a refusal is that system's rule, not yours.
@@ -710,7 +721,7 @@ APPROVAL, PUBLICATION AND CONFIRMATION
 AFTER EVERY WRITE
 - Verify by reading the record back, not by trusting the preview.
 - Report what actually changed: person, class, subject, old value, new value. Give the batch or message result and say what can be undone.
-- If the re-read does not show the change, say it did not save and do not call it done.
+- If the re-read still does not show the change, say in one line that it did not save. Never send the proprietor to check the record for you.
 
 INVESTIGATION
 - When something looks wrong, read the data first, explain the cause in plain words, then propose the smallest fix.
@@ -739,6 +750,8 @@ STYLE
 - A question you ask is a normal question, never a failure message.
 - Put learners in alphabetical order whenever you list a group.
 - A report card appears as a Save button under your reply, so do not paste file links; say the card is ready and name the pupil.
+- A recording sheet arrives as an attached file inside the message, printed as rows with " | " between columns: "[Recording sheet \"name\"]" then the rows. Treat the first row as headings when it reads like one. A sheet with no marks in it is a blank sheet, not a fault.
+- The paperclip under the message box takes an Excel or CSV sheet and nothing else yet, so a photo or a PDF is sent but cannot be read: say that plainly, and ask for the file instead.
 - Answer greetings, thanks and simple explainers naturally, without tools.
 - Always finish with a sentence. Never end a turn on a tool call or a button label.`;
 
@@ -1483,7 +1496,10 @@ function pendingSummary(name: string, args: Record<string, unknown>, label: { wh
   }
   if (name === "registry_request") {
     const target = String(payload.studentId || payload.staffId || payload.name || "the registry record");
-    return `Apply Registry change "${String(args.action || "")}" to ${target}.`;
+    const action = String(args.action || "");
+    if (action === "students.archive" || action === "student.archive") return `Archive ${label.who || target}${label.where ? ` — ${label.where}` : ""}. The record can be restored.`;
+    if (action === "students.restore" || action === "student.restore") return `Restore ${label.who || target}${label.where ? ` into ${label.where}` : ""}. The record becomes active again.`;
+    return `Apply Registry change "${action}" to ${target}.`;
   }
   if (name === "attendance_request") return `Apply attendance change "${String(args.action || "")}" through ${String(args.rpc || "")}.`;
   if (name === "notification_request") return `Run notification action "${String(args.action || "")}".`;
@@ -1509,6 +1525,22 @@ async function verifyRow<T>(read: () => Promise<T | null>, matches: (row: T) => 
 }
 
 const MARK_FIELDS = ["ca1", "ca2", "ca3", "exam"] as const;
+
+/** Archiving is the one Registry write that needs no reason from the proprietor. */
+const ARCHIVE_ACTIONS = new Set(["students.archive", "student.archive", "students.restore", "student.restore"]);
+const ARCHIVE_REASON = "Archived from the proprietor assistant on the school's instruction";
+
+function isArchiveWrite(name: string, args: Record<string, unknown>) {
+  return name === "registry_request" && ARCHIVE_ACTIONS.has(String(args.action || ""));
+}
+
+/** Fill the reason the Registry insists on, so the card needs no typing. */
+function withStandardReason(args: Record<string, unknown>) {
+  const payload = (args.payload && typeof args.payload === "object" ? args.payload : {}) as Record<string, unknown>;
+  const reason = String(payload.reason || "").trim();
+  if (reason.length >= 8) return args;
+  return { ...args, payload: { ...payload, reason: ARCHIVE_REASON } };
+}
 
 const sameMark = (left: unknown, right: unknown) => (left === null || left === undefined || left === "" ? null : Number(left)) === (right === null || right === undefined || right === "" ? null : Number(right));
 
@@ -1571,9 +1603,33 @@ async function verifyWrite(name: string, args: Record<string, unknown>, current:
       return { ...record, verify: row ? { read_back: true, matched: found.matched, trait_name: row.trait_name, rating: row.rating } : { read_back: false } };
     }
     if (name === "registry_request" && payload.studentId) {
-      const read = await registry(current, "read", "student", { studentId: payload.studentId });
-      const found = read?.student || read?.record || null;
-      return { ...record, verify: found ? { read_back: true, student: found } : { read_back: false } };
+      const action = String(args.action || "");
+      const readStudent = async () => {
+        // An archived learner drops out of the default "active" filter, so a
+        // check on one asks for any status.
+        const read = await registry(current, "read", "student", { studentId: payload.studentId, status: "" });
+        const rows = Array.isArray(read?.students) ? read.students as Record<string, unknown>[] : [];
+        return rows[0] || null;
+      };
+      if (ARCHIVE_ACTIONS.has(action)) {
+        const wanted = action === "students.archive" || action === "student.archive";
+        const shows = (row: Record<string, unknown>) => (row.archived === true) === wanted;
+        let found = await verifyRow(readStudent, shows);
+        // The Registry can answer before its write lands. One quiet retry of the
+        // same write is better than handing the check back to the proprietor.
+        if (!found.matched) {
+          const again = await registry(current, "write", action, payload).catch(() => null);
+          if (again?.ok === true) found = await verifyRow(readStudent, shows);
+        }
+        return {
+          ...record,
+          verify: found.row
+            ? { read_back: true, matched: found.matched, archived: found.row.archived === true, lifecycle_status: found.row.lifecycle_status }
+            : { read_back: false },
+        };
+      }
+      const found = await verifyRow(readStudent, () => true);
+      return { ...record, verify: found.row ? { read_back: true, matched: true, archived: found.row.archived === true } : { read_back: false } };
     }
   } catch {
     return { ...record, verify: { read_back: false, note: "The change was sent but the read-back failed." } };
@@ -1632,15 +1688,18 @@ async function cardLabel(name: string, args: Record<string, unknown>, current: C
 
 async function executeTool(name: string, args: Record<string, unknown>, current: CurrentSession, confirmed = false) {
   if (pendingWrites(name, args) && !confirmed) {
-    const label = await cardLabel(name, args, current);
-    const token = approvalToken(current, { tool: name, args });
+    const archive = isArchiveWrite(name, args);
+    const prepared = archive ? withStandardReason(args) : args;
+    const label = await cardLabel(name, prepared, current);
+    const token = approvalToken(current, { tool: name, args: prepared });
     return {
       requires_confirmation: true,
-      summary: pendingSummary(name, args, label),
+      summary: pendingSummary(name, prepared, label),
       tool: name,
-      args,
+      args: prepared,
       token,
       approval_token: token,
+      ...(archive ? { reason_optional: true } : {}),
     };
   }
   const result = await runTool(name, args, current);
@@ -2018,7 +2077,7 @@ async function askProvider(url: string, settings: ModelSettings, style: Style, h
 const MAX_TOOL_CALLS = 14;
 
 const REGISTRY_READ_ACTIONS = "students, student, guardians, staff, staff_self, registrations, catalog, allocations, calendar, prefect, portfolio, portal_access, dashboard";
-const REGISTRY_WRITE_ACTIONS = "students.update, student.update, guardian.upsert, students.restore, allocations.class.set, allocations.subject.set, allocations.class.end, portal.access.set, registration.approve, calendar.transition, prefect.select, profile.signature.update";
+const REGISTRY_WRITE_ACTIONS = "students.update, student.update, students.archive, students.restore, guardian.upsert, allocations.class.set, allocations.subject.set, allocations.class.end, portal.access.set, registration.approve, calendar.transition, prefect.select, profile.signature.update";
 const TOOL_RESULT_CAP = 6000;
 
 /** Same default bands the Results Portal ships with, kept in step with it. */
@@ -2342,6 +2401,7 @@ async function approve(token: string, current: CurrentSession, reason = "") {
   const summary = pendingSummary(tool, args, await cardLabel(tool, args, current));
   // The reason travels with the write, so the portal's audit row keeps it.
   const payload = (args.payload && typeof args.payload === "object" ? args.payload : {}) as Record<string, unknown>;
+  const reasonShown = reason.trim() || (isArchiveWrite(tool, args) ? String(payload.reason || "").trim() : "");
   const saved = reason.trim()
     ? { ...args, payload: { ...payload, reason: reason.trim().slice(0, 140) } }
     : args;
@@ -2354,14 +2414,16 @@ async function approve(token: string, current: CurrentSession, reason = "") {
   const seen = verify.ca1 !== undefined ? ` It now reads CA1 ${blank(verify.ca1)}, CA2 ${blank(verify.ca2)}, CA3 ${blank(verify.ca3)}, exam ${blank(verify.exam)}.`
     : verify.academic !== undefined ? ` It now reads "${String(verify.academic ?? "")}".`
     : verify.rating !== undefined ? ` It now reads ${String(verify.rating ?? "blank")}.`
+    : verify.archived !== undefined ? ` The record now reads ${verify.archived === true ? "archived" : "active"}.`
     : "";
   if (result.ok === true) {
     if (verify.read_back === true && verify.matched !== false) note = ` Read back from the record.${seen}`;
+    else if (verify.read_back === true && verify.archived !== undefined) note = ` Read back from the record, but it still shows the old state.${seen}`;
     else if (verify.read_back === true) note = ` The record still shows an older value.${seen} Reload the sheet before relying on it.`;
-    else if (verify.read_back === false) note = " The save was sent but the read-back does not show it yet; check the record before relying on it.";
+    else if (verify.read_back === false) note = " The save was sent but the re-read could not confirm it.";
   }
-  const said = reason.trim() ? ` Reason: ${reason.trim()}.` : "";
-  return { summary: `${summary}${note}${said}`, tool, result, reason: reason.trim() };
+  const said = reasonShown ? ` Reason: ${reasonShown}.` : "";
+  return { summary: `${summary}${note}${said}`, tool, result, reason: reasonShown };
 }
 
 class CardProblem extends Error {
@@ -2605,6 +2667,7 @@ export async function GET(request: NextRequest) {
       default_model: DEFAULT_MODEL,
       default_url: DEEPSEEK_BASE,
       is_admin: authorityIsAdmin(current.context),
+      is_owner: ownerAccount(person),
       person: { id: person.staff_id || person.person_id || current.id, full_name: person.full_name || "Proprietor" },
     }, { headers: noStoreHeaders() });
   } catch (caught) {
