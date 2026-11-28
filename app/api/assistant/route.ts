@@ -795,7 +795,7 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
   const queue = [...catalog];
   /** Wall-clock cap, so a bad spell on the identity service cannot run past the turn. */
   const scanStarted = Date.now();
-  const outOfTime = () => Date.now() - scanStarted > 42000;
+  const outOfTime = () => Date.now() - scanStarted > 38000;
   const worker = async (index: number, prepared: ResultsCall | null) => {
     // One portal session per worker, made before the burst starts so the
     // sign-ins never overlap.
@@ -2692,27 +2692,23 @@ export async function POST(request: NextRequest) {
     const runTurn = async (): Promise<Record<string, unknown>> => {
       const requestStarted = Date.now();
       const elapsed = requestStarted - startedAt;
-      const budgetMs = Math.min(50000, Math.max(9000, 50000 - elapsed));
+      const budgetMs = Math.min(50000, Math.max(elapsed > 25000 ? 15000 : 9000, 50000 - elapsed));
       current.deadline = requestStarted + budgetMs;
       let fastError = "";
       if ((missingAskHere || compareAskHere) && !ask && !sheetAskHere) {
-        // One retry, because the identity service sheds a scan now and then and
-        // a second run usually lands.
-        for (let attempt = 0; attempt < 2; attempt += 1) {
-          try {
-            const made = await classAnalysis(current, {}) as Record<string, unknown>;
-            if (made.ok === true && made.mode === "school_compare") {
-              return {
-                ok: true,
-                model: settings.model,
-                text: compareText(made, missingAskHere === true, missingAskHere === true),
-                usage: null,
-                steps: ["class_analysis"],
-              };
-            }
-            fastError = `${String(made.code || "")}: ${String(made.detail || "")}`;
-          } catch (caught) { fastError = (caught as Error)?.message || String(caught); }
-        }
+        try {
+          const made = await classAnalysis(current, {}) as Record<string, unknown>;
+          if (made.ok === true && made.mode === "school_compare") {
+            return {
+              ok: true,
+              model: settings.model,
+              text: compareText(made, missingAskHere === true, missingAskHere === true),
+              usage: null,
+              steps: ["class_analysis"],
+            };
+          }
+          fastError = `${String(made.code || "")}: ${String(made.detail || "")}`;
+        } catch (caught) { fastError = (caught as Error)?.message || String(caught); }
       }
       if (sheetAskHere && !ask) {
         try {
