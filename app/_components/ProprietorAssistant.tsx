@@ -1,13 +1,13 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 type CardDoc = { student: string; classKey: string; term: string; session: string; name?: string };
-type Message = { role: "user" | "assistant"; content: string; failed?: boolean; doc?: CardDoc; document?: boolean };
+type Message = { role: "user" | "assistant"; content: string; failed?: boolean; doc?: CardDoc; document?: boolean; sheet?: string; sheetName?: string };
 type Model = { id: string; label: string; description?: string; url?: string; providerId?: string };
 type Thread = { id: string; title: string; messages: Message[]; updatedAt: number };
 type Person = { id?: string; full_name?: string };
-type AssistantConfig = { configured: boolean; models: Model[]; default_model: string; default_url: string; results_url?: string; is_admin: boolean; person?: Person };
+type AssistantConfig = { configured: boolean; models: Model[]; default_model: string; default_url: string; results_url?: string; is_admin: boolean; is_owner?: boolean; person?: Person };
 type TestState = { state: "idle" | "running" | "pass" | "fail"; message: string };
 type Job = { threadId: string; messages: Message[]; started: number; jobId?: string };
 
@@ -204,16 +204,21 @@ export function ProprietorAssistant() {
   const [threads, setThreads] = useState<Thread[]>([]);
   const [activeId, setActiveId] = useState("");
   const [tab, setTab] = useState<"chats" | "models" | "usage">("chats");
-  const [testMode, setTestMode] = useState(false);
+  // The Test button is gone from the bar, so `?test=1` is how a tester still
+  // gets free turns without touching the balance.
+  const [testMode, setTestMode] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).has("test"));
   const testRef = useRef(false);
   testRef.current = testMode;
   const [drawer, setDrawer] = useState(false);
   const [draft, setDraft] = useState("");
+  const [sheet, setSheet] = useState<{ name: string; text: string; rows: number } | null>(null);
+  const [attaching, setAttaching] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [busyThread, setBusyThread] = useState("");
   const [notify, setNotify] = useState<"off" | "on" | "denied">("off");
   const [notice, setNotice] = useState("");
-  const [approval, setApproval] = useState<{ token: string; summary: string; reason: string } | null>(null);
+  const [approval, setApproval] = useState<{ token: string; summary: string; reason: string; optional: boolean } | null>(null);
   const [waitNote, setWaitNote] = useState("");
   const [form, setForm] = useState({ id: "", label: "", url: DEFAULT_URL, key: "", provider: "yeta", effort: "low" as Effort });
   const [showKey, setShowKey] = useState(false);
@@ -283,21 +288,21 @@ export function ProprietorAssistant() {
         // `?failtest=1` puts the failure banner on the page without waiting for
         // a real failure, so the tester can see the exact wording.
         if (new URLSearchParams(window.location.search).has("failtest")) {
-          setNotice(bannerText((value as AssistantConfig).is_admin === true));
+          setNotice(bannerText((value as AssistantConfig).is_owner === true));
         }
       })
       .catch((error) => {
         const code = error instanceof Error ? error.message : "";
         // The signed-out local preview still needs a working screen.
         if (process.env.NODE_ENV !== "production") {
-          const mock: AssistantConfig = { configured: true, models: FALLBACK_MODELS, default_model: FALLBACK_MODELS[0].id, default_url: DEFAULT_URL, is_admin: new URLSearchParams(window.location.search).get("preview") !== "proprietor", person: { id: "preview", full_name: "Alabi Preview" } };
+          const mock: AssistantConfig = { configured: true, models: FALLBACK_MODELS, default_model: FALLBACK_MODELS[0].id, default_url: DEFAULT_URL, is_admin: new URLSearchParams(window.location.search).get("preview") !== "proprietor", is_owner: new URLSearchParams(window.location.search).get("preview") !== "proprietor", person: { id: "preview", full_name: "Alabi Preview" } };
           setConfig(mock);
           const loaded = readStored("wts-assistant-settings:preview", mock);
           setSettings(loaded);
           setForm({ id: "", label: "", url: loaded.providerUrl, key: loaded.providerKey, provider: loaded.providerId, effort: loaded.effort });
           const fresh: Thread = { id: crypto.randomUUID(), title: "New chat", messages: [], updatedAt: Date.now() };
           setThreads([fresh]); setActiveId(fresh.id);
-          if (new URLSearchParams(window.location.search).has("failtest")) setNotice(bannerText(mock.is_admin));
+          if (new URLSearchParams(window.location.search).has("failtest")) setNotice(bannerText(mock.is_owner === true));
           return;
         }
         setLoadError(code === "PROPRIETOR_ACCESS_REQUIRED"
@@ -626,20 +631,49 @@ export function ProprietorAssistant() {
   /** Codes mention Models, which a proprietor account cannot open. */
   const messageFor = (code: string, fallback: string) => {
     const text = ERRORS[code] || fallback;
-    return config?.is_admin ? text : text.replace(/ in Models\.?$/, ".");
+    return config?.is_owner ? text : text.replace(/ in Models\.?$/, ".");
   };
 
   async function send(event?: FormEvent, prompt?: string) {
     event?.preventDefault();
-    const content = (prompt || draft).trim();
-    if (!content || busy || !activeThread) return;
-    if (!config?.is_admin && settings.usagePercent <= 0) { setNotice("The allowance is empty. Ask the developer to top it up."); setTab("usage"); return; }
+    const typed = (prompt || draft).trim();
+    if (!typed && !sheet) return;
+    if (busy || !activeThread) return;
+    if (!config?.is_owner && settings.usagePercent <= 0) { setNotice("The allowance is empty. Ask the developer to top it up."); setTab("usage"); return; }
     setApproval(null);
-    const updated = [...activeThread.messages, { role: "user", content } as Message];
+    // The sheet itself rides on the message, so the model reads rows while the
+    // bubble stays a normal sentence.
+    const content = typed || "Here is the recording sheet.";
+    const message: Message = sheet
+      ? { role: "user", content, sheet: sheet.text, sheetName: sheet.name }
+      : { role: "user", content };
+    const updated = [...activeThread.messages, message];
     updateThread(activeThread.id, updated);
     setDraft("");
+    setSheet(null);
     if (draftRef.current) draftRef.current.style.height = "auto";
     await run(activeThread.id, updated);
+  }
+
+  /** Send a recording sheet to the server for a clean grid of rows. */
+  async function pickSheet(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setAttaching(true);
+    try {
+      const body = new FormData();
+      body.append("file", file);
+      const response = await fetch("/api/assistant/upload", { method: "POST", credentials: "same-origin", body });
+      const value = await response.json().catch(() => null) as { ok?: boolean; code?: string; detail?: string; name?: string; text?: string; rows?: number } | null;
+      if (!response.ok || !value?.ok) throw new Error(value?.detail || "That file could not be read. Send an Excel or CSV sheet.");
+      setSheet({ name: value.name || file.name, text: String(value.text || ""), rows: Number(value.rows || 0) });
+      if (!draft.trim()) setDraft(`Record these marks from ${value.name || file.name}.`);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "That file could not be read.");
+    } finally {
+      setAttaching(false);
+    }
   }
 
   function jobKey() {
@@ -666,8 +700,13 @@ export function ProprietorAssistant() {
   async function run(threadId: string, messages: Message[], existingJobId?: string, startedAt?: number) {
     const key = jobKey();
     const started = startedAt || Date.now();
+    // An attached sheet is folded into the message text on the wire, so the
+    // model reads the rows and the history stays one string per turn.
+    const wire = messages.map((message) => message.sheet
+      ? { role: message.role, content: `${message.content}\n\n[Recording sheet "${message.sheetName || "sheet"}"]\n${message.sheet}` }
+      : { role: message.role, content: message.content });
     let jobId = existingJobId || "";
-    if (key) localStorage.setItem(key, JSON.stringify({ threadId, messages, started, jobId: jobId || undefined } satisfies Job));
+    if (key) localStorage.setItem(key, JSON.stringify({ threadId, messages: wire, started, jobId: jobId || undefined } satisfies Job));
     let settled = false;
     setBusy(true); setBusyThread(threadId); setNotice("");
     const host = hostOf(settings.providerUrl || DEFAULT_URL);
@@ -676,12 +715,12 @@ export function ProprietorAssistant() {
       const answer = String(value.text || "Done.");
       const doc = value.document && typeof value.document === "object" ? value.document as CardDoc : undefined;
       updateThread(threadId, [...messages, { role: "assistant", content: answer, doc }]);
-      const approvalObj = value.approval as { approval_token?: string; summary?: string } | undefined;
-      if (approvalObj?.approval_token) setApproval({ token: approvalObj.approval_token, summary: approvalObj.summary || "Confirm this change.", reason: "" });
+      const approvalObj = value.approval as { approval_token?: string; summary?: string; reason_optional?: boolean } | undefined;
+      if (approvalObj?.approval_token) setApproval({ token: approvalObj.approval_token, summary: approvalObj.summary || "Confirm this change.", reason: "", optional: approvalObj.reason_optional === true });
       // The server charges the proprietor's own answers and returns the new
       // balance, so a developer test never moves it.
       const charged = value.usage as { percent?: unknown } | undefined;
-      if (!config?.is_admin && typeof charged?.percent === "number") {
+      if (!config?.is_owner && typeof charged?.percent === "number") {
         setSettings((current) => ({ ...current, usagePercent: Math.max(0, Math.min(100, charged.percent as number)) }));
       }
       settled = true;
@@ -703,7 +742,7 @@ export function ProprietorAssistant() {
               body: JSON.stringify({
                 async: true,
                 model: settings.defaultModel,
-                messages,
+                messages: wire,
                 provider_key: config?.is_admin ? settings.providerKey : "",
                 provider_url: config?.is_admin ? settings.providerUrl : "",
                 effort: settings.effort,
@@ -731,7 +770,7 @@ export function ProprietorAssistant() {
         }
         jobId = String(startValue?.job_id || "");
         if (!jobId) throw new Error(messageFor("ASSISTANT_REQUEST_FAILED", "The request failed."));
-        if (key) localStorage.setItem(key, JSON.stringify({ threadId, messages, started, jobId } satisfies Job));
+        if (key) localStorage.setItem(key, JSON.stringify({ threadId, messages: wire, started, jobId } satisfies Job));
       }
 
       let firstPoll = true;
@@ -781,7 +820,7 @@ export function ProprietorAssistant() {
       const failed = error instanceof Error && error.message && !error.message.startsWith("ASSISTANT_")
         ? error.message
         : `${messageFor("ASSISTANT_REQUEST_FAILED", "The request failed.")} The server was ${host}.`;
-      setNotice(bannerText(config?.is_admin === true));
+      setNotice(bannerText(config?.is_owner === true));
       updateThread(threadId, [...messages, { role: "assistant", content: failed, failed: true }]);
     } finally {
       if (key && settled) localStorage.removeItem(key);
@@ -854,7 +893,7 @@ export function ProprietorAssistant() {
   }
 
   async function confirm() {
-    if (!approval || busy || approval.reason.trim().length < 3) return;
+    if (!approval || busy || (!approval.optional && approval.reason.trim().length < 3)) return;
     setBusy(true);
     try {
       const response = await fetch("/api/assistant", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ approval_token: approval.token, reason: approval.reason.trim() }) });
@@ -862,8 +901,9 @@ export function ProprietorAssistant() {
       if (!response.ok || !value?.ok) throw new Error(String(value?.code || "CHANGE_FAILED"));
       if (activeThread) {
         const result = (value.completed?.result || {}) as { ok?: boolean; code?: string; error_detail?: string };
+        // The server's summary already carries the reason once, so it is not repeated here.
         const line = result.ok
-          ? `Done. ${value.completed?.summary || approval.summary}${approval.reason.trim() ? ` Reason: ${approval.reason.trim()}.` : ""}`
+          ? `Done. ${value.completed?.summary || approval.summary}`
           : `Not saved. ${result.code || "unknown error"}${result.error_detail ? ` — ${result.error_detail}` : ""}.`;
         updateThread(activeThread.id, [...activeThread.messages, { role: "assistant", content: line }]);
       }
@@ -886,7 +926,7 @@ export function ProprietorAssistant() {
     </main>;
   }
 
-  const showModels = config.is_admin === true;
+  const showModels = config.is_owner === true;
   const title = tab === "chats" ? `Good day, ${name}` : tab === "models" && showModels ? "Models" : "Usage";
   const invite = (text: string) => { setTab("chats"); void send(undefined, text); };
 
@@ -917,7 +957,10 @@ export function ProprietorAssistant() {
           return <div key={`${message.role}-${index}`}>
             <article id={`answer-${index}`} className={`assistantMessage ${message.role}${message.doc || message.document ? " printable" : ""}`}>
               {message.role === "assistant" && <div className="assistantAvatar">WTS</div>}
-              <div className={`assistantBubble${message.failed ? " failed" : ""}`}>{renderBlocks(message.content)}</div>
+              <div className={`assistantBubble${message.failed ? " failed" : ""}`}>
+                {message.sheetName && <span className="assistantSheetChip" title={message.sheetName}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/></svg>{message.sheetName}</span>}
+                {renderBlocks(message.content)}
+              </div>
               {message.role === "user" && <div className="assistantWho">You</div>}
             </article>
             {message.role === "assistant" && !message.failed && !busy && <div className="assistantAnswerActions">
@@ -936,11 +979,11 @@ export function ProprietorAssistant() {
                 value={approval.reason}
                 onChange={(event) => setApproval((current) => current ? { ...current, reason: event.target.value } : current)}
                 onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void confirm(); } }}
-                placeholder="Why is this changing? (required)"
+                placeholder={approval.optional ? "Reason (optional)" : "Why is this changing? (required)"}
                 aria-label="Reason for the change"
                 maxLength={140}
               />
-              <button type="button" onClick={() => void confirm()} disabled={busy || approval.reason.trim().length < 3}>Confirm</button>
+              <button type="button" onClick={() => void confirm()} disabled={busy || (!approval.optional && approval.reason.trim().length < 3)}>Confirm</button>
               <button type="button" onClick={cancel} disabled={busy}>Cancel</button>
             </div>}
           </div>;
@@ -951,19 +994,21 @@ export function ProprietorAssistant() {
       </div>
       {notice && <div className="assistantNotice" role="status">{notice}</div>}
       <form className="assistantComposer" onSubmit={send}>
+        {sheet && <div className="assistantSheetRow">
+          <span className="assistantSheetChip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/></svg>{sheet.name} · {sheet.rows} rows</span>
+          <button type="button" className="assistantSheetDrop" onClick={() => setSheet(null)} aria-label="Remove the sheet">×</button>
+        </div>}
+        <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls,text/csv" onChange={(event) => void pickSheet(event)} hidden/>
+        <button type="button" className={`assistantAttach${attaching ? " busy" : ""}`} onClick={() => fileRef.current?.click()} disabled={attaching || busy} aria-label="Attach a recording sheet" title="Attach a recording sheet (Excel or CSV)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="m21 12-8.5 8.5a5 5 0 0 1-7-7L14 5a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-3-3L15 7"/></svg>
+        </button>
         <textarea ref={draftRef} value={draft} rows={1} aria-label="Message" placeholder="Message the assistant…"
           onChange={(event) => setDraft(event.target.value)}
           onInput={(event) => { const el = event.currentTarget; el.style.height = "auto"; el.style.height = `${Math.min(el.scrollHeight, 150)}px`; }}
           onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }}/>
-        <button className="assistantSend" type="submit" disabled={busy || !draft.trim()} aria-label="Send">↑</button>
+        <button className="assistantSend" type="submit" disabled={busy || (!draft.trim() && !sheet)} aria-label="Send">↑</button>
         <div className="assistantComposerFoot">
-          {!config.is_admin && <small>{`${settings.usagePercent.toFixed(0)}% left`}</small>}
-          <a className="assistantMethodLink" href="/assistant/method" target="_blank" rel="noreferrer">How figures work</a>
-          <button type="button" className={`assistantPill test${testMode ? " on" : ""}`} onClick={() => setTestMode((on) => { const next = !on; try { localStorage.setItem(`wts-assistant-test:${config.person?.id || "signed-in-user"}`, next ? "on" : "off"); } catch { /* private mode */ } return next; })} aria-pressed={testMode} title="Test turns are free and do not use the balance">Test</button>
-          <button type="button" className={`assistantPill${notify === "on" ? " on" : ""}`} onClick={toggleNotify} aria-pressed={notify === "on"} title="Tell me here when the answer is ready">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M18 15V10a6 6 0 1 0-12 0v5l-2 3h16l-2-3Z"/><path d="M10 21a2.4 2.4 0 0 0 4 0"/></svg>
-            Notify me
-          </button>
+          {!config.is_owner && <small>{`${settings.usagePercent.toFixed(0)}% left`}</small>}
         </div>
       </form>
     </>}
@@ -982,15 +1027,15 @@ export function ProprietorAssistant() {
                 <b>{model.label}</b>
                 <small>{model.id}{state === "works" ? " · answered" : state === "busy" ? " · busy, try again" : state === "failed" ? " · failed" : ""}</small>
               </div>
-              {config.is_admin && <button type="button" className="assistantModelTest" onClick={() => testModel(model)} disabled={state === "testing"}>{state === "testing" ? "…" : "Test"}</button>}
-              {config.is_admin && settings.models.length > 1 && <button type="button" className="assistantRemove" onClick={() => removeModel(model.id)}>Remove</button>}
+              {config.is_owner && <button type="button" className="assistantModelTest" onClick={() => testModel(model)} disabled={state === "testing"}>{state === "testing" ? "…" : "Test"}</button>}
+              {config.is_owner && settings.models.length > 1 && <button type="button" className="assistantRemove" onClick={() => removeModel(model.id)}>Remove</button>}
             </div>;
           })}
         </div>
         {!settings.models.length && <p className="assistantTest fail">No model saved yet. Add one below.</p>}
       </div>
 
-      {config.is_admin && <div className="assistantCard">
+      {config.is_owner && <div className="assistantCard">
         <h2>Add a model</h2>
         <p>The key stays on this device for your account only, and is sent only when you ask something.</p>
         <div className="assistantPair">
@@ -1027,7 +1072,7 @@ export function ProprietorAssistant() {
     {tab === "usage" && <div className="assistantPane">
       <div className="assistantCard">
         <h2>Usage balance</h2>
-        <p>{config.is_admin ? "The balance counts down as the account answers. Test turns and your own turns are free." : "This is what is left for your assistant. Only your own chats use it."}</p>
+        <p>{config.is_owner ? "The balance counts down as the account answers. Test turns and your own turns are free." : "This is what is left for your assistant. Only your own chats use it."}</p>
         <div className="assistantGauge">
           <div className="assistantRing" style={{ ["--usage" as string]: `${settings.usagePercent}%` }}><span>{Math.round(settings.usagePercent)}%</span></div>
           <strong>{settings.usagePercent <= 0 ? "Empty" : "Remaining"}</strong>
@@ -1036,7 +1081,7 @@ export function ProprietorAssistant() {
         {settings.usagePercent <= 20 && settings.usagePercent > 0 && <p className="assistantLow">Nearly used up. The developer tops this up.</p>}
         {settings.usagePercent <= 0 && <p className="assistantLow">The allowance is empty. Ask the developer to top it up.</p>}
       </div>
-      {config.is_admin && <div className="assistantCard">
+      {config.is_owner && <div className="assistantCard">
         <h2>Set the balance</h2>
         <p>Shared with this account. Developer chats are free; only the proprietor's answers use it.</p>
         <div className="assistantPair">
@@ -1056,7 +1101,7 @@ export function ProprietorAssistant() {
 
     {drawer && <button className="assistantScrim" type="button" aria-label="Close menu" onClick={() => setDrawer(false)}/>}
     <aside className={`assistantSidebar ${drawer ? "open" : ""}`}>
-      <div className="assistantBrand"><img src="/images/logo.webp" alt=""/><div><strong>Way to Success</strong><span>{config.is_admin ? "Developer workspace" : "Proprietor workspace"}</span></div></div>
+      <div className="assistantBrand"><img src="/images/logo.webp" alt=""/><div><strong>Way to Success</strong><span>{config.is_owner ? "Developer workspace" : "Proprietor workspace"}</span></div></div>
       <button className="assistantNew" type="button" onClick={newChat}><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg> New chat</button>
       <div className="assistantChatList">
         <p className="assistantListLabel">Your chats</p>
