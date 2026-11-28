@@ -793,6 +793,9 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
   const schoolNoExam: { class: string; names: string[] }[] = [];
   const emptyClasses: string[] = [];
   const queue = [...catalog];
+  /** Wall-clock cap, so a bad spell on the identity service cannot run past the turn. */
+  const scanStarted = Date.now();
+  const outOfTime = () => Date.now() - scanStarted > 42000;
   const worker = async (index: number, prepared: ResultsCall | null) => {
     // One portal session per worker, made before the burst starts so the
     // sign-ins never overlap.
@@ -800,6 +803,7 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
     for (;;) {
       const item = queue.shift();
       if (!item) return;
+      if (outOfTime()) { again.push(item); continue; }
       current.progress?.(`Reading ${item.label}`);
       const made = await classAnalysisOne(current, { ...args, classKey: item.key, breakdown: false, list: false, includeMissing: true }, sharedGrades, call ?? undefined) as Record<string, unknown>;
       // A class shed under load is tried again at the end, one at a time.
@@ -845,9 +849,13 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
   // Sessions are made one after another before the reads so six sign-ins never
   // land on the identity service at once.
   const preparedCalls: (ResultsCall | null)[] = [];
-  for (let index = 0; index < 6; index += 1) preparedCalls.push(await openResults(current).catch(() => null));
+  for (let index = 0; index < 6; index += 1) {
+    if (outOfTime()) break;
+    preparedCalls.push(await openResults(current).catch(() => openResults(current).catch(() => null)));
+  }
   await Promise.all(preparedCalls.map((call, index) => worker(index, call)));
   for (const item of again) {
+    if (outOfTime()) { skipped.push({ class: item.label, code: "SCAN_TIMEOUT" }); continue; }
     current.progress?.(`Reading ${item.label}`);
     const retryCall = await openResults(current).catch(() => null);
     const made = await classAnalysisOne(current, { ...args, classKey: item.key, breakdown: false, list: false, includeMissing: true }, sharedGrades, retryCall ?? undefined) as Record<string, unknown>;
