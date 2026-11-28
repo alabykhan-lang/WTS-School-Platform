@@ -1652,6 +1652,15 @@ async function verifyWrite(name: string, args: Record<string, unknown>, current:
 async function cardLabel(name: string, args: Record<string, unknown>, current: CurrentSession) {
   const payload = (args.payload && typeof args.payload === "object" ? args.payload : {}) as Record<string, unknown>;
   const label: { who?: string; where?: string; subject?: string; before?: Record<string, unknown> } = {};
+  if (name === "registry_request" && payload.studentId) {
+    // An archive or restore card names the learner and class, never an id.
+    const read = await registry(current, "read", "student", { studentId: String(payload.studentId), status: "" }).catch(() => null);
+    const found = (Array.isArray(read?.students) ? read.students[0] : null) as Record<string, unknown> | undefined;
+    if (found?.name) label.who = String(found.name);
+    const classKey = classKeyOf(found?.class_key || payload.classKey);
+    if (classKey) label.where = classLabel(classKey);
+    return label;
+  }
   if (name === "results_request" && payload.student_id) {
     const read = await registry(current, "read", "student", { studentId: String(payload.student_id) }).catch(() => null);
     const found = (Array.isArray(read?.students) ? read.students[0] : read?.student) as Record<string, unknown> | undefined;
