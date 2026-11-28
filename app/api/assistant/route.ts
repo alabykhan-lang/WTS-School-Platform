@@ -153,41 +153,51 @@ async function mintAppSession(current: CurrentSession, app: "registry" | "result
       : app === "notifications"
         ? { id: "notifications", target: "notifications", redirect: `${portalOrigins.notifications}/` }
       : { id: "result_portal", target: "results", redirect: `${portalOrigins.results}/portal_core.html` };
-  const code = randomBytes(32).toString("base64url");
-  const verifier = randomBytes(48).toString("base64url");
-  const challenge = createHash("sha256").update(verifier).digest("base64url");
-  const state = randomBytes(24).toString("base64url");
-  const nonce = randomBytes(24).toString("base64url");
-  const issued = await callPrivilegedRpc<Record<string, unknown>>("school_sso_authorization_code_issue", {
-    p_session_id: current.id,
-    p_session_secret: current.secret,
-    p_client_id: client.id,
-    p_target_app_code: client.target,
-    p_redirect_uri: client.redirect,
-    p_code_hash: sha256(code),
-    p_code_challenge: challenge,
-    p_code_challenge_method: "S256",
-    p_state_hash: sha256(state),
-    p_nonce_hash: sha256(nonce),
-  });
-  if (!issued?.ok) throw new IdentityApiError(String(issued?.code || "SSO_EXCHANGE_FAILED"), 403);
-  const exchanged = await callPrivilegedRpc<Record<string, unknown>>("school_sso_authorization_code_exchange", {
-    p_code: code,
-    p_client_id: client.id,
-    p_redirect_uri: client.redirect,
-    p_code_verifier: verifier,
-    p_state: state,
-    p_nonce: nonce,
-  });
-  if (!exchanged?.ok || typeof exchanged.session_id !== "string" || typeof exchanged.session_secret !== "string") {
-    throw new IdentityApiError(String(exchanged?.code || "SSO_EXCHANGE_FAILED"), 403);
-  }
-  return {
-    session_id: exchanged.session_id,
-    session_secret: exchanged.session_secret,
-    ...(typeof exchanged.attendance_client_code === "string" ? { attendance_client_code: exchanged.attendance_client_code } : {}),
-    ...(typeof exchanged.attendance_client_secret === "string" ? { attendance_client_secret: exchanged.attendance_client_secret } : {}),
+  /** One full sign-in with a fresh code, so a retry never reuses a half-issued one. */
+  const once = async (): Promise<AppSession> => {
+    const code = randomBytes(32).toString("base64url");
+    const verifier = randomBytes(48).toString("base64url");
+    const challenge = createHash("sha256").update(verifier).digest("base64url");
+    const state = randomBytes(24).toString("base64url");
+    const nonce = randomBytes(24).toString("base64url");
+    const issued = await callPrivilegedRpc<Record<string, unknown>>("school_sso_authorization_code_issue", {
+      p_session_id: current.id,
+      p_session_secret: current.secret,
+      p_client_id: client.id,
+      p_target_app_code: client.target,
+      p_redirect_uri: client.redirect,
+      p_code_hash: sha256(code),
+      p_code_challenge: challenge,
+      p_code_challenge_method: "S256",
+      p_state_hash: sha256(state),
+      p_nonce_hash: sha256(nonce),
+    });
+    if (!issued?.ok) throw new IdentityApiError(String(issued?.code || "SSO_EXCHANGE_FAILED"), 403);
+    const exchanged = await callPrivilegedRpc<Record<string, unknown>>("school_sso_authorization_code_exchange", {
+      p_code: code,
+      p_client_id: client.id,
+      p_redirect_uri: client.redirect,
+      p_code_verifier: verifier,
+      p_state: state,
+      p_nonce: nonce,
+    });
+    if (!exchanged?.ok || typeof exchanged.session_id !== "string" || typeof exchanged.session_secret !== "string") {
+      throw new IdentityApiError(String(exchanged?.code || "SSO_EXCHANGE_FAILED"), 403);
+    }
+    return {
+      session_id: exchanged.session_id,
+      session_secret: exchanged.session_secret,
+      ...(typeof exchanged.attendance_client_code === "string" ? { attendance_client_code: exchanged.attendance_client_code } : {}),
+      ...(typeof exchanged.attendance_client_secret === "string" ? { attendance_client_secret: exchanged.attendance_client_secret } : {}),
+    };
   };
+  try {
+    return await once();
+  } catch (error) {
+    // The sign-in RPCs are shed under load; a second clean attempt usually lands.
+    if (!/57014|statement timeout|timed out|unavailable/i.test(String((error as Error)?.message || ""))) throw error;
+    return await once();
+  }
 }
 
 /** One registry session for several reads, so contact lists do not pay for an SSO exchange each time. */
