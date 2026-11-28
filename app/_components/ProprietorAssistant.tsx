@@ -718,8 +718,8 @@ export function ProprietorAssistant() {
       }
 
       let firstPoll = true;
-      // The function itself stops at 60 s; a little more lets its last write land.
-      while (Date.now() - started < 75000) {
+      // The function itself stops at 120 s; a little more lets its last write land.
+      while (Date.now() - started < 135000) {
         await waitVisibleOr(document.hidden ? 8000 : firstPoll ? 900 : 1600);
         firstPoll = false;
         let response: Response;

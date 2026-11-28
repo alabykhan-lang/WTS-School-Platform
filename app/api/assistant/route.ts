@@ -2524,7 +2524,7 @@ export async function GET(request: NextRequest) {
       // so the app never spins on a dead turn.
       if (read?.ok === true && read.status === "running") {
         const touched = Date.parse(String(read.updated_at || ""));
-        if (Number.isFinite(touched) && Date.now() - touched > 70000) {
+        if (Number.isFinite(touched) && Date.now() - touched > 130000) {
           const stale = {
             ok: true,
             model: "",
