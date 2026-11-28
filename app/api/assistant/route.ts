@@ -1539,7 +1539,7 @@ const MARK_FIELDS = ["ca1", "ca2", "ca3", "exam"] as const;
 
 /** Archiving is the one Registry write that needs no reason from the proprietor. */
 const ARCHIVE_ACTIONS = new Set(["students.archive", "student.archive", "students.restore", "student.restore"]);
-const ARCHIVE_REASON = "Archived from the proprietor assistant on the school's instruction";
+const archiveReason = (action: string) => `${/restore/.test(action) ? "Restored" : "Archived"} from the proprietor assistant on the school's instruction`;
 
 function isArchiveWrite(name: string, args: Record<string, unknown>) {
   return name === "registry_request" && ARCHIVE_ACTIONS.has(String(args.action || ""));
@@ -1550,7 +1550,7 @@ function withStandardReason(args: Record<string, unknown>) {
   const payload = (args.payload && typeof args.payload === "object" ? args.payload : {}) as Record<string, unknown>;
   const reason = String(payload.reason || "").trim();
   if (reason.length >= 8) return args;
-  return { ...args, payload: { ...payload, reason: ARCHIVE_REASON } };
+  return { ...args, payload: { ...payload, reason: archiveReason(String(args.action || "")) } };
 }
 
 const sameMark = (left: unknown, right: unknown) => (left === null || left === undefined || left === "" ? null : Number(left)) === (right === null || right === undefined || right === "" ? null : Number(right));
