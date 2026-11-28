@@ -5,8 +5,8 @@ const route = await readFile(new URL("../app/api/assistant/route.ts", import.met
 const vercel = JSON.parse(await readFile(new URL("../vercel.json", import.meta.url), "utf8"));
 
 // The turn must fit the hosting limit, not a budget the platform never grants.
-assert.match(route, /export const maxDuration = 60;/);
-assert.equal(vercel.functions["app/api/assistant/route.ts"].maxDuration, 60);
+assert.match(route, /export const maxDuration = 120;/);
+assert.equal(vercel.functions["app/api/assistant/route.ts"].maxDuration, 120);
 assert.match(route, /const MAX_TOOL_CALLS = 14;/);
 assert.match(route, /const TOOL_RESULT_CAP = 6000;/);
 
@@ -86,7 +86,7 @@ assert.match(route, /guardian\.primaryPhone/);
 // A remark keeps its text and the live term, however the model names them.
 assert.match(route, /payload\.academic = text/);
 assert.match(route, /await withAcademicContext\(current, payload\)/);
-assert.match(route, /Date\.now\(\) - touched > 70000/);
+assert.match(route, /Date\.now\(\) - touched > 130000/);
 assert.match(route, /The connected school systems did not finish this request/);
 
 // Every turn carries the real class names and live term.
