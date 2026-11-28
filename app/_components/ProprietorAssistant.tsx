@@ -3,7 +3,14 @@
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 type CardDoc = { student: string; classKey: string; term: string; session: string; name?: string };
-type Message = { role: "user" | "assistant"; content: string; failed?: boolean; doc?: CardDoc; document?: boolean; sheet?: string; sheetName?: string };
+/** One small mark for the kind of file that rides on a message. */
+function attachIcon(kind: "sheet" | "photo" | "file") {
+  if (kind === "photo") return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 7h3l1.6-2h6.8L17 7h3v12H4Z"/><circle cx="12" cy="13" r="3.4"/></svg>;
+  if (kind === "file") return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/></svg>;
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M4 5h16v14H4Z"/><path d="M4 10h16M9 5v14M15 5v14"/></svg>;
+}
+
+type Message = { role: "user" | "assistant"; content: string; failed?: boolean; doc?: CardDoc; document?: boolean; sheet?: string; sheetName?: string; sheetKind?: "sheet" | "photo" | "file" };
 type Model = { id: string; label: string; description?: string; url?: string; providerId?: string };
 type Thread = { id: string; title: string; messages: Message[]; updatedAt: number };
 type Person = { id?: string; full_name?: string };
@@ -211,9 +218,13 @@ export function ProprietorAssistant() {
   testRef.current = testMode;
   const [drawer, setDrawer] = useState(false);
   const [draft, setDraft] = useState("");
-  const [sheet, setSheet] = useState<{ name: string; text: string; rows: number } | null>(null);
+  const [sheet, setSheet] = useState<{ name: string; text: string; rows: number; kind: "sheet" | "photo" | "file" } | null>(null);
   const [attaching, setAttaching] = useState(false);
+  const [attachMenu, setAttachMenu] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
+  const galleryRef = useRef<HTMLInputElement>(null);
+  const docRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [busyThread, setBusyThread] = useState("");
   const [notify, setNotify] = useState<"off" | "on" | "denied">("off");
@@ -645,7 +656,7 @@ export function ProprietorAssistant() {
     // bubble stays a normal sentence.
     const content = typed || "Here is the recording sheet.";
     const message: Message = sheet
-      ? { role: "user", content, sheet: sheet.text, sheetName: sheet.name }
+      ? { role: "user", content, sheet: sheet.text, sheetName: sheet.name, sheetKind: sheet.kind }
       : { role: "user", content };
     const updated = [...activeThread.messages, message];
     updateThread(activeThread.id, updated);
@@ -656,19 +667,24 @@ export function ProprietorAssistant() {
   }
 
   /** Send a recording sheet to the server for a clean grid of rows. */
-  async function pickSheet(event: ChangeEvent<HTMLInputElement>) {
+  async function pickFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     event.target.value = "";
+    setAttachMenu(false);
     if (!file) return;
     setAttaching(true);
     try {
       const body = new FormData();
       body.append("file", file);
       const response = await fetch("/api/assistant/upload", { method: "POST", credentials: "same-origin", body });
-      const value = await response.json().catch(() => null) as { ok?: boolean; code?: string; detail?: string; name?: string; text?: string; rows?: number } | null;
-      if (!response.ok || !value?.ok) throw new Error(value?.detail || "That file could not be read. Send an Excel or CSV sheet.");
-      setSheet({ name: value.name || file.name, text: String(value.text || ""), rows: Number(value.rows || 0) });
-      if (!draft.trim()) setDraft(`Record these marks from ${value.name || file.name}.`);
+      const value = await response.json().catch(() => null) as { ok?: boolean; code?: string; detail?: string; name?: string; kind?: "sheet" | "photo" | "file"; text?: string; rows?: number } | null;
+      if (!response.ok || !value?.ok) throw new Error(value?.detail || "That file could not be read. Send it as an Excel or CSV sheet, or a photo.");
+      const kind = value.kind || "sheet";
+      const name = value.name || file.name;
+      setSheet({ name, text: String(value.text || ""), rows: Number(value.rows || 0), kind });
+      if (!draft.trim()) {
+        setDraft(kind === "photo" ? `Record these marks from the photo ${name}.` : kind === "sheet" ? `Record these marks from ${name}.` : `Read this file: ${name}.`);
+      }
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "That file could not be read.");
     } finally {
@@ -702,9 +718,12 @@ export function ProprietorAssistant() {
     const started = startedAt || Date.now();
     // An attached sheet is folded into the message text on the wire, so the
     // model reads the rows and the history stays one string per turn.
-    const wire = messages.map((message) => message.sheet
-      ? { role: message.role, content: `${message.content}\n\n[Recording sheet "${message.sheetName || "sheet"}"]\n${message.sheet}` }
-      : { role: message.role, content: message.content });
+    const wire = messages.map((message) => {
+      if (!message.sheetName) return { role: message.role, content: message.content };
+      const head = message.sheetKind === "photo" ? `[Photo attached: "${message.sheetName}"]` : message.sheetKind === "file" ? `[File attached: "${message.sheetName}"]` : `[Recording sheet "${message.sheetName}"]`;
+      const body = message.sheet ? message.sheetKind === "photo" ? `\n[Text read from the photo]\n${message.sheet}` : `\n${message.sheet}` : "";
+      return { role: message.role, content: `${message.content}\n\n${head}${body}` };
+    });
     let jobId = existingJobId || "";
     if (key) localStorage.setItem(key, JSON.stringify({ threadId, messages: wire, started, jobId: jobId || undefined } satisfies Job));
     let settled = false;
@@ -942,8 +961,9 @@ export function ProprietorAssistant() {
     {tab === "chats" && <>
       <div className="assistantConversation">
         {!activeThread?.messages.length && <div className="assistantWelcome">
-          <span className="assistantOrb">WTS</span>
-          <h2>Ask me anything about the school.</h2>
+          <img className="assistantOrb" src="/images/logo.webp" alt=""/>
+          <h2>Way to Success Standard Schools</h2>
+          <p className="assistantLead">Ask me anything about the school.</p>
           <p>Results, learners, classes, fees — I read the live records before I answer, and I can save changes for you.</p>
           <div className="assistantChips">
             <button type="button" onClick={() => invite("Which class is the most competitive right now?")}>Which class is the most competitive?</button>
@@ -958,7 +978,7 @@ export function ProprietorAssistant() {
             <article id={`answer-${index}`} className={`assistantMessage ${message.role}${message.doc || message.document ? " printable" : ""}`}>
               {message.role === "assistant" && <div className="assistantAvatar">WTS</div>}
               <div className={`assistantBubble${message.failed ? " failed" : ""}`}>
-                {message.sheetName && <span className="assistantSheetChip" title={message.sheetName}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/></svg>{message.sheetName}</span>}
+                {message.sheetName && <span className="assistantSheetChip" title={message.sheetName}>{attachIcon(message.sheetKind || "file")}{message.sheetName}</span>}
                 {renderBlocks(message.content)}
               </div>
               {message.role === "user" && <div className="assistantWho">You</div>}
@@ -995,19 +1015,30 @@ export function ProprietorAssistant() {
       {notice && <div className="assistantNotice" role="status">{notice}</div>}
       <form className="assistantComposer" onSubmit={send}>
         {sheet && <div className="assistantSheetRow">
-          <span className="assistantSheetChip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/></svg>{sheet.name} · {sheet.rows} rows</span>
-          <button type="button" className="assistantSheetDrop" onClick={() => setSheet(null)} aria-label="Remove the sheet">×</button>
+          <span className="assistantSheetChip">{attachIcon(sheet.kind)}{sheet.name}{sheet.kind === "sheet" && sheet.rows ? ` · ${sheet.rows} rows` : ""}</span>
+          <button type="button" className="assistantSheetDrop" onClick={() => setSheet(null)} aria-label="Remove the attachment">×</button>
         </div>}
-        <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls,text/csv" onChange={(event) => void pickSheet(event)} hidden/>
-        <button type="button" className={`assistantAttach${attaching ? " busy" : ""}`} onClick={() => fileRef.current?.click()} disabled={attaching || busy} aria-label="Attach a recording sheet" title="Attach a recording sheet (Excel or CSV)">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="m21 12-8.5 8.5a5 5 0 0 1-7-7L14 5a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-3-3L15 7"/></svg>
-        </button>
-        <textarea ref={draftRef} value={draft} rows={1} aria-label="Message" placeholder="Message the assistant…"
+        <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls,text/csv" onChange={(event) => void pickFile(event)} hidden/>
+        <input ref={cameraRef} type="file" accept="image/*" capture="environment" onChange={(event) => void pickFile(event)} hidden/>
+        <input ref={galleryRef} type="file" accept="image/*" onChange={(event) => void pickFile(event)} hidden/>
+        <input ref={docRef} type="file" onChange={(event) => void pickFile(event)} hidden/>
+        <textarea ref={draftRef} value={draft} rows={3} aria-label="Message" placeholder="Message the assistant…"
           onChange={(event) => setDraft(event.target.value)}
-          onInput={(event) => { const el = event.currentTarget; el.style.height = "auto"; el.style.height = `${Math.min(el.scrollHeight, 150)}px`; }}
+          onInput={(event) => { const el = event.currentTarget; el.style.height = "auto"; el.style.height = `${Math.min(el.scrollHeight, 220)}px`; }}
           onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }}/>
         <button className="assistantSend" type="submit" disabled={busy || (!draft.trim() && !sheet)} aria-label="Send">↑</button>
         <div className="assistantComposerFoot">
+          <div className="assistantAttachWrap">
+            <button type="button" className={`assistantAttach${attaching ? " busy" : ""}`} onClick={() => setAttachMenu((open) => !open)} disabled={attaching || busy} aria-label="Attach" aria-haspopup="menu" aria-expanded={attachMenu}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="m21 12-8.5 8.5a5 5 0 0 1-7-7L14 5a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-3-3L15 7"/></svg>
+            </button>
+            {attachMenu && <div className="assistantAttachMenu" role="menu">
+              <button type="button" role="menuitem" onClick={() => { setAttachMenu(false); cameraRef.current?.click(); }}>Take photo</button>
+              <button type="button" role="menuitem" onClick={() => { setAttachMenu(false); galleryRef.current?.click(); }}>Upload from gallery</button>
+              <button type="button" role="menuitem" onClick={() => { setAttachMenu(false); docRef.current?.click(); }}>Upload files</button>
+              <button type="button" role="menuitem" onClick={() => { setAttachMenu(false); fileRef.current?.click(); }}>Recording sheet</button>
+            </div>}
+          </div>
           {!config.is_owner && <small>{`${settings.usagePercent.toFixed(0)}% left`}</small>}
         </div>
       </form>
@@ -1076,7 +1107,7 @@ export function ProprietorAssistant() {
         <div className="assistantGauge">
           <div className="assistantRing" style={{ ["--usage" as string]: `${settings.usagePercent}%` }}><span>{Math.round(settings.usagePercent)}%</span></div>
           <strong>{settings.usagePercent <= 0 ? "Empty" : "Remaining"}</strong>
-          <small>{settings.usagePercent <= 20 && settings.usagePercent > 0 ? "Running low" : settings.usageUntil ? `Runs until ${new Date(settings.usageUntil).toLocaleDateString()}` : "No end date set"}</small>
+          <small>{settings.usagePercent <= 20 && settings.usagePercent > 0 ? "Running low" : "Pay as you go"}</small>
         </div>
         {settings.usagePercent <= 20 && settings.usagePercent > 0 && <p className="assistantLow">Nearly used up. The developer tops this up.</p>}
         {settings.usagePercent <= 0 && <p className="assistantLow">The allowance is empty. Ask the developer to top it up.</p>}
