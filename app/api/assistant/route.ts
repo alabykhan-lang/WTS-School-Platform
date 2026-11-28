@@ -858,18 +858,14 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
       ...(noExamSubjects.length ? { subjectsWithNoExamAtAll: noExamSubjects } : {}),
     });
   };
-  // Sessions are made one after another before the reads so the sign-ins never
-  // land on the identity service at once.
-  const preparedCalls: (ResultsCall | null)[] = [];
-  for (let index = 0; index < 4; index += 1) {
-    if (outOfTime()) break;
-    preparedCalls.push(await openResults(current).catch(() => openResults(current).catch(() => null)));
-  }
-  await Promise.all(preparedCalls.map((call, index) => worker(index, call)));
+  // One results session serves the whole scan, so there is a single sign-in
+  // rather than one per worker; a shed class is retried later with a fresh one.
+  const prepared = await openResults(current).catch(() => openResults(current).catch(() => null));
+  await Promise.all(Array.from({ length: 4 }, (_, index) => worker(index, prepared)));
+  const retryCall = again.length ? await openResults(current).catch(() => null) : null;
   for (const item of again) {
     if (outOfTime()) { skipped.push({ class: item.label, code: "SCAN_TIMEOUT" }); continue; }
     current.progress?.(`Reading ${item.label}`);
-    const retryCall = await openResults(current).catch(() => null);
     const made = await classAnalysisOne(current, { ...args, classKey: item.key, breakdown: false, list: false, includeMissing: true }, sharedGrades, retryCall ?? undefined) as Record<string, unknown>;
     if (made.ok !== true) { skipped.push({ class: item.label, code: String(made.code || "UNREAD") }); continue; }
     absorb(item, made);
@@ -2844,6 +2840,7 @@ export async function POST(request: NextRequest) {
         };
       }
       if (subjectAskHere && !ask && !sheetAskHere) {
+        let askedFailed = false;
         try {
           const made = await classAnalysis(current, {
             classKey: subjectAskHere.clazz,
@@ -2857,7 +2854,18 @@ export async function POST(request: NextRequest) {
             return { ok: true, model: settings.model, text: subjectText(made), usage: null, steps: ["class_analysis"] };
           }
           fastError = `${String(made.code || "")}: ${String(made.detail || "")}`;
-        } catch (caught) { fastError = (caught as Error)?.message || String(caught); }
+          askedFailed = !["RESULT_SUBJECT_NOT_FOUND", "RESULT_CLASS_NOT_FOUND", "RESULT_NO_MARKS"].includes(String(made.code || ""));
+        } catch (caught) { fastError = (caught as Error)?.message || String(caught); askedFailed = true; }
+        // A portal spell should not be dressed up by the model as "Analysed the class".
+        if (askedFailed) {
+          return {
+            ok: true,
+            model: settings.model,
+            text: "The Results Portal did not answer just now, so this is not confirmed. Ask me again in a moment.",
+            usage: null,
+            steps: [],
+          };
+        }
       }
       if (sheetAskHere && !ask) {
         try {
