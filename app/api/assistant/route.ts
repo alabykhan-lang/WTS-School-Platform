@@ -658,7 +658,7 @@ CLASS AND RESULT ANALYSIS
 - Marks are out of 10 for each CA and out of 70 for the exam; quote the maximum with any average and never invent one.
 - Never say a class has no data, or tell the proprietor to finish the exam, when CA is recorded. Answer with what is in the records and mention how much of the exam is in yet.
 - overallPassRate counts graded subject entries, not learners. Quote it as "40 of 64 graded entries passed" and use a subject's passRate when the question is about that subject.
-- A learner with no exam mark has no total that can pass, so they count as not passing until the exam lands. When a passRateNote is returned, say it in the same breath as the rate and name the learners it gives. Never quote an exam-only rate and call it the pass rate. If you give a failure count, name every failed learner from failedNames (up to five, then say "and N others").
+- A learner with no exam mark has no total that can pass, so they count as not passing until the exam lands. When a passRateNote is returned, say it in the same breath as the rate and name the learners it gives. Never quote an exam-only rate and call it the pass rate. If you give a failure count, name every failed learner from failedNames (up to five, then say "and N others"); each name arrives with the figure it failed on in brackets — keep those figures.
 - Missing exam marks across the school: call class_analysis once with NO classKey. It returns the gap lines ready to use. Reply with missingHeadline word for word, then missingGapsText as its lines, then classesNoExamLine word for word, then noExamSubjectsText as its lines (these name the blank subjects, so always include them), then coverage last. If skippedText is not empty, end with it. Never move a name to another subject.
 - "Which class is most competitive", "which classes are best or worst", "compare the classes", or any comparison between classes: call class_analysis once and leave classKey out entirely, even when one class happens to be named in the question. That one call compares every class on its own average and pass rate. Name the strongest class first with its figure, then the weakest, then only the few in between that matter. Always include its missingHeadline, missingGapsText, classesNoExamLine and noExamSubjectsText, because those name the learners and the subjects still missing.
 - Break a subject down when asked, even for "just show me" or "simply", and call class_analysis only ONCE. Leave subject out and pass breakdown true and you get every subject broken down in the same call; add subject only when the proprietor named one subject, which also returns the full table.
@@ -1162,9 +1162,14 @@ async function classAnalysisOne(current: CurrentSession, args: Record<string, un
       failedWithMark: marked.length - passed.length,
       passCount: passed.length,
       passDenominator: students.length,
+      // Each failed name carries the figure it failed on, in brackets, so no
+      // name in the list is left without a number.
       failedNames: marked.filter((entry) => !didPass(Number(entry.total) || 0))
         .sort((a, b) => (Number(a.total) || 0) - (Number(b.total) || 0) || a.name.localeCompare(b.name))
-        .map((entry) => entry.name),
+        .map((entry) => {
+          const mark = basis.fields.length === 1 ? markOf(entry.row, basis.fields[0]) : Math.round(Number(entry.percent || 0) * 10) / 10;
+          return mark === null || mark === undefined ? entry.name : `${entry.name} (${mark}${basis.fields.length === 1 ? "" : "%"})`;
+        }),
       passRate: students.length ? Math.round(passed.length * 1000 / students.length) / 10 : null,
       // Kept so a rate against the marked learners can be quoted as a check.
       passRateOfMarked: marked.length ? Math.round(passed.length * 1000 / marked.length) / 10 : null,
