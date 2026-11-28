@@ -869,7 +869,8 @@ export function ProprietorAssistant() {
     </main>;
   }
 
-  const title = tab === "chats" ? `Good day, ${name}` : tab === "models" ? "Models" : "Usage";
+  const showModels = config.is_admin === true;
+  const title = tab === "chats" ? `Good day, ${name}` : tab === "models" && showModels ? "Models" : "Usage";
   const invite = (text: string) => { setTab("chats"); void send(undefined, text); };
 
   return <main className="assistantShell">
@@ -1032,7 +1033,7 @@ export function ProprietorAssistant() {
 
     <nav className="assistantTabbar" aria-label="Workspace">
       <button type="button" className={tab === "chats" ? "selected" : ""} onClick={() => setTab("chats")}>Chats</button>
-      <button type="button" className={tab === "models" ? "selected" : ""} onClick={() => { setTab("models"); setForm((current) => ({ ...current, id: current.id || settings.defaultModel, provider: settings.providerId, effort: settings.effort })); }}>Models</button>
+      {showModels && <button type="button" className={tab === "models" ? "selected" : ""} onClick={() => { setTab("models"); setForm((current) => ({ ...current, id: current.id || settings.defaultModel, provider: settings.providerId, effort: settings.effort })); }}>Models</button>}
       <button type="button" className={tab === "usage" ? "selected" : ""} onClick={() => setTab("usage")}>Usage</button>
     </nav>
 

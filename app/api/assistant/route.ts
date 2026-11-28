@@ -2186,7 +2186,7 @@ function progressText(name: string, args: Record<string, unknown>) {
 }
 
 /** Print a whole-school comparison as a short ranked answer. */
-function compareText(compare: Record<string, unknown>, gapsFirst = false) {
+function compareText(compare: Record<string, unknown>, gapsFirst = false, gapsOnly = false) {
   const ranked = Array.isArray(compare.ranked) ? compare.ranked as Record<string, unknown>[] : [];
   const top = (compare.mostCompetitive || {}) as Record<string, unknown>;
   const low = (compare.leastCompetitive || {}) as Record<string, unknown>;
@@ -2198,6 +2198,14 @@ function compareText(compare: Record<string, unknown>, gapsFirst = false) {
     if (compare.classesNoExamLine) gapParts.push(String(compare.classesNoExamLine));
     if (compare.noExamSubjectsText) gapParts.push(String(compare.noExamSubjectsText));
     if (compare.skippedText) gapParts.push(String(compare.skippedText));
+  }
+  if (gapsOnly && gapParts.length) {
+    const withMarks = String(compare.classesCompared ?? 0);
+    const empty = Array.isArray(compare.classesWithNoExamAtAll) ? (compare.classesWithNoExamAtAll as unknown[]).length : 0;
+    const tail = compare.skippedText
+      ? "Want me to try the classes that were not read again?"
+      : `That is every gap on record — ${withMarks} classes have marks in and ${empty} more have no exam at all. Want the ranking over these gaps?`;
+    return `${gapParts.join("\n")}\n\n${tail}`;
   }
   if (gapsFirst && gapParts.length) {
     return [
@@ -2578,6 +2586,12 @@ function cardAsk(text: string): { classKey: string; label: string; search: strin
  * can print itself in one read. Only the no-subject form is taken here; a named
  * subject keeps the model, because the subject has to be matched first.
  */
+/** A whole-school missing-marks question, so it can also skip the model's discovery. */
+function missingAsk(text: string): boolean {
+  return /\b(missing|blank|blanked|not entered|no exam mark|no exam score)\b/i.test(text)
+    && /\b(school|whole|across|every class|all classes|everywhere)\b/i.test(text);
+}
+
 /** A whole-school comparison, so it can skip the model's slow discovery steps. */
 function compareAsk(text: string): boolean {
   if (/\b(compare|comparison|rank|ranking)\b/i.test(text) && /\b(classes?|school|whole)\b/i.test(text)) return true;
@@ -2665,6 +2679,7 @@ export async function POST(request: NextRequest) {
     const ask = said ? cardAsk(said) : null;
     const sheetAskHere = said ? sheetAsk(said) : null;
     const compareAskHere = said ? compareAsk(said) : null;
+    const missingAskHere = said ? missingAsk(said) : null;
 
     const runTurn = async (): Promise<Record<string, unknown>> => {
       const requestStarted = Date.now();
@@ -2672,20 +2687,24 @@ export async function POST(request: NextRequest) {
       const budgetMs = Math.min(50000, Math.max(9000, 50000 - elapsed));
       current.deadline = requestStarted + budgetMs;
       let fastError = "";
-      if (compareAskHere && !ask && !sheetAskHere) {
-        try {
-          const made = await classAnalysis(current, {}) as Record<string, unknown>;
-          if (made.ok === true && made.mode === "school_compare") {
-            return {
-              ok: true,
-              model: settings.model,
-              text: compareText(made),
-              usage: null,
-              steps: ["class_analysis"],
-            };
-          }
-          fastError = `${String(made.code || "")}: ${String(made.detail || "")}`;
-        } catch (caught) { fastError = (caught as Error)?.message || String(caught); }
+      if ((missingAskHere || compareAskHere) && !ask && !sheetAskHere) {
+        // One retry, because the identity service sheds a scan now and then and
+        // a second run usually lands.
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          try {
+            const made = await classAnalysis(current, {}) as Record<string, unknown>;
+            if (made.ok === true && made.mode === "school_compare") {
+              return {
+                ok: true,
+                model: settings.model,
+                text: compareText(made, missingAskHere === true, missingAskHere === true),
+                usage: null,
+                steps: ["class_analysis"],
+              };
+            }
+            fastError = `${String(made.code || "")}: ${String(made.detail || "")}`;
+          } catch (caught) { fastError = (caught as Error)?.message || String(caught); }
+        }
       }
       if (sheetAskHere && !ask) {
         try {
