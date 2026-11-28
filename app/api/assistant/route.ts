@@ -108,7 +108,8 @@ function ownerAccount(person: Record<string, unknown>, context: Record<string, u
   return authorityClassification(context) === "system_owner";
 }
 
-function sameOriginOrMissing(request: Request) {  return !request.headers.get("origin") || isSameOrigin(request);
+function sameOriginOrMissing(request: Request) {
+  return !request.headers.get("origin") || isSameOrigin(request);
 }
 
 function error(code: string, status = 400) {
