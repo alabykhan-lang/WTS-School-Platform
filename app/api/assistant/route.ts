@@ -796,7 +796,10 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
   const again: { key: string; label: string }[] = [];
   const schoolNoExam: { class: string; names: string[] }[] = [];
   const emptyClasses: string[] = [];
-  const queue = [...catalog];
+  // Classes with an exam running matter most, so they are read first and the
+  // empty juniors come last if the identity service is having a bad spell.
+  const weigh = (label: string) => /^jss/i.test(label) ? 0 : /^ss/i.test(label) ? 1 : 2;
+  const queue = [...catalog].sort((a, b) => weigh(a.label) - weigh(b.label));
   /** Wall-clock cap, so a bad spell on the identity service cannot run past the turn. */
   const scanStarted = Date.now();
   const outOfTime = () => Date.now() - scanStarted > 38000;
@@ -873,8 +876,10 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
   const live = await withAcademicContext(current, {});
   const missingNames = schoolNoExam.flatMap((row) => row.names.map((name) => `${name} (${row.class})`)).sort((a, b) => a.localeCompare(b));
   const missingHeadline = missingNames.length
-    ? `Only ${missingNames.length} learner${missingNames.length === 1 ? " has" : "s have"} no exam mark at all in classes where the exam has started: ${missingNames.join(", ")}.`
-    : "Every learner in a class where the exam has started has at least one exam mark.";
+    ? `${skipped.length ? "At least" : "Only"} ${missingNames.length} learner${missingNames.length === 1 ? " has" : "s have"} no exam mark at all in classes where the exam has started: ${missingNames.join(", ")}.`
+    : skipped.length
+      ? "No learner in the classes that were read has a missing exam mark; some classes were not read."
+      : "Every learner in a class where the exam has started has at least one exam mark.";
   const missingGapsText = ranked
     .flatMap((row) => (Array.isArray(row.examGapsBySubject) ? row.examGapsBySubject as { subject: string; names: string[] }[] : [])
       .map((gap) => `- ${String(row.class)} ${gap.subject}: ${gap.names.join(", ")}`))
