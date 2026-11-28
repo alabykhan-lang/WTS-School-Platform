@@ -3,12 +3,18 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   // The report card PDF is built with pdfkit, which reads its built-in fonts
   // from its own package folder at runtime, so it must stay outside the bundle.
-  serverExternalPackages: ["@react-pdf/renderer", "pdfkit"],
+  serverExternalPackages: ["@react-pdf/renderer", "pdfkit", "tesseract.js"],
   // The dev badge sits over the assistant's bottom tab bar, so keep it out.
   devIndicators: false,
   // pdfkit loads its built-in fonts from disk, so they must ship with the route.
   outputFileTracingIncludes: {
     "/api/assistant": ["./node_modules/pdfkit/js/standard-fonts/**"],
+    // The photo reader loads its worker, wasm core and English data from disk.
+    "/api/assistant/upload": [
+      "./node_modules/tesseract.js/**",
+      "./node_modules/tesseract.js-core/**",
+      "./node_modules/@tesseract.js-data/eng/4.0.0/**",
+    ],
   },
 };
 

@@ -189,6 +189,10 @@ assert.match(ui, /approval\.optional/);
 const upload = await readFile(new URL("../app/api/assistant/upload/route.ts", import.meta.url), "utf8");
 assert.match(upload, /formData\(\)/);
 assert.match(upload, /XLSX\.read/);
+assert.match(upload, /createWorker/);
+assert.match(ui, /Take photo/);
+assert.match(ui, /Upload from gallery/);
+assert.match(ui, /Upload files/);
 assert.match(ui, /type="file"/);
 assert.match(ui, /api\/assistant\/upload/);
 
