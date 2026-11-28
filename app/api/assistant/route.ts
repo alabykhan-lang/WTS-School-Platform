@@ -73,11 +73,15 @@ function readProviderUrl(value: unknown) {
   return `${normalised}/chat/completions`;
 }
 
-function authorityIsAdmin(context: Record<string, unknown>) {
+function authorityClassification(context: Record<string, unknown>) {
   const authority = (context.institutional_authority || {}) as Record<string, unknown>;
   const summary = (context.summary || {}) as Record<string, unknown>;
   const summaryAuthority = (summary.institutional_authority || {}) as Record<string, unknown>;
-  const classification = String(authority.classification || summaryAuthority.classification || "").toLowerCase();
+  return String(authority.classification || summaryAuthority.classification || "").toLowerCase();
+}
+
+function authorityIsAdmin(context: Record<string, unknown>) {
+  const classification = authorityClassification(context);
   const roles = Array.isArray(context.roles) ? context.roles : [];
   const roleText = roles.map((role) => typeof role === "object" && role ? `${(role as Record<string, unknown>).role_code || ""} ${(role as Record<string, unknown>).role_name || ""}` : "").join(" ").toLowerCase();
   // Only the developer's own account is free. A proprietor is management too,
@@ -91,10 +95,17 @@ function authorityIsAdmin(context: Record<string, unknown>) {
  * Models tab). A proprietor can be management and still not be the owner, so
  * classify the account by its staff number, not by its authority level.
  */
-const OWNER_STAFF_ID = process.env.WTS_OWNER_STAFF_ID || "WTS/OWN/000001";
+const OWNER_STAFF_NUMBERS = String(process.env.WTS_OWNER_STAFF_NUMBERS || "")
+  .split(",")
+  .map((value) => value.trim())
+  .filter(Boolean);
 
-function ownerAccount(person: Record<string, unknown>) {
-  return String(person.staff_id || "") === OWNER_STAFF_ID;
+function ownerAccount(person: Record<string, unknown>, context: Record<string, unknown>) {
+  const number = String(person.staff_number || "");
+  if (number && OWNER_STAFF_NUMBERS.includes(number)) return true;
+  // The school owner is the only system_owner. A proprietor is management but a
+  // different classification, so this does not leak the developer screens.
+  return authorityClassification(context) === "system_owner";
 }
 
 function sameOriginOrMissing(request: Request) {  return !request.headers.get("origin") || isSameOrigin(request);
@@ -2667,7 +2678,7 @@ export async function GET(request: NextRequest) {
       default_model: DEFAULT_MODEL,
       default_url: DEEPSEEK_BASE,
       is_admin: authorityIsAdmin(current.context),
-      is_owner: ownerAccount(person),
+      is_owner: ownerAccount(person, current.context),
       person: { id: person.staff_id || person.person_id || current.id, full_name: person.full_name || "Proprietor" },
     }, { headers: noStoreHeaders() });
   } catch (caught) {

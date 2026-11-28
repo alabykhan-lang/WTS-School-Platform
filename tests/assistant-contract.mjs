@@ -196,7 +196,9 @@ assert.doesNotMatch(ui, />How figures work</);
 assert.doesNotMatch(ui, />Notify me</);
 assert.match(ui, /\.has\("test"\)/);
 assert.match(ui, /config\.is_owner/);
-assert.match(route, /is_owner: ownerAccount\(person\)/);
+assert.match(route, /is_owner: ownerAccount\(person, current\.context\)/);
+assert.match(route, /function ownerAccount\(person: Record<string, unknown>, context: Record<string, unknown>\)/);
+assert.match(route, /authorityClassification\(context\) === "system_owner"/);
 
 // Long answers lead with a summary line, and the timeout sentence is plain.
 assert.match(route, /On a long answer, put the headline first/);
