@@ -609,7 +609,7 @@ const tools = [
   { type: "function", function: { name: "student_record", description: "Read one student's complete record by id, including guardian contacts.", parameters: { type: "object", required: ["studentId"], properties: { studentId: { type: "string" } } } } },
   { type: "function", function: { name: "staff_directory", description: "Read the staff directory and active assignments.", parameters: { type: "object", properties: { search: { type: "string" } } } } },
   { type: "function", function: { name: "results_read", description: "Read information available to the signed-in proprietor in the Results Portal. Use for results, marks, subject lists, publication, traits, remarks, fees, class rosters, and report-card context. The portal applies the account's permissions and class scope. For class performance, pass/fail, coverage, averages, or rankings, use class_analysis so the complete class is read and summarized in one call.", parameters: { type: "object", required: ["resource"], properties: { resource: { type: "string", enum: ["classes", "fees", "published_subjects", "remarks", "result_summary", "scores", "students", "subjects", "traits"] }, classKey: { type: "string" }, studentId: { type: "string" }, subjectIndex: { type: "integer" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
-  { type: "function", function: { name: "class_analysis", description: "One call gives a complete class analysis from the Results Portal: coverage, per-subject pass/fail rates, per-subject top performers, and the overall top and bottom order. It reads the whole class once and does the arithmetic on the server. Use it for every class performance question and call it only once per class. Omit classKey to compare every class on its average and pass rate in this one call. basis defaults to current, which uses every mark recorded so far and compares percentages so a learner whose exam is not entered yet still ranks; name a basis only when the proprietor asks to grade on that part alone. Pass subject only for exactly one subject; topN changes how many leaders are returned; includeMissing names learners with nothing on the chosen basis, and for a whole-school call it also gives learnersWithNoExamMarkAtAll and per-class examGapsBySubject; breakdown true adds a simple per-subject breakdown (bands, component averages, strongest and weakest) for every subject in this one call, so use it alone for 'break it down'; add subject only for one named subject, which also returns the full table. list true returns the whole score sheet in the same call, for requests to list every score. source true adds sourceTable, the exact marks behind every ranked learner, for 'show me the source table' or a spot check.", parameters: { type: "object", properties: { classKey: { type: "string", description: "The class to analyse. Leave it out for a whole-school comparison" }, basis: { type: "string", enum: ["current", "ca", "ca1", "ca2", "ca3", "exam"], description: "current = every recorded mark (default); ca = all continuous assessment; ca1, ca2, ca3 = that single CA; exam = exam only" }, subject: { type: "string", description: "Subject name or stored index, for one subject only" }, topN: { type: "integer" }, includeMissing: { type: "boolean" }, breakdown: { type: "boolean", description: "Add the simple breakdown for every subject at once. With a single subject named, also return that subject's full table" }, list: { type: "boolean", description: "Return every learner's marks for every subject analysed, as the whole score sheet" }, source: { type: "boolean", description: "Add sourceTable: the exact recorded marks, percent and total behind each ranked learner, so a figure can be checked" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
+  { type: "function", function: { name: "class_analysis", description: "One call gives a complete class analysis from the Results Portal: coverage, per-subject pass/fail rates, per-subject top performers, and the overall top and bottom order. It reads the whole class once and does the arithmetic on the server. Use it for every class performance question and call it only once per class. Omit classKey to compare every class on its average and pass rate in this one call. basis defaults to current, which uses every mark recorded so far and compares percentages so a learner whose exam is not entered yet still ranks; name a basis only when the proprietor asks to grade on that part alone. Pass subject only for exactly one subject; topN changes how many leaders are returned; includeMissing names learners with nothing on the chosen basis, and for a whole-school call it also gives learnersWithNoExamMarkAtAll and per-class examGapsBySubject; breakdown true adds a simple per-subject breakdown (bands, component averages, strongest and weakest) for every subject in this one call, so use it alone for 'break it down'; add subject only for one named subject, which also returns the full table. list true returns the whole score sheet in the same call, for requests to list every score. source true adds sourceTable, the exact marks behind every ranked learner, for 'show me the source table' or a spot check.", parameters: { type: "object", properties: { classKey: { type: "string", description: "The class to analyse. Leave it out for a whole-school comparison" }, basis: { type: "string", enum: ["current", "ca", "ca1", "ca2", "ca3", "exam"], description: "current = every recorded mark (default); ca = all continuous assessment; ca1, ca2, ca3 = that single CA; exam = exam only" }, subject: { type: "string", description: "Subject name or stored index, for one subject only" }, topN: { type: "integer" }, classes: { type: "array", items: { type: "string" }, description: "Class labels to compare, when the question names them; leave out for the whole school" }, coverage: { type: "boolean", description: "Order the comparison by how much of the exam is in rather than by average" }, includeMissing: { type: "boolean" }, breakdown: { type: "boolean", description: "Add the simple breakdown for every subject at once. With a single subject named, also return that subject's full table" }, list: { type: "boolean", description: "Return every learner's marks for every subject analysed, as the whole score sheet" }, source: { type: "boolean", description: "Add sourceTable: the exact recorded marks, percent and total behind each ranked learner, so a figure can be checked" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
   { type: "function", function: { name: "results_history", description: "Read prior terms and sessions the signed-in proprietor can access in the Results Portal. Use for historical comparisons; the portal enforces the account's access.", parameters: { type: "object", properties: { classKey: { type: "string" }, studentId: { type: "string" }, term: { type: "string" }, academicSession: { type: "string" } } } } },
   {
     type: "function",
@@ -780,8 +780,14 @@ function slim(value: unknown, depth = 0, field = ""): unknown {
  */
 async function classAnalysis(current: CurrentSession, args: Record<string, unknown>) {
   if (classKeyOf(args.classKey)) return classAnalysisOne(current, args);
-  const catalog = await classCatalog(current);
-  if (!catalog.length) return { ok: false, code: "RESULT_CLASS_REQUIRED", detail: "Name the class to analyse.", hint: "Call class_analysis again with one of the class names in TURN STATE." };
+  const catalogAll = await classCatalog(current);
+  if (!catalogAll.length) return { ok: false, code: "RESULT_CLASS_REQUIRED", detail: "Name the class to analyse.", hint: "Call class_analysis again with one of the class names in TURN STATE." };
+  // A question that names classes is answered over those classes only.
+  const askedFor = Array.isArray(args.classes) ? (args.classes as string[]).map(normClass).filter(Boolean) : [];
+  const catalog = askedFor.length
+    ? catalogAll.filter((row) => askedFor.some((want) => normClass(row.label) === want || normClass(row.label).startsWith(want)))
+    : catalogAll;
+  const scope = catalog.length && catalog.length < catalogAll.length ? catalog.map((row) => row.label) : [];
 
   const basisKey = String(args.basis || "current").toLowerCase().replace(/[^a-z0-9]/g, "");
   // One settings read serves every class, so the comparison stays quick.
@@ -868,13 +874,15 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
     if (made.ok !== true) { skipped.push({ class: item.label, code: String(made.code || "UNREAD") }); continue; }
     absorb(item, made);
   }
-  ranked.sort((a, b) => Number(b.averagePercent ?? -1) - Number(a.averagePercent ?? -1) || Number(b.passRate ?? -1) - Number(a.passRate ?? -1));
-  ranked.forEach((row, index) => { row.rank = index + 1; });
+  const byCoverage = args.coverage === true;
+  ranked.sort(byCoverage
+    ? ((a, b) => Number(b.examCoverage ?? -1) - Number(a.examCoverage ?? -1) || Number(b.averagePercent ?? -1) - Number(a.averagePercent ?? -1))
+    : ((a, b) => Number(b.averagePercent ?? -1) - Number(a.averagePercent ?? -1) || Number(b.passRate ?? -1) - Number(a.passRate ?? -1)));  ranked.forEach((row, index) => { row.rank = index + 1; });
   emptyClasses.sort((a, b) => a.localeCompare(b));
   schoolNoExam.sort((a, b) => a.class.localeCompare(b.class));
   if (!ranked.length) return { ok: false, code: "RESULT_NO_MARKS_ANYWHERE", detail: "No class has a mark recorded yet on this basis.", hint: "Say that no marks are recorded yet and ask the proprietor to enter them in the Results Portal." };
   const live = await withAcademicContext(current, {});
-  const missingNames = schoolNoExam.flatMap((row) => row.names.map((name) => `${name} (${row.class})`)).sort((a, b) => a.localeCompare(b));
+  const missingNames = schoolNoExam.flatMap((row) => row.names.map((name) => `${prettyName(name)} (${row.class})`)).sort((a, b) => a.localeCompare(b));
   const missingHeadline = missingNames.length
     ? `${skipped.length ? "At least" : "Only"} ${missingNames.length} learner${missingNames.length === 1 ? " has" : "s have"} no exam mark at all in classes where the exam has started: ${missingNames.join(", ")}.`
     : skipped.length
@@ -882,7 +890,7 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
       : "Every learner in a class where the exam has started has at least one exam mark.";
   const missingGapsText = ranked
     .flatMap((row) => (Array.isArray(row.examGapsBySubject) ? row.examGapsBySubject as { subject: string; names: string[] }[] : [])
-      .map((gap) => `- ${String(row.class)} ${gap.subject}: ${gap.names.join(", ")}`))
+      .map((gap) => `- ${String(row.class)} ${gap.subject}: ${gap.names.map(prettyName).join(", ")}`))
     .join("\n");
   const classesNoExamLine = emptyClasses.length
     ? `${emptyClasses.length} classes have no exam mark at all yet: ${emptyClasses.join(", ")}.`
@@ -903,6 +911,8 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
     term: live.term,
     academicSession: live.academic_session,
     classesCompared: ranked.length,
+    ...(scope.length ? { classesScope: scope } : {}),
+    coverage: byCoverage,
     passMark: passMarkOf(sharedGrades),
     passRuleLine: `Pass is the total out of 100 (CA1 + CA2 + CA3, up to 30, plus the exam, up to 70) at ${passMarkOf(sharedGrades)} or more.`,
     classesSkipped: skipped.length ? skipped : undefined,
@@ -918,7 +928,9 @@ async function classAnalysis(current: CurrentSession, args: Record<string, unkno
     skippedText,
     classesWithNoExamMarkAtAll: schoolNoExam.map((row) => ({ class: row.class, count: row.names.length })),
     classesWithNoExamAtAll: emptyClasses,
-    method: "Classes are ordered by their average learner percentage on the chosen basis, with the pass rate breaking ties. Classes with no marks on that basis are left out.",
+    method: byCoverage
+      ? "Classes are ordered by how much of the exam is in, and missing marks are named. Classes with no exam at all are listed separately."
+      : "Classes are ordered by their average learner percentage on the chosen basis, with the pass rate breaking ties. Classes with no marks on that basis are left out.",
     hint: "Name the mostCompetitive class first with its average and pass rate, then the leastCompetitive, then only the few in between that matter. Put passRuleLine in before the figures. Say the exam is barely in where coverage is low. For a missing-scores question, quote missingHeadline, missingGapsText, classesNoExamLine, noExamSubjectsText and skippedText.",
   };
 }
@@ -2079,6 +2091,8 @@ async function gateway(messages: unknown[], settings: ModelSettings, current: Cu
   let partial = "";
   let ranOut = false;
   let failures = 0;
+  /** Failed calls still unresolved, keyed so a later success clears its own. */
+  const failed = new Map<string, true>();
   while (true) {
     const left = totalBudget - (Date.now() - started);
     // A tool round needs real room; below this a closing answer is worth more.
@@ -2105,6 +2119,8 @@ async function gateway(messages: unknown[], settings: ModelSettings, current: Cu
       try { args = JSON.parse(call.args || "{}"); } catch { args = {}; }
       const key = `${call.name}:${JSON.stringify(args)}`;
       const cached = seen.get(key);
+      // A failed read is not cached, so a retry of the same read really runs.
+      const failKey = call.name === "class_analysis" ? `class_analysis:${String(args.classKey ?? "")}:${String(args.subject ?? "")}` : call.name;
       if (cached) { history.push({ role: "tool", callId: call.id, content: cached }); continue; }
       current.progress?.(progressText(call.name, args));
       let result: unknown;
@@ -2113,7 +2129,7 @@ async function gateway(messages: unknown[], settings: ModelSettings, current: Cu
       } catch (caught) {
         result = { ok: false, code: "SCHOOL_SYSTEM_UNAVAILABLE", detail: (caught as Error)?.message || "The connected school system did not return a response.", hint: "Nothing was changed. Say plainly which system did not answer and what is still missing." };
       }
-      if ((result as Record<string, unknown>).ok === false) failures += 1;
+      if ((result as Record<string, unknown>).ok === false) { failed.set(failKey, true); failures = failed.size; } else { failed.delete(failKey); failures = failed.size; }
       if ((result as Record<string, unknown>).ok === false && !(result as Record<string, unknown>).hint) {
         (result as Record<string, unknown>).hint = "This call failed. Do not repeat it with the same arguments: use another tool or tell the proprietor plainly what could not be read.";
       } else if (/\[\]/.test(JSON.stringify(result)) && JSON.stringify(result).length < 400) {
@@ -2150,7 +2166,7 @@ async function gateway(messages: unknown[], settings: ModelSettings, current: Cu
       // A whole-class breakdown is one result with every subject in it, so it
       // gets more room than an ordinary read before the safety cap.
       const content = capText(JSON.stringify(slim(result)), call.name === "class_analysis" ? (args.list === true ? 60000 : 24000) : TOOL_RESULT_CAP);
-      seen.set(key, content);
+      if ((result as Record<string, unknown>).ok !== false) seen.set(key, content);
       history.push({ role: "tool", callId: call.id, content });
     }
     if (ranOut) break;
@@ -2218,7 +2234,13 @@ function compareText(compare: Record<string, unknown>, gapsFirst = false, gapsOn
   const ranked = Array.isArray(compare.ranked) ? compare.ranked as Record<string, unknown>[] : [];
   const top = (compare.mostCompetitive || {}) as Record<string, unknown>;
   const low = (compare.leastCompetitive || {}) as Record<string, unknown>;
-  const line = (row: Record<string, unknown>) => `${row.class}: ${row.averagePercent}% average; ${row.passCount ?? "?"} of ${row.passDenominator ?? "?"} learners pass (${row.passRate}%)`;
+  const line = (row: Record<string, unknown>) => compare.coverage === true
+    ? `${row.class}: ${row.examCoverage ?? 0}% of exam entries in; ${row.passCount ?? "?"} of ${row.passDenominator ?? "?"} learners pass (${row.passRate}%)`
+    : `${row.class}: ${row.averagePercent}% average; ${row.passCount ?? "?"} of ${row.passDenominator ?? "?"} learners pass (${row.passRate}%)`;
+  const strongest = compare.coverage === true
+    ? `${String(top.class)} has the most of the exam in — ${top.examCoverage ?? 0}% of entries; ${top.passCount ?? "?"} of ${top.passDenominator ?? "?"} learners pass (${top.passRate}%).`
+    : `${String(top.class)} is the strongest class right now — ${line(top).replace(`${String(top.class)}: `, "")}.`;
+  const weakestLine = compare.coverage === true ? `The least is ${line(low)}.` : `The weakest is ${line(low)}.`;
   const gapParts: string[] = [];
   if (compare.missingHeadline) {
     gapParts.push(String(compare.missingHeadline));
@@ -2240,24 +2262,27 @@ function compareText(compare: Record<string, unknown>, gapsFirst = false, gapsOn
       ...gapParts,
       "",
       "For the rank that sits over those gaps:",
-      `${String(top.class)} is the strongest class right now — ${line(top).replace(`${String(top.class)}: `, "")}.`,
-      `The weakest is ${line(low)}.`,
+      strongest,
+      weakestLine,
       "",
       "In order:",
       ...ranked.map((row) => `- ${line(row)}`),
     ].join("\n");
   }
   const parts = [
-    `${String(top.class)} is the strongest class right now — ${line(top).replace(`${String(top.class)}: `, "")}.`,
-    `The weakest is ${line(low)}.`,
+    strongest,
+    weakestLine,
     "",
   ];
   if (compare.passRuleLine) parts.push(String(compare.passRuleLine), "");
+  const scope = Array.isArray(compare.classesScope) ? compare.classesScope as string[] : [];
   parts.push(
     "In order:",
     ...ranked.map((row) => `- ${line(row)}`),
     "",
-    `That is every class compared on the marks on record (${String(compare.basis || "current")}), as a learner's average across all subjects against the same pass mark.`,
+    compare.coverage === true
+      ? `That is how much of the exam is in${scope.length ? " over the classes you named" : " across the school"}. A class with little in is not a verdict on its teaching.`
+      : `That is ${scope.length ? "every class you named" : "every class"} compared on the marks on record (${String(compare.basis || "current")}), as a learner's average across all subjects against the same pass mark.`,
   );
   if (compare.missingHeadline) {
     parts.push("", String(compare.missingHeadline));
@@ -2620,6 +2645,74 @@ function missingAsk(text: string): boolean {
     && /\b(school|whole|across|every class|all classes|everywhere)\b/i.test(text);
 }
 
+/** A class label reduced to letters and digits, so "JSS1" and "JSS 1" match. */
+function normClass(label: string) {
+  return String(label || "").toLowerCase().replace(/[^a-z0-9]/g, "").replace(/^(pry|basic)/, "primary");
+}
+
+/** Every class named in a question, so a comparison can stay inside them. */
+function classesAsked(text: string) {
+  const found: string[] = [];
+  const pattern = /\b(creche|crèche|kg\s*[12]|nursery\s*[12]|primary\s*[1-6]|pry\s*[1-6]|basic\s*[1-6]|jss\s*[1-3]|ss\s*[123])\b\s*(general|arts?|science)?/gi;
+  for (const hit of text.matchAll(pattern)) {
+    const base = hit[1].replace(/\s+/g, " ");
+    const tail = hit[2] ? ` ${hit[2]}` : "";
+    if (!found.some((item) => normClass(item) === normClass(base + tail))) found.push(base + tail);
+  }
+  return found;
+}
+
+/** A one-class, one-subject results question, answered without the model. */
+function subjectAsk(text: string): { clazz: string; subject: string; basisKey: string } | null {
+  if (!/\b(results?|scores?|marks?)\b/i.test(text)) return null;
+  if (/\b(list|all|every|whole|entire|compare|missing|breakdown|break it down)\b/i.test(text)) return null;
+  const cls = text.match(/\b(creche|crèche|kg\s*[12]|nursery\s*[12]|primary\s*[1-6]|pry\s*[1-6]|basic\s*[1-6]|jss\s*[1-3]|ss\s*[123])\b(?:\s*(general|arts?|science))?/i);
+  if (!cls) return null;
+  const rest = text.replace(cls[0], " ");
+  const basisKey = /\bexam(ination)?\b/i.test(rest) ? "exam"
+    : /\bca\s*1\b|\bfirst ca\b/i.test(rest) ? "ca1"
+      : /\bca\s*2\b|\bsecond ca\b/i.test(rest) ? "ca2"
+        : /\bca\s*3\b|\bthird ca\b/i.test(rest) ? "ca3"
+          : /\bca\b|continuous assessment/i.test(rest) ? "ca"
+            : "current";
+  const cleaned = rest
+    .replace(/\b(exam(ination)?|ca\s*[123]|first|second|third|ca|results?|scores?|marks?|please|for|in|of|the|all|every|show|me|what|are|is|give|get|and|on)\b/gi, " ")
+    .replace(/[^A-Za-z&'-]+/g, " ")
+    .trim();
+  if (!cleaned || cleaned.split(/\s+/).length > 4) return null;
+  return { clazz: cls[0], subject: cleaned, basisKey };
+}
+
+/** Print a single-subject read as the short answer the proprietor asked for. */
+function subjectText(made: Record<string, unknown>) {
+  const subject = (Array.isArray(made.subjects) ? made.subjects as Record<string, unknown>[] : [])[0] || {};
+  const roster = Number(made.rosterCount || 0);
+  const sat = Number(subject.studentsWithExam || 0);
+  const basisLabel = String(made.basisLabel || "exam only");
+  const mark = (row: Record<string, unknown>) => row.rankedMark === null || row.rankedMark === undefined ? prettyName(String(row.name || "")) : `${prettyName(String(row.name || ""))} (${String(row.rankedMark)})`;
+  const top = Array.isArray(subject.topByPercent) ? subject.topByPercent as Record<string, unknown>[] : [];
+  const low = Array.isArray(subject.weakestByPercent) ? subject.weakestByPercent as Record<string, unknown>[] : [];
+  const missing = Array.isArray(subject.studentsWithoutExamMark) ? (subject.studentsWithoutExamMark as string[]).map(prettyName) : [];
+  const failed = Array.isArray(subject.failedNames) ? subject.failedNames as string[] : [];
+  const range = subject.basisLowestMark !== null && subject.basisLowestMark !== undefined
+    ? `from ${String(subject.basisLowestMark)} to ${String(subject.basisHighestMark)}`
+    : "";
+  const head = sat === roster
+    ? `All ${roster} sat it`
+    : `${sat} of ${roster} sat it`;
+  const mean = subject.examMean !== null && subject.examMean !== undefined ? `, mean ${String(subject.examMean)} out of 70` : "";
+  const parts = [
+    `${String(made.class)} ${String(subject.subject || "")}, ${basisLabel}: ${head}${mean}${range ? `, marks ${range}` : ""}. ${String(subject.passCount ?? 0)} of ${roster} passed (${String(subject.passRate ?? 0)}%), pass mark ${String(made.passMark ?? 40)}.`,
+    String(made.passRuleLine || ""),
+  ];
+  if (missing.length) parts.push(`${missing.length} had no exam mark and count as not passing: ${missing.join(", ")}.`);
+  if (top.length) parts.push(`Top: ${top.map(mark).join(", ")}.`);
+  if (low.length) parts.push(`Weakest: ${low.map(mark).join(", ")}.`);
+  if (failed.length) parts.push(`The ${failed.length} who fell short: ${failed.join(", ")}.`);
+  parts.push(`That is the ${basisLabel}; the total out of 100 still carries the CA.`);
+  return parts.filter(Boolean).join("\n");
+}
+
 /** A whole-school comparison, so it can skip the model's slow discovery steps. */
 function compareAsk(text: string): boolean {
   if (/\b(compare|comparison|rank|ranking)\b/i.test(text) && /\b(classes?|school|whole)\b/i.test(text)) return true;
@@ -2708,6 +2801,7 @@ export async function POST(request: NextRequest) {
     const sheetAskHere = said ? sheetAsk(said) : null;
     const compareAskHere = said ? compareAsk(said) : null;
     const missingAskHere = said ? missingAsk(said) : null;
+    const subjectAskHere = said ? subjectAsk(said) : null;
 
     const runTurn = async (): Promise<Record<string, unknown>> => {
       const requestStarted = Date.now();
@@ -2716,12 +2810,19 @@ export async function POST(request: NextRequest) {
       current.deadline = requestStarted + budgetMs;
       let fastError = "";
       if ((missingAskHere || compareAskHere) && !ask && !sheetAskHere) {
+        // A question can name classes and ask for coverage; both are carried
+        // into the read so the answer stays inside what was asked.
+        const asked = said ? classesAsked(said) : [];
+        const coverage = compareAskHere === true && /\bcoverage\b|\bhow much\b|\bentered\b|\bsat\b|\bturnout\b|\bsitting\b/i.test(said);
         // Two bounded tries: a school read sheds a class or a sign-in now and
         // then, and one clean pass is all this needs.
         let best: Record<string, unknown> | null = null;
         for (let attempt = 0; attempt < 2 && !best; attempt += 1) {
           try {
-            const made = await classAnalysis(current, {}) as Record<string, unknown>;
+            const made = await classAnalysis(current, {
+              ...(asked.length ? { classes: asked } : {}),
+              ...(coverage ? { coverage: true } : {}),
+            }) as Record<string, unknown>;
             if (made.ok === true && made.mode === "school_compare") best = made;
             else fastError = `${String(made.code || "")}: ${String(made.detail || "")}`;
           } catch (caught) { fastError = (caught as Error)?.message || String(caught); }
@@ -2743,6 +2844,22 @@ export async function POST(request: NextRequest) {
           usage: null,
           steps: [],
         };
+      }
+      if (subjectAskHere && !ask && !sheetAskHere) {
+        try {
+          const made = await classAnalysis(current, {
+            classKey: subjectAskHere.clazz,
+            subject: subjectAskHere.subject,
+            basis: subjectAskHere.basisKey,
+            topN: 5,
+            includeMissing: true,
+          }) as Record<string, unknown>;
+          const first = Array.isArray(made.subjects) ? (made.subjects as Record<string, unknown>[])[0] : null;
+          if (made.ok === true && first && Number(first.studentsWithExam || 0) > 0) {
+            return { ok: true, model: settings.model, text: subjectText(made), usage: null, steps: ["class_analysis"] };
+          }
+          fastError = `${String(made.code || "")}: ${String(made.detail || "")}`;
+        } catch (caught) { fastError = (caught as Error)?.message || String(caught); }
       }
       if (sheetAskHere && !ask) {
         try {
